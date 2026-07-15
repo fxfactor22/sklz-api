@@ -218,3 +218,9 @@ create table if not exists public.tv_access (
 );
 create index if not exists tv_access_user_idx on public.tv_access (user_id, requested_at desc);
 alter table public.tv_access enable row level security;
+
+
+-- billing columns on subscriptions
+alter table public.subscriptions add column if not exists stripe_customer_id text;
+alter table public.subscriptions add column if not exists stripe_subscription_id text;
+alter table public.subscriptions add column if not exists founder boolean not null default false;
