@@ -118,7 +118,13 @@ async def request_access(payload: RequestIn, user=Depends(get_current_user),
         "status": "pending",
         "requested_at": _now().isoformat(),
     }
-    sb.table("tv_access").insert(row).execute()
+    try:
+        sb.table("tv_access").insert(row).execute()
+    except Exception as exc:  # noqa: BLE001  (missing table, RLS, network)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            f"could not store the request — is the tv_access table created? ({exc})",
+        ) from exc
     return {"ok": True, "status": "pending", "tv_username": tv,
             "note": "Access is granted manually on TradingView — usually "
                     "within a few hours."}
@@ -148,7 +154,11 @@ async def my_access(user=Depends(get_current_user),
 async def queue(user=Depends(get_current_user),
                 sb: Client = Depends(get_supabase)) -> dict:
     _require_admin(user)
-    rows = (sb.table("tv_access").select("*").execute()).data or []
+    try:
+        rows = (sb.table("tv_access").select("*").execute()).data or []
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            f"tv_access table unreachable ({exc})") from exc
     for r in rows:
         r["live_status"] = _status_of(r)
     pending = [r for r in rows if r["live_status"] == "pending"]
@@ -172,8 +182,12 @@ async def grant(payload: GrantIn, user=Depends(get_current_user),
 
     upd = {"status": "active", "plan": payload.plan,
            "granted_at": _now().isoformat(), "expires_at": expires}
-    res = (sb.table("tv_access").update(upd)
-             .eq("id", payload.request_id).execute())
+    try:
+        res = (sb.table("tv_access").update(upd)
+                 .eq("id", payload.request_id).execute())
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            f"tv_access table unreachable ({exc})") from exc
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "request not found")
     return {"ok": True, **upd,
@@ -185,9 +199,13 @@ async def grant(payload: GrantIn, user=Depends(get_current_user),
 async def revoke(payload: RevokeIn, user=Depends(get_current_user),
                  sb: Client = Depends(get_supabase)) -> dict:
     _require_admin(user)
-    res = (sb.table("tv_access")
-             .update({"status": "revoked", "expires_at": _now().isoformat()})
-             .eq("id", payload.request_id).execute())
+    try:
+        res = (sb.table("tv_access")
+                 .update({"status": "revoked", "expires_at": _now().isoformat()})
+                 .eq("id", payload.request_id).execute())
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            f"tv_access table unreachable ({exc})") from exc
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "request not found")
     return {"ok": True,
