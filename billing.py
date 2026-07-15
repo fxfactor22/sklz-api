@@ -89,10 +89,14 @@ def _founder_taken(sb: Client) -> int:
 
 
 def _price_id(stripe, lookup_key: str) -> str:
-    res = stripe.Price.list(lookup_keys=[lookup_key], limit=1)
+    try:
+        res = stripe.Price.list(lookup_keys=[lookup_key], limit=1)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            f"Stripe rejected the API key or call: {exc}") from exc
     if not res.data:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            f"price {lookup_key} missing — run admin/setup")
+                            f"price {lookup_key} missing — run admin/setup first")
     return res.data[0].id
 
 
@@ -165,7 +169,11 @@ async def checkout(payload: CheckoutIn, user=Depends(get_current_user),
         params["payment_intent_data"] = {"metadata": {
             "user_id": uid, "product": product}}
 
-    session = stripe.checkout.Session.create(**params)
+    try:
+        session = stripe.checkout.Session.create(**params)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            f"Stripe checkout failed: {exc}") from exc
     return {"url": session.url}
 
 
@@ -305,8 +313,23 @@ async def admin_setup(user=Depends(get_current_user),
     """Idempotent bootstrap: products, prices (by lookup_key), the $7 intro
     coupon, and the webhook endpoint. Safe to run repeatedly."""
     _require_admin(user)
+    key_prefix = os.environ.get("STRIPE_SECRET_KEY", "")[:8]
+    if not key_prefix.startswith("sk_") and not key_prefix.startswith("rk_"):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"STRIPE_SECRET_KEY looks wrong (starts '{key_prefix}…'). It must "
+            "be the SECRET key (sk_live_… / sk_test_…) from Stripe -> "
+            "Developers -> API keys — not the publishable pk_ key.")
     stripe = _stripe()
-    created: dict = {"prices": [], "existing": []}
+    created: dict = {"prices": [], "existing": [],
+                     "mode": "TEST" if "test" in key_prefix else "LIVE"}
+
+    try:
+        existing_products = stripe.Product.list(limit=100, active=True).data
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            f"Stripe rejected the key: {exc}") from exc
+    by_name = {p["name"]: p["id"] for p in existing_products}
 
     products: dict[str, str] = {}
     for key, (pname, amount, interval) in CATALOG.items():
@@ -315,9 +338,8 @@ async def admin_setup(user=Depends(get_current_user),
             created["existing"].append(key)
             continue
         if pname not in products:
-            found = stripe.Product.search(query=f"name:'{pname}'")
-            products[pname] = (found.data[0].id if found.data
-                               else stripe.Product.create(name=pname).id)
+            products[pname] = (by_name.get(pname)
+                               or stripe.Product.create(name=pname).id)
         p: dict = {"product": products[pname], "currency": "usd",
                    "unit_amount": amount, "lookup_key": key}
         if interval:

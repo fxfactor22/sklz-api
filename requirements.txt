@@ -2,4 +2,5 @@ fastapi>=0.115
 uvicorn[standard]>=0.32
 supabase>=2.9
 pydantic[email]>=2.9
+anthropic>=0.40
 stripe>=10
