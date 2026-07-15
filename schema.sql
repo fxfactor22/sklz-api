@@ -199,3 +199,22 @@ create table if not exists public.orders (
 );
 create index if not exists orders_user_idx on public.orders (user_id, created_at desc);
 alter table public.orders enable row level security;
+
+
+-- ============================================================
+-- TradingView invite-only access tracking
+-- ============================================================
+create table if not exists public.tv_access (
+    id           bigint generated always as identity primary key,
+    user_id      uuid not null references auth.users(id) on delete cascade,
+    email        text default '',
+    tv_username  text not null,
+    product      text not null default 'SKLZ Indicator Suite',
+    plan         text not null default 'monthly',       -- monthly | lifetime
+    status       text not null default 'pending',       -- pending | active | revoked
+    requested_at timestamptz not null default now(),
+    granted_at   timestamptz,
+    expires_at   timestamptz
+);
+create index if not exists tv_access_user_idx on public.tv_access (user_id, requested_at desc);
+alter table public.tv_access enable row level security;
