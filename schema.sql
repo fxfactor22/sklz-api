@@ -98,3 +98,104 @@ alter table public.bot_sessions enable row level security;
 alter table public.bot_events enable row level security;
 -- No public policies: only the API (secret key) reads/writes. Dashboard access
 -- goes through the API with the user's JWT.
+
+
+-- ============================================================
+-- TradingView signal webhook + AI reviews (SKLZ Pro indicator)
+-- ============================================================
+create table if not exists public.signals (
+    id           bigint generated always as identity primary key,
+    received_at  timestamptz not null default now(),
+    source       text not null default 'sklz_pro',
+    symbol       text not null,
+    tf           text default '',
+    side         text not null,
+    entry        double precision,
+    sl           double precision,
+    tp1          double precision,
+    tp2          double precision,
+    rr           double precision,
+    mode         text default '',
+    method       text default '',
+    reason       text default '',
+    price        double precision,
+    atr          double precision,
+    ai_review    text default ''
+);
+create index if not exists signals_recent_idx on public.signals (received_at desc);
+alter table public.signals enable row level security;
+-- No public policies: the API (service key) writes; the dashboard reads via JWT.
+
+
+-- ============================================================
+-- TradeGPT — AI trading analyst
+-- ============================================================
+create table if not exists public.gpt_profiles (
+    user_id      uuid primary key references auth.users(id) on delete cascade,
+    style        text default 'Day trading',
+    markets      text default 'XAUUSD',
+    account_size double precision default 10000,
+    risk_pct     double precision default 1.0,
+    methods      text default 'SMC, price action',
+    notes        text default '',
+    updated_at   timestamptz default now()
+);
+
+create table if not exists public.gpt_analyses (
+    id         bigint generated always as identity primary key,
+    user_id    uuid not null references auth.users(id) on delete cascade,
+    created_at timestamptz not null default now(),
+    symbol     text default '',
+    timeframe  text default '',
+    result     jsonb not null default '{}'::jsonb
+);
+create index if not exists gpt_analyses_user_idx on public.gpt_analyses (user_id, created_at desc);
+
+alter table public.gpt_profiles enable row level security;
+alter table public.gpt_analyses enable row level security;
+-- API (service key) mediates all access; users reach their own rows via JWT.
+
+
+-- ============================================================
+-- Subscriptions, affiliate referrals, news (dashboard)
+-- ============================================================
+create table if not exists public.subscriptions (
+    user_id            uuid primary key references auth.users(id) on delete cascade,
+    plan               text not null default 'Free',
+    active             boolean not null default false,
+    current_period_end timestamptz,
+    updated_at         timestamptz default now()
+);
+
+create table if not exists public.referrals (
+    id          bigint generated always as identity primary key,
+    referrer_id uuid not null references auth.users(id) on delete cascade,
+    email       text,
+    event       text default 'signed up',   -- signed up | purchased
+    commission  double precision default 0,
+    created_at  timestamptz not null default now()
+);
+create index if not exists referrals_referrer_idx on public.referrals (referrer_id, created_at desc);
+
+create table if not exists public.news (
+    id         bigint generated always as identity primary key,
+    tag        text default 'NEW',
+    title      text not null,
+    body       text default '',
+    created_at timestamptz not null default now()
+);
+
+alter table public.subscriptions enable row level security;
+alter table public.referrals     enable row level security;
+alter table public.news          enable row level security;
+
+
+create table if not exists public.orders (
+    id         bigint generated always as identity primary key,
+    user_id    uuid not null references auth.users(id) on delete cascade,
+    product    text not null,
+    amount     double precision default 0,
+    created_at timestamptz not null default now()
+);
+create index if not exists orders_user_idx on public.orders (user_id, created_at desc);
+alter table public.orders enable row level security;

@@ -14,6 +14,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import get_settings
 from auth import router as auth_router
 from bot_ingest import router as bot_router
+from signals import router as signal_router
+from account import router as account_router
+from tradegpt import router as gpt_router
 from waitlist import router as waitlist_router
 
 app = FastAPI(
@@ -35,6 +38,9 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(bot_router)
+app.include_router(signal_router)
+app.include_router(gpt_router)
+app.include_router(account_router)
 app.include_router(waitlist_router)
 
 
