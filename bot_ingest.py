@@ -76,20 +76,28 @@ class ReportIn(BaseModel):
 @router.post("/heartbeat", dependencies=[Depends(require_bot_key)])
 async def heartbeat(payload: HeartbeatIn, sb: Client = Depends(get_supabase)) -> dict:
     now = datetime.now(timezone.utc).isoformat()
-    if payload.session_id:
-        sb.table("bot_sessions").update({
-            "last_seen": now, "equity": payload.equity, "balance": payload.balance,
-            "stats": payload.stats, "mode": payload.mode,
-        }).eq("id", payload.session_id).execute()
-        return {"ok": True, "session_id": payload.session_id}
-    res = sb.table("bot_sessions").insert({
-        "bot_key": "default", "bot": payload.bot, "symbol": payload.symbol,
-        "timeframe": payload.timeframe, "mode": payload.mode,
-        "equity": payload.equity, "balance": payload.balance,
-        "stats": payload.stats, "last_seen": now,
-    }).execute()
-    sid = res.data[0]["id"] if res.data else None
-    return {"ok": True, "session_id": sid}
+    try:
+        if payload.session_id:
+            sb.table("bot_sessions").update({
+                "last_seen": now, "equity": payload.equity,
+                "balance": payload.balance,
+                "stats": payload.stats, "mode": payload.mode,
+            }).eq("id", payload.session_id).execute()
+            return {"ok": True, "session_id": payload.session_id}
+        res = sb.table("bot_sessions").insert({
+            "bot_key": "default", "bot": payload.bot, "symbol": payload.symbol,
+            "timeframe": payload.timeframe, "mode": payload.mode,
+            "equity": payload.equity, "balance": payload.balance,
+            "stats": payload.stats, "last_seen": now,
+        }).execute()
+        sid = res.data[0]["id"] if res.data else None
+        return {"ok": True, "session_id": sid}
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 — name the real failure
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            f"bot_sessions write failed: {type(exc).__name__}: {exc}") from exc
 
 
 @router.post("/events", dependencies=[Depends(require_bot_key)])
