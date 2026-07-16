@@ -114,8 +114,8 @@ class CheckoutIn(BaseModel):
 
 # ------------------------------------------------------------------- config
 @router.get("/config")
-async def config(user=Depends(get_current_user),
-                 sb: Client = Depends(get_supabase)) -> dict:
+async def config(sb: Client = Depends(get_supabase)) -> dict:
+    # public: the pricing page shows the founder counter to logged-out visitors
     taken = _founder_taken(sb)
     return {
         "prices": {
@@ -143,6 +143,16 @@ async def checkout(payload: CheckoutIn, user=Depends(get_current_user),
     if product not in CATALOG:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown product")
 
+    # GUARD: an active subscriber must UPGRADE, never stack a second
+    # subscription — double-billing is how disputes are born.
+    row = _sub_row(sb, str(user.id))
+    if row.get("active") and row.get("stripe_subscription_id"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "You already have an active plan (" + str(row.get("plan")) +
+            "). Use the Upgrade button on the Billing page, or manage your "
+            "plan from the billing portal — this prevents double charges.")
+
     stripe = _stripe()
     _, _, interval = CATALOG[product]
     uid = str(user.id)
@@ -155,6 +165,9 @@ async def checkout(payload: CheckoutIn, user=Depends(get_current_user),
         "cancel_url": f"{SITE}/pricing.html",
         "client_reference_id": uid,
         "metadata": {"user_id": uid, "product": product},
+        # NOTE: never add allow_promotion_codes here — Stripe rejects any
+        # session carrying both it and `discounts` (the $7 intro coupon).
+        # Promotion-code entry stays off by default anyway.
     }
     if email:
         params["customer_email"] = email
@@ -189,8 +202,13 @@ async def upsell(user=Depends(get_current_user),
     if not sub_id or not row.get("active"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "no active subscription to upgrade")
-    if "Bundle" in (row.get("plan") or ""):
-        return {"ok": True, "already": True, "plan": row.get("plan")}
+    plan = row.get("plan") or ""
+    if "Bundle" in plan:
+        return {"ok": True, "already": True, "plan": plan}
+    if "Lifetime" in plan or "annual" in plan.lower():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "Annual and lifetime plans are managed from the "
+                            "billing portal — contact support to switch.")
 
     target = ("bundle_founder" if _founder_taken(sb) < FOUNDER_CAP
               else "bundle_monthly")
@@ -370,3 +388,127 @@ async def admin_setup(user=Depends(get_current_user),
         created["webhook"] = "created"
         created["webhook_secret_SAVE_TO_RAILWAY"] = wh.secret
     return created
+
+
+# ------------------------------------------------ guest checkout (pay first)
+@router.post("/checkout-public")
+async def checkout_public(payload: CheckoutIn,
+                          sb: Client = Depends(get_supabase)) -> dict:
+    """No auth: a visitor pays first; Stripe collects their email; the claim
+    page then turns the paid session into an account."""
+    product = payload.product
+    if product == "bundle_monthly" and _founder_taken(sb) < FOUNDER_CAP:
+        product = "bundle_founder"
+    if product not in CATALOG:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown product")
+
+    stripe = _stripe()
+    _, _, interval = CATALOG[product]
+    params: dict = {
+        "mode": "subscription" if interval else "payment",
+        "line_items": [{"price": _price_id(stripe, product), "quantity": 1}],
+        "success_url": f"{SITE}/claim.html?sid={{CHECKOUT_SESSION_ID}}&p={product}",
+        "cancel_url": f"{SITE}/pricing.html",
+        "metadata": {"product": product, "guest": "true"},
+    }
+    if interval:
+        params["subscription_data"] = {"metadata": {
+            "product": product,
+            "founder": "true" if product == "bundle_founder" else "false"}}
+    else:
+        params["payment_intent_data"] = {"metadata": {"product": product}}
+    try:
+        session = stripe.checkout.Session.create(**params)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            f"Stripe checkout failed: {exc}") from exc
+    return {"url": session.url}
+
+
+class ClaimIn(BaseModel):
+    session_id: str
+    password: str
+    display_name: str = ""
+
+
+@router.post("/claim")
+async def claim(payload: ClaimIn,
+                sb: Client = Depends(get_supabase)) -> dict:
+    """Turn a PAID guest checkout session into an account + linked plan."""
+    stripe = _stripe()
+    try:
+        sess = stripe.checkout.Session.retrieve(payload.session_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"unknown checkout session: {exc}") from exc
+    if sess.get("payment_status") != "paid":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "this checkout session is not paid")
+    email = ((sess.get("customer_details") or {}).get("email")
+             or sess.get("customer_email") or "").lower()
+    if not email:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "no email on the checkout session")
+    product = (sess.get("metadata") or {}).get("product", "suite_monthly")
+
+    # create the account — or attach to an existing one with the same email
+    uid = None
+    confirmation_required = False
+    existing_account = False
+    try:
+        res = sb.auth.sign_up({
+            "email": email, "password": payload.password,
+            "options": {"data": {"display_name": payload.display_name}},
+        })
+        uid = str(res.user.id) if res.user else None
+        confirmation_required = res.session is None
+    except Exception:
+        existing_account = True
+        try:
+            users = sb.auth.admin.list_users()
+            for u in users:
+                if (getattr(u, "email", "") or "").lower() == email:
+                    uid = str(u.id)
+                    break
+        except Exception:
+            uid = None
+    if not uid:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Payment received, but the account could not be created or "
+            "matched. Log in with this email if you already have an account, "
+            "or contact support — your purchase is safe in Stripe.")
+
+    # link the Stripe objects to the user so renewals sync automatically
+    sub_id = sess.get("subscription")
+    end_iso = None
+    if sub_id:
+        try:
+            sub = stripe.Subscription.retrieve(sub_id)
+            stripe.Subscription.modify(sub_id, metadata={
+                "user_id": uid, "product": product,
+                "founder": (sub.get("metadata") or {}).get("founder", "false")})
+            end = sub.get("current_period_end")
+            if end:
+                end_iso = datetime.fromtimestamp(end, tz=timezone.utc).isoformat()
+        except Exception:
+            pass
+
+    try:
+        sb.table("subscriptions").upsert({
+            "user_id": uid,
+            "plan": PLAN_NAMES.get(product, "Subscription"),
+            "active": True,
+            "founder": product == "bundle_founder",
+            "stripe_customer_id": sess.get("customer"),
+            "stripe_subscription_id": sub_id,
+            "current_period_end": end_iso,
+            "updated_at": _now()}, on_conflict="user_id").execute()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            f"account created but plan link failed: {exc}") from exc
+
+    return {"ok": True, "email": email,
+            "plan": PLAN_NAMES.get(product, "Subscription"),
+            "existing_account": existing_account,
+            "email_confirmation_required": confirmation_required}
