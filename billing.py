@@ -155,7 +155,6 @@ async def checkout(payload: CheckoutIn, user=Depends(get_current_user),
         "cancel_url": f"{SITE}/pricing.html",
         "client_reference_id": uid,
         "metadata": {"user_id": uid, "product": product},
-        "allow_promotion_codes": False,
     }
     if email:
         params["customer_email"] = email
