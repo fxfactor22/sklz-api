@@ -16,6 +16,7 @@ from auth import router as auth_router
 from bot_ingest import router as bot_router
 from signals import router as signal_router
 from account import router as account_router
+from journal import router as journal_router
 from billing import router as billing_router
 from tv_access import router as tv_router
 from tradegpt import router as gpt_router
@@ -43,6 +44,7 @@ app.include_router(bot_router)
 app.include_router(signal_router)
 app.include_router(gpt_router)
 app.include_router(account_router)
+app.include_router(journal_router)
 app.include_router(billing_router)
 app.include_router(tv_router)
 app.include_router(waitlist_router)
