@@ -170,7 +170,15 @@ async def signal_webhook(key: str, payload: dict,
 
 
 # ── dashboard: recent signals, filtered by the client's entitlements ─
-def _plan_of(sb: Client, uid: str) -> str:
+def _admin_emails() -> set[str]:
+    raw = os.environ.get("ADMIN_EMAILS", "fxfactor24@gmail.com")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def _plan_of(sb: Client, uid: str, email: str = "") -> str:
+    # owner/admin bypass: always full Bundle, no subscription needed
+    if email and email.lower() in _admin_emails():
+        return "Bundle"
     try:
         r = (sb.table("subscriptions").select("plan,active")
              .eq("user_id", uid).execute()).data or []
@@ -185,7 +193,7 @@ def _plan_of(sb: Client, uid: str) -> str:
 @router.get("/entitlements")
 async def entitlements(user=Depends(get_current_user),
                        sb: Client = Depends(get_supabase)) -> dict:
-    plan = _plan_of(sb, str(user.id))
+    plan = _plan_of(sb, str(user.id), getattr(user, "email", ""))
     allowed = PLAN_CATEGORIES.get(plan, [])
     # load the user's saved category preferences (subset of allowed)
     prefs = allowed
@@ -208,7 +216,7 @@ class PrefsIn(BaseModel):
 @router.post("/prefs")
 async def save_prefs(p: PrefsIn, user=Depends(get_current_user),
                      sb: Client = Depends(get_supabase)) -> dict:
-    plan = _plan_of(sb, str(user.id))
+    plan = _plan_of(sb, str(user.id), getattr(user, "email", ""))
     allowed = PLAN_CATEGORIES.get(plan, [])
     chosen = [c for c in p.categories if c in allowed]     # can't enable unentitled
     try:
@@ -227,7 +235,7 @@ async def save_prefs(p: PrefsIn, user=Depends(get_current_user),
 async def feed(user=Depends(get_current_user),
                sb: Client = Depends(get_supabase),
                category: str | None = Query(None), limit: int = 50) -> dict:
-    plan = _plan_of(sb, str(user.id))
+    plan = _plan_of(sb, str(user.id), getattr(user, "email", ""))
     allowed = PLAN_CATEGORIES.get(plan, [])
     if not allowed:
         return {"plan": plan, "allowed": [], "signals": [],

@@ -258,6 +258,13 @@ async def portal(user=Depends(get_current_user),
 @router.get("/status")
 async def status_ep(user=Depends(get_current_user),
                     sb: Client = Depends(get_supabase)) -> dict:
+    # owner/admin bypass: full Bundle, always active
+    import os as _os
+    admins = {e.strip().lower() for e in
+              _os.environ.get("ADMIN_EMAILS", "fxfactor24@gmail.com").split(",")}
+    if (getattr(user, "email", "") or "").lower() in admins:
+        return {"plan": "Bundle (Founder)", "active": True, "founder": True,
+                "current_period_end": None, "owner": True}
     row = _sub_row(sb, str(user.id))
     return {"plan": row.get("plan", "Free"),
             "active": bool(row.get("active")),
