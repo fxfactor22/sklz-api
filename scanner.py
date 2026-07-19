@@ -106,3 +106,163 @@ async def crypto_scan(user=Depends(get_current_user),
             "updated": _CACHE["ts"],
             "movers_up": sorted(rows, key=lambda r: r["score"], reverse=True)[:3],
             "movers_down": sorted(rows, key=lambda r: r["score"])[:3]}
+
+
+# ────────────────────── AI HONEST READ ──────────────────────
+# Directional bias with honest confidence — never a naked "BUY".
+# Describes conditions, flags extended/late setups, gives levels.
+READ_SYSTEM = """You are the SKLZ Scanner's honest read. You analyze live crypto \
+momentum data and give a trader a DIRECTIONAL BIAS with HONEST confidence — never \
+a naked 'buy/sell' hype call.
+
+Non-negotiable stance (this is the SKLZ brand):
+- SKLZ research on 27M ticks showed momentum/'famous' setups are often coin-flips \
+out-of-sample. So when a coin is already extended (big multi-day move), SAY the \
+entry is late and historically a coin-flip. Do NOT cheerlead.
+- Give a bias: "long", "short", or "stand aside". Bias is a lean, not a promise.
+- Always pair bias with honest confidence (low/medium/high) and WHY.
+- Flag chases: if 7d move is large and price is extended, confidence is low and you \
+say so plainly.
+- Give mechanical levels IF they act: entry zone, invalidation, target. Never imply \
+guaranteed profit. Never predict a specific price will be reached.
+- Prefer "stand aside" when the picture is mixed/extended. Protecting the trader \
+from a bad entry is the product.
+
+Return STRICT JSON only:
+{
+ "bias": "long|short|stand aside",
+ "confidence": "low|medium|high",
+ "headline": "one honest sentence",
+ "why": "the read: alignment, whether it's early or extended/late, with the numbers",
+ "if_you_act": {"entry":"zone or price", "invalidation":"level", "target":"level"},
+ "honest_flag": "the main risk — e.g. 'this is a late chase' — or '' if genuinely clean"
+}"""
+
+TOP_SYSTEM = """You are the SKLZ Scanner daily read. From live crypto momentum data, \
+pick the 3 most genuinely interesting LONG-biased setups and the 3 biggest TRAPS \
+(coins that look tempting but are extended/late/coin-flip). Honest, not hype. \
+SKLZ's edge is telling traders the truth: many momentum setups are coin-flips \
+out-of-sample, so 'traps' are as valuable as 'setups'.
+
+Return STRICT JSON only:
+{
+ "setups": [{"symbol":"", "bias":"long|short", "why":"short honest reason with numbers"}],
+ "traps": [{"symbol":"", "why":"why it's tempting but a likely bad entry"}],
+ "note": "one honest line about overall market condition today"
+}"""
+
+
+def _coin_context(sym: str) -> dict | None:
+    data = _CACHE.get("data") or []
+    for c in data:
+        if c["symbol"] == sym.upper():
+            return c
+    return None
+
+
+@router.get("/read/{symbol}")
+async def coin_read(symbol: str, user=Depends(get_current_user)) -> dict:
+    """On-demand honest read for one coin."""
+    import os
+    c = _coin_context(symbol)
+    if not c:
+        # ensure cache is warm
+        try:
+            await crypto_scan(user=user)  # type: ignore
+            c = _coin_context(symbol)
+        except Exception:
+            pass
+    if not c:
+        return {"error": f"{symbol} not in current scan"}
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not key:
+        return {"read": _fallback_read(c)}
+    import json as _json
+    prompt = (f"Live data for {c['symbol']} ({c.get('name')}):\n"
+              f"price ${c.get('price')}, 1h {c.get('h1')}%, 24h {c.get('h24')}%, "
+              f"7d {c.get('d7')}%, momentum score {c.get('score')} ({c.get('read')}), "
+              f"aligned={c.get('aligned')}.\nGive the honest read JSON.")
+    try:
+        import anthropic
+        cl = anthropic.Anthropic(api_key=key)
+        m = cl.messages.create(model="claude-sonnet-4-6", max_tokens=700,
+                               system=READ_SYSTEM,
+                               messages=[{"role": "user", "content": prompt}])
+        t = "".join(b.text for b in m.content if b.type == "text").strip()
+        t = t.removeprefix("```json").removeprefix("```").removesuffix("```")
+        return {"read": _json.loads(t), "coin": c}
+    except Exception as exc:  # noqa: BLE001
+        fb = _fallback_read(c)
+        fb["headline"] = f"(AI unavailable) " + fb["headline"]
+        return {"read": fb, "coin": c}
+
+
+@router.get("/top")
+async def top_read(user=Depends(get_current_user)) -> dict:
+    """Daily top-of-scanner: 3 real setups vs 3 traps."""
+    import os
+    if not _CACHE.get("data"):
+        try:
+            await crypto_scan(user=user)  # type: ignore
+        except Exception:
+            pass
+    data = _CACHE.get("data") or []
+    STABLE = {"USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD"}
+    rows = [r for r in data if r["symbol"] not in STABLE][:40]
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not key or not rows:
+        return {"top": _fallback_top(rows)}
+    import json as _json
+    slim = [{"s": r["symbol"], "h1": r["h1"], "h24": r["h24"], "d7": r["d7"],
+             "score": r["score"], "read": r["read"]} for r in rows]
+    try:
+        import anthropic
+        cl = anthropic.Anthropic(api_key=key)
+        m = cl.messages.create(model="claude-sonnet-4-6", max_tokens=900,
+                               system=TOP_SYSTEM,
+                               messages=[{"role": "user",
+                                          "content": f"Live scan:\n{_json.dumps(slim)}\n\nReturn JSON."}])
+        t = "".join(b.text for b in m.content if b.type == "text").strip()
+        t = t.removeprefix("```json").removeprefix("```").removesuffix("```")
+        return {"top": _json.loads(t)}
+    except Exception as exc:  # noqa: BLE001
+        return {"top": _fallback_top(rows)}
+
+
+def _fallback_read(c: dict) -> dict:
+    extended = abs(c.get("d7") or 0) > 20
+    aligned = c.get("aligned")
+    score = c.get("score") or 0
+    if aligned and not extended and score > 0.2:
+        bias, conf = "long", "medium"
+    elif aligned and not extended and score < -0.2:
+        bias, conf = "short", "medium"
+    else:
+        bias, conf = "stand aside", "low"
+    flag = ""
+    if extended and score > 0:
+        bias, conf = "stand aside", "low"
+        flag = f"late chase — already +{c.get('d7')}% on 7d"
+    return {"bias": bias, "confidence": conf,
+            "headline": f"{c['symbol']} is {c.get('read')} "
+                        f"(1h {c.get('h1')}%, 24h {c.get('h24')}%, 7d {c.get('d7')}%)",
+            "why": ("aligned across timeframes and not yet extended"
+                    if (aligned and not extended)
+                    else "mixed or extended — not a clean entry"),
+            "if_you_act": {"entry": f"~${c.get('price')}",
+                           "invalidation": "below recent structure",
+                           "target": "prior swing / next level"},
+            "honest_flag": flag or ("add ANTHROPIC_API_KEY for full AI read")}
+
+
+def _fallback_top(rows: list) -> dict:
+    ups = sorted([r for r in rows if not (abs(r.get("d7") or 0) > 25)],
+                 key=lambda r: r["score"], reverse=True)[:3]
+    traps = sorted([r for r in rows if (abs(r.get("d7") or 0) > 25 and r["score"] > 0)],
+                   key=lambda r: r.get("d7") or 0, reverse=True)[:3]
+    return {"setups": [{"symbol": r["symbol"], "bias": "long" if r["score"] > 0 else "short",
+                        "why": f"{r['read']}, 7d {r['d7']}%"} for r in ups],
+            "traps": [{"symbol": r["symbol"],
+                       "why": f"extended +{r['d7']}% on 7d — late entry"} for r in traps],
+            "note": "Deterministic read (add ANTHROPIC_API_KEY for full analysis). "
+                    "Extended movers are flagged as traps, not setups."}
