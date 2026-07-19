@@ -274,6 +274,39 @@ async def status_ep(user=Depends(get_current_user),
 
 # ------------------------------------------------------------------ webhook
 @router.post("/webhook")
+def _partner_payment(uid: str, price: float, active: bool, email: str = "") -> None:
+    """Tell the partner engine a referred customer paid — recurring commission."""
+    import os, urllib.request, json as _json
+    try:
+        key = os.environ.get("INTERNAL_KEY", "") or os.environ.get("BOT_INGEST_KEY", "")
+        base = os.environ.get("SELF_API_URL", "https://api.sklzlabs.com")
+        if not key or not uid:
+            return
+        body = _json.dumps({"customer_user_id": uid, "price": price,
+                            "active": active, "email": email}).encode()
+        req = urllib.request.Request(base + "/api/partner/payment", data=body,
+                                     headers={"Authorization": "Bearer " + key,
+                                              "Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=8)
+    except Exception:
+        pass
+
+
+def _partner_churn(uid: str) -> None:
+    import os, urllib.request
+    try:
+        key = os.environ.get("INTERNAL_KEY", "") or os.environ.get("BOT_INGEST_KEY", "")
+        base = os.environ.get("SELF_API_URL", "https://api.sklzlabs.com")
+        if not key or not uid:
+            return
+        req = urllib.request.Request(base + "/api/partner/churn?customer_user_id=" + uid,
+                                     data=b"", method="POST",
+                                     headers={"Authorization": "Bearer " + key})
+        urllib.request.urlopen(req, timeout=8)
+    except Exception:
+        pass
+
+
 def _credit_referrer(uid: str) -> None:
     """If this user was referred, credit the referrer via the affiliate endpoint."""
     import os, urllib.request
@@ -344,9 +377,27 @@ async def webhook(request: Request,
         if active:
             _credit_referrer(uid)
 
+    elif etype == "invoice.paid":
+        # recurring monthly payment cleared -> partner commission (if referred)
+        cust = obj.get("customer")
+        amount = (obj.get("amount_paid") or 0) / 100.0
+        uid = ""
+        try:
+            row = (sb.table("subscriptions").select("user_id,plan")
+                   .eq("stripe_customer_id", cust).execute()).data
+            if row:
+                uid = row[0]["user_id"]
+                plan = (row[0].get("plan") or "").lower()
+        except Exception:
+            plan = ""
+        # only membership/bundle earns commission; TradeGPT and others do not
+        if uid and ("bundle" in plan or "membership" in plan):
+            _partner_payment(uid, amount if amount in (39.0, 49.0) else 49.0, True)
+
     elif etype == "customer.subscription.deleted":
         uid = (obj.get("metadata") or {}).get("user_id", "")
         upsert(uid, {"active": False})
+        _partner_churn(uid)
 
     return {"received": True}
 
@@ -412,7 +463,8 @@ async def admin_setup(user=Depends(get_current_user),
             enabled_events=["checkout.session.completed",
                             "customer.subscription.created",
                             "customer.subscription.updated",
-                            "customer.subscription.deleted"])
+                            "customer.subscription.deleted",
+                            "invoice.paid"])
         created["webhook"] = "created"
         created["webhook_secret_SAVE_TO_RAILWAY"] = wh.secret
     return created
