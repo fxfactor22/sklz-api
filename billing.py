@@ -274,6 +274,24 @@ async def status_ep(user=Depends(get_current_user),
 
 # ------------------------------------------------------------------ webhook
 @router.post("/webhook")
+def _credit_referrer(uid: str) -> None:
+    """If this user was referred, credit the referrer via the affiliate endpoint."""
+    import os, urllib.request
+    try:
+        key = os.environ.get("INTERNAL_KEY", "") or os.environ.get("BOT_INGEST_KEY", "")
+        base = os.environ.get("SELF_API_URL", "https://api.sklzlabs.com")
+        if not key or not uid:
+            return
+        req = urllib.request.Request(
+            base + "/api/affiliate/convert?referred_user_id=" + uid,
+            data=b"", method="POST",
+            headers={"Authorization": "Bearer " + key})
+        urllib.request.urlopen(req, timeout=8)
+    except Exception:
+        pass
+
+
+
 async def webhook(request: Request,
                   stripe_signature: str = Header(default=""),
                   sb: Client = Depends(get_supabase)) -> dict:
@@ -307,6 +325,7 @@ async def webhook(request: Request,
             fields.update({"plan": PLAN_NAMES.get(product, "Indicator Suite — Lifetime"),
                            "active": True, "current_period_end": None})
         upsert(uid, fields)
+        _credit_referrer(uid)
 
     elif etype in ("customer.subscription.created", "customer.subscription.updated"):
         meta = obj.get("metadata") or {}
@@ -322,6 +341,8 @@ async def webhook(request: Request,
                      "stripe_customer_id": obj.get("customer"),
                      "stripe_subscription_id": obj.get("id"),
                      "current_period_end": end_iso})
+        if active:
+            _credit_referrer(uid)
 
     elif etype == "customer.subscription.deleted":
         uid = (obj.get("metadata") or {}).get("user_id", "")
