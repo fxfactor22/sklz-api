@@ -24,16 +24,30 @@ from auth import get_current_user
 router = APIRouter(prefix="/api/scanner", tags=["scanner"])
 
 _CACHE: dict = {"ts": 0.0, "data": None}
-_TTL = 60                      # seconds — respect CoinGecko rate limits
+_TTL = 90                      # seconds — respect CoinGecko rate limits
 
 
 def _fetch_markets(n: int = 100) -> list[dict]:
     url = ("https://api.coingecko.com/api/v3/coins/markets"
            "?vs_currency=usd&order=market_cap_desc"
            f"&per_page={n}&page=1&price_change_percentage=1h,24h,7d")
-    req = urllib.request.Request(url, headers={"User-Agent": "SKLZ-Scanner/1.0"})
-    with urllib.request.urlopen(req, timeout=12) as r:
-        return json.loads(r.read().decode())
+    headers = {"User-Agent": "Mozilla/5.0 (SKLZ Scanner)",
+               "Accept": "application/json"}
+    # optional API key support if you add one later (COINGECKO_API_KEY)
+    import os as _os
+    k = _os.environ.get("COINGECKO_API_KEY", "")
+    if k:
+        headers["x-cg-demo-api-key"] = k
+    last = None
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=12) as r:
+                return json.loads(r.read().decode())
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            time.sleep(1.5 * (attempt + 1))
+    raise last if last else RuntimeError("fetch failed")
 
 
 def _score(c: dict) -> dict:
@@ -166,14 +180,7 @@ async def coin_read(symbol: str, user=Depends(get_current_user)) -> dict:
     import os
     c = _coin_context(symbol)
     if not c:
-        # ensure cache is warm
-        try:
-            await crypto_scan(user=user)  # type: ignore
-            c = _coin_context(symbol)
-        except Exception:
-            pass
-    if not c:
-        return {"error": f"{symbol} not in current scan"}
+        return {"error": f"{symbol} not in current scan — open the scanner first"}
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not key:
         return {"read": _fallback_read(c)}
@@ -201,11 +208,6 @@ async def coin_read(symbol: str, user=Depends(get_current_user)) -> dict:
 async def top_read(user=Depends(get_current_user)) -> dict:
     """Daily top-of-scanner: 3 real setups vs 3 traps."""
     import os
-    if not _CACHE.get("data"):
-        try:
-            await crypto_scan(user=user)  # type: ignore
-        except Exception:
-            pass
     data = _CACHE.get("data") or []
     STABLE = {"USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD"}
     rows = [r for r in data if r["symbol"] not in STABLE][:40]
