@@ -19,6 +19,7 @@ from account import router as account_router
 from journal import router as journal_router
 from signals_engine import router as signals_router
 from scanner import router as scanner_router
+from academy import router as academy_router
 from billing import router as billing_router
 from tv_access import router as tv_router
 from tradegpt import router as gpt_router
@@ -49,6 +50,7 @@ app.include_router(account_router)
 app.include_router(journal_router)
 app.include_router(signals_router)
 app.include_router(scanner_router)
+app.include_router(academy_router)
 app.include_router(billing_router)
 app.include_router(tv_router)
 app.include_router(waitlist_router)
