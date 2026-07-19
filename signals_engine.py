@@ -120,11 +120,10 @@ def format_signal(sig: dict) -> str:
     )
 
 
-def send_to_telegram(category: str, text: str) -> dict:
+def _post_telegram(chat: str, text: str) -> bool:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat = _tg_channel(category)
     if not token or not chat:
-        return {"sent": False, "reason": "telegram not configured for " + category}
+        return False
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     body = json.dumps({"chat_id": chat, "text": text,
                        "parse_mode": "Markdown",
@@ -133,10 +132,34 @@ def send_to_telegram(category: str, text: str) -> dict:
         req = urllib.request.Request(url, data=body,
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=10) as r:
-            res = json.loads(r.read().decode())
-        return {"sent": res.get("ok", False)}
-    except Exception as exc:  # noqa: BLE001
-        return {"sent": False, "reason": f"{type(exc).__name__}: {exc}"}
+            return json.loads(r.read().decode()).get("ok", False)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _general_channel() -> str:
+    # public/marketing channel that receives ALL signals. Accept several names.
+    for name in ("TG_CHANNEL_SIGNALS", "TG_CHANNEL_GENERAL", "TG_CHANNEL_ALL",
+                 "TG_CHANNEL_PUBLIC", "TG_CHANNEL_MARKETING", "TG_CHANNEL_MAIN"):
+        v = os.environ.get(name, "")
+        if v:
+            return v
+    return ""
+
+
+def send_to_telegram(category: str, text: str) -> dict:
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    if not token:
+        return {"sent": False, "reason": "TELEGRAM_BOT_TOKEN not set"}
+    cat_chat = _tg_channel(category)
+    gen_chat = _general_channel()
+    cat_ok = _post_telegram(cat_chat, text) if cat_chat else False
+    # every signal also goes to the public/marketing channel
+    gen_ok = _post_telegram(gen_chat, text) if gen_chat else None
+    return {"sent": bool(cat_ok or gen_ok),
+            "category_channel": cat_ok,
+            "general_channel": gen_ok,
+            "reason": None if cat_chat else f"no channel configured for {category}"}
 
 
 # ── webhook: TradingView Radar -> enriched signal -> channel ─────────
