@@ -187,7 +187,8 @@ async def get_command(bot_name: str, _=Depends(require_bot_key),
             sb.table("bot_orders").update({"status": "delivered"}) \
                 .eq("id", r["id"]).execute()
             orders.append({"symbol": r["symbol"], "side": r["side"],
-                           "note": r.get("note", "")})
+                           "note": r.get("note", ""), "lots": r.get("lots", 0),
+                           "sl": r.get("sl", 0), "tp": r.get("tp", 0)})
     except Exception:
         pass
     return {"ok": True, "command": _bot_command(sb, bot_name), "orders": orders}
@@ -202,6 +203,9 @@ class OrderIn(_BM):
     symbol: str
     side: str            # buy | sell
     note: str = ""
+    lots: float = 0.0
+    sl: float = 0.0
+    tp: float = 0.0
 
 
 def _is_admin_user(user) -> bool:
@@ -222,6 +226,7 @@ async def place_order(body: OrderIn, user=Depends(get_current_user),
         sb.table("bot_orders").insert({
             "bot_name": body.bot_name, "symbol": body.symbol.upper(),
             "side": body.side, "note": body.note[:300],
+            "lots": body.lots, "sl": body.sl, "tp": body.tp,
             "status": "pending", "created_by": str(user.id)}).execute()
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": str(exc)[:200]}
