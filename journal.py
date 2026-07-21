@@ -521,7 +521,7 @@ async def toggle_share(account_id: str, public: bool,
         raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)[:200]) from exc
-    site = os.environ.get("SITE_URL", "https://www.sklzlabs.com")
+    site = os.environ.get("SITE_URL") or "https://www.sklzlabs.com"
     return {"ok": True, "public": public,
             "share_link": f"{site}/perf.html?c={code}" if public else ""}
 
