@@ -177,5 +177,52 @@ async def control(bot_name: str, command: str,
 @router.get("/command")
 async def get_command(bot_name: str, _=Depends(require_bot_key),
                       sb: Client = Depends(get_supabase)) -> dict:
-    """Runner polls this for its dashboard command. run | pause."""
-    return {"ok": True, "command": _bot_command(sb, bot_name)}
+    """Runner polls: dashboard command (run|pause) + any queued manual orders."""
+    orders = []
+    try:
+        rows = (sb.table("bot_orders").select("*")
+                .eq("bot_name", bot_name).eq("status", "pending")
+                .limit(5).execute()).data or []
+        for r in rows:
+            sb.table("bot_orders").update({"status": "delivered"}) \
+                .eq("id", r["id"]).execute()
+            orders.append({"symbol": r["symbol"], "side": r["side"],
+                           "note": r.get("note", "")})
+    except Exception:
+        pass
+    return {"ok": True, "command": _bot_command(sb, bot_name), "orders": orders}
+
+
+# ── admin manual orders from dashboard ──────────────────────────────
+from pydantic import BaseModel as _BM
+
+
+class OrderIn(_BM):
+    bot_name: str
+    symbol: str
+    side: str            # buy | sell
+    note: str = ""
+
+
+def _is_admin_user(user) -> bool:
+    admins = {e.strip().lower() for e in
+              os.environ.get("ADMIN_EMAILS", "fxfactor24@gmail.com").split(",")}
+    return (getattr(user, "email", "") or "").lower() in admins
+
+
+@router.post("/order")
+async def place_order(body: OrderIn, user=Depends(get_current_user),
+                      sb: Client = Depends(get_supabase)) -> dict:
+    """Admin-only: queue a manual entry for the bot to execute on next poll."""
+    if not _is_admin_user(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+    if body.side not in ("buy", "sell"):
+        return {"ok": False, "reason": "side must be buy|sell"}
+    try:
+        sb.table("bot_orders").insert({
+            "bot_name": body.bot_name, "symbol": body.symbol.upper(),
+            "side": body.side, "note": body.note[:300],
+            "status": "pending", "created_by": str(user.id)}).execute()
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "reason": str(exc)[:200]}
+    return {"ok": True, "note": "order queued — bot executes within ~30s"}
