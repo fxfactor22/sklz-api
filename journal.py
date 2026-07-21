@@ -478,3 +478,68 @@ async def account_analytics(account_id: str, user=Depends(get_current_user),
     except Exception:
         trades = []
     return {"analytics": compute_analytics(trades), "count": len(trades)}
+
+
+# ────────────────────── public performance (shareable) ──────────────────────
+import hashlib as _hl
+
+
+def _share_code(account_id: str) -> str:
+    return _hl.sha256(account_id.encode()).hexdigest()[:10]
+
+
+@router.post("/accounts/{account_id}/share")
+async def toggle_share(account_id: str, public: bool,
+                       user=Depends(get_current_user),
+                       sb: Client = Depends(get_supabase)) -> dict:
+    """Make an account's performance public (or private). Returns the share link."""
+    try:
+        own = (sb.table("journal_accounts").select("id")
+               .eq("id", account_id).eq("user_id", str(user.id)).execute()).data
+        if not own:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+        code = _share_code(account_id) if public else ""
+        sb.table("journal_accounts").update(
+            {"public": public, "share_code": code}).eq("id", account_id).execute()
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)[:200]) from exc
+    site = os.environ.get("SITE_URL", "https://www.sklzlabs.com")
+    return {"ok": True, "public": public,
+            "share_link": f"{site}/p/{code}" if public else ""}
+
+
+@router.get("/public/{share_code}")
+async def public_performance(share_code: str,
+                             sb: Client = Depends(get_supabase)) -> dict:
+    """PUBLIC — no auth. Read-only performance for a shared account."""
+    try:
+        acct = (sb.table("journal_accounts").select("*")
+                .eq("share_code", share_code).eq("public", True).execute()).data
+    except Exception:
+        acct = None
+    if not acct:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found or not public")
+    a = acct[0]
+    try:
+        trades = (sb.table("journal_trades").select("*")
+                  .eq("account_id", a["id"]).order("opened_at").execute()).data or []
+    except Exception:
+        trades = []
+    # honest data-source label: MT5-tracked (from bot) vs manually logged
+    bot_trades = sum(1 for t in trades if t.get("source") in ("bot", "dashboard"))
+    manual_trades = len(trades) - bot_trades
+    source = ("MT5-tracked" if a.get("connected") and bot_trades >= manual_trades
+              else "manually logged" if manual_trades > bot_trades
+              else "mixed")
+    return {
+        "account": {"label": a["label"], "platform": a["platform"],
+                    "broker": a["broker"], "server": a["server"],
+                    "account_no": a["account_no"], "kind": a["kind"],
+                    "connected": a.get("connected", False)},
+        "data_source": source,
+        "analytics": compute_analytics(trades),
+        "trade_count": len(trades),
+        "generated": _now(),
+    }
