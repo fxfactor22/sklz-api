@@ -231,3 +231,10 @@ async def place_order(body: OrderIn, user=Depends(get_current_user),
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": str(exc)[:200]}
     return {"ok": True, "note": "order queued — bot executes within ~30s"}
+
+
+@router.get("/state")
+async def bot_state(bot_name: str, user=Depends(get_current_user),
+                    sb: Client = Depends(get_supabase)) -> dict:
+    """Current desired state for a bot, for the dashboard to reflect."""
+    return {"ok": True, "bot_name": bot_name, "state": _bot_command(sb, bot_name)}
