@@ -58,6 +58,9 @@ class TradeIn(BaseModel):
     closed_at: str | None = None
     setup: str = ""                        # e.g. "London sweep", "SMC OB"
     reason: str = ""                       # WHY — the trader's thesis
+    account_no: str = ""
+    server: str = ""
+    account_id: str = ""
     session: str = ""                      # london|ny|asia|...
     tags: list[str] = Field(default_factory=list)
     grade: str = ""                        # A|B|C|D self-grade of execution
@@ -146,8 +149,11 @@ async def list_trades(user=Depends(get_current_user),
                       frm: str | None = Query(None, alias="from"),
                       to: str | None = None, symbol: str | None = None,
                       setup: str | None = None, outcome: str | None = None,
+                      account_id: str | None = None,
                       limit: int = 200) -> dict:
     q = (sb.table("journal_trades").select("*").eq("user_id", str(user.id)))
+    if account_id:
+        q = q.eq("account_id", account_id)
     if symbol:
         q = q.eq("symbol", symbol.upper())
     if setup:
@@ -343,6 +349,8 @@ def _deterministic_review(stats: dict) -> dict:
 class BotTradeIn(BaseModel):
     user_id: str
     trades: list[TradeIn]
+    account_no: str = ""
+    server: str = ""
 
 
 @router.post("/ingest")
@@ -354,6 +362,26 @@ async def bot_ingest(payload: BotTradeIn,
     token = authorization.replace("Bearer ", "").strip()
     if not expected or token != expected:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid bot key")
+    # auto-register the account this bot pushes to (connected=true)
+    acct_id = ""
+    if payload.account_no:
+        try:
+            ex = (sb.table("journal_accounts").select("id")
+                  .eq("user_id", payload.user_id)
+                  .eq("account_no", payload.account_no)
+                  .eq("server", payload.server).execute()).data
+            if ex:
+                acct_id = ex[0]["id"]
+            else:
+                ins = sb.table("journal_accounts").insert({
+                    "user_id": payload.user_id,
+                    "label": f"{payload.server or 'Account'} {payload.account_no}",
+                    "platform": "MT5", "server": payload.server,
+                    "account_no": payload.account_no, "connected": True,
+                    "kind": "demo"}).execute()
+                acct_id = (ins.data or [{}])[0].get("id", "")
+        except Exception:
+            pass
     rows = []
     for t in payload.trades:
         rows.append({
@@ -362,7 +390,9 @@ async def bot_ingest(payload: BotTradeIn,
             "exit_price": t.exit_price, "lots": t.lots, "pnl": t.pnl,
             "r_multiple": t.r_multiple, "opened_at": t.opened_at or _now(),
             "closed_at": t.closed_at, "setup": t.setup, "reason": t.reason,
-            "session": t.session, "tags": t.tags, "source": "bot",
+            "session": t.session, "tags": t.tags, "source": t.source if hasattr(t, "source") else "bot",
+            "account_no": payload.account_no, "server": payload.server,
+            "account_id": acct_id or None,
             "outcome": _outcome(t.pnl), "created_at": _now()})
     if rows:
         try:
@@ -371,3 +401,68 @@ async def bot_ingest(payload: BotTradeIn,
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
                                 f"ingest failed: {exc}") from exc
     return {"ok": True, "ingested": len(rows)}
+
+
+# ────────────────────────── accounts (multi-account) ──────────────────────────
+class AccountIn(BaseModel):
+    label: str
+    platform: str = "MT5"          # MT5 | MT4 | cTrader | MatchTrader | custom
+    broker: str = ""
+    server: str = ""
+    account_no: str = ""
+    kind: str = "demo"             # demo | live | prop
+
+
+@router.get("/accounts")
+async def list_accounts(user=Depends(get_current_user),
+                        sb: Client = Depends(get_supabase)) -> dict:
+    try:
+        rows = (sb.table("journal_accounts").select("*")
+                .eq("user_id", str(user.id))
+                .order("created_at").execute()).data or []
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            f"could not load accounts: {exc}") from exc
+    # attach per-account trade count + net pnl
+    for a in rows:
+        try:
+            t = (sb.table("journal_trades").select("pnl")
+                 .eq("user_id", str(user.id)).eq("account_id", a["id"]).execute()).data or []
+            a["trade_count"] = len(t)
+            a["net_pnl"] = round(sum((x.get("pnl") or 0) for x in t), 2)
+        except Exception:
+            a["trade_count"] = 0
+            a["net_pnl"] = 0
+    return {"accounts": rows}
+
+
+@router.post("/accounts")
+async def create_account(body: AccountIn, user=Depends(get_current_user),
+                         sb: Client = Depends(get_supabase)) -> dict:
+    row = {"user_id": str(user.id), **body.model_dump(), "connected": False}
+    try:
+        res = sb.table("journal_accounts").insert(row).execute()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            f"could not create account: {exc}") from exc
+    return {"ok": True, "account": (res.data or [row])[0]}
+
+
+@router.delete("/accounts/{account_id}")
+async def delete_account(account_id: str, user=Depends(get_current_user),
+                         sb: Client = Depends(get_supabase)) -> dict:
+    sb.table("journal_accounts").delete().eq("id", account_id) \
+        .eq("user_id", str(user.id)).execute()
+    return {"ok": True}
+
+
+@router.get("/accounts/{account_id}/analytics")
+async def account_analytics(account_id: str, user=Depends(get_current_user),
+                            sb: Client = Depends(get_supabase)) -> dict:
+    try:
+        trades = (sb.table("journal_trades").select("*")
+                  .eq("user_id", str(user.id)).eq("account_id", account_id)
+                  .order("opened_at").execute()).data or []
+    except Exception:
+        trades = []
+    return {"analytics": compute_analytics(trades), "count": len(trades)}
