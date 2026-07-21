@@ -439,6 +439,18 @@ async def list_accounts(user=Depends(get_current_user),
 @router.post("/accounts")
 async def create_account(body: AccountIn, user=Depends(get_current_user),
                          sb: Client = Depends(get_supabase)) -> dict:
+    # if this account_no+server already exists (e.g. auto-registered by the bot),
+    # return it instead of erroring on the unique constraint
+    if body.account_no:
+        try:
+            ex = (sb.table("journal_accounts").select("*")
+                  .eq("user_id", str(user.id))
+                  .eq("account_no", body.account_no)
+                  .eq("server", body.server).execute()).data
+            if ex:
+                return {"ok": True, "account": ex[0], "existing": True}
+        except Exception:
+            pass
     row = {"user_id": str(user.id), **body.model_dump(), "connected": False}
     try:
         res = sb.table("journal_accounts").insert(row).execute()
