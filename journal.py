@@ -61,6 +61,7 @@ class TradeIn(BaseModel):
     account_no: str = ""
     server: str = ""
     account_id: str = ""
+    position_id: str = ""
     session: str = ""                      # london|ny|asia|...
     tags: list[str] = Field(default_factory=list)
     grade: str = ""                        # A|B|C|D self-grade of execution
@@ -382,8 +383,22 @@ async def bot_ingest(payload: BotTradeIn,
                 acct_id = (ins.data or [{}])[0].get("id", "")
         except Exception:
             pass
+    # server-side dedup: fetch existing position_ids for this user (survives restarts)
+    existing_pids = set()
+    try:
+        pid_rows = (sb.table("journal_trades").select("position_id")
+                    .eq("user_id", payload.user_id)
+                    .neq("position_id", "").limit(2000).execute()).data or []
+        existing_pids = {r.get("position_id") for r in pid_rows if r.get("position_id")}
+    except Exception:
+        pass
     rows = []
     for t in payload.trades:
+        pid = getattr(t, "position_id", "") or ""
+        if pid and pid in existing_pids:
+            continue                       # already journaled — skip duplicate
+        if pid:
+            existing_pids.add(pid)         # guard against dupes within this batch too
         rows.append({
             "user_id": payload.user_id, "symbol": t.symbol.upper(),
             "side": t.side.lower(), "entry_price": t.entry_price,
@@ -393,6 +408,7 @@ async def bot_ingest(payload: BotTradeIn,
             "session": t.session, "tags": t.tags, "source": t.source if hasattr(t, "source") else "bot",
             "account_no": payload.account_no, "server": payload.server,
             "account_id": acct_id or None,
+            "position_id": getattr(t, "position_id", "") or "",
             "outcome": _outcome(t.pnl), "created_at": _now()})
     if rows:
         try:
