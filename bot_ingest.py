@@ -73,6 +73,16 @@ class ReportIn(BaseModel):
 
 
 # ------------------------------------------------------------------ ingest
+
+
+def _bot_command(sb: Client, bot_name: str) -> str:
+    try:
+        r = (sb.table("bot_controls").select("desired_state")
+             .eq("bot_name", bot_name).execute()).data
+        return (r[0].get("desired_state") or "run") if r else "run"
+    except Exception:
+        return "run"
+
 @router.post("/heartbeat", dependencies=[Depends(require_bot_key)])
 async def heartbeat(payload: HeartbeatIn, sb: Client = Depends(get_supabase)) -> dict:
     now = datetime.now(timezone.utc).isoformat()
@@ -83,7 +93,8 @@ async def heartbeat(payload: HeartbeatIn, sb: Client = Depends(get_supabase)) ->
                 "balance": payload.balance,
                 "stats": payload.stats, "mode": payload.mode,
             }).eq("id", payload.session_id).execute()
-            return {"ok": True, "session_id": payload.session_id}
+            return {"ok": True, "session_id": payload.session_id,
+                    "command": _bot_command(sb, payload.bot_name)}
         res = sb.table("bot_sessions").insert({
             "bot_key": "default", "bot": payload.bot, "symbol": payload.symbol,
             "timeframe": payload.timeframe, "mode": payload.mode,
@@ -91,7 +102,8 @@ async def heartbeat(payload: HeartbeatIn, sb: Client = Depends(get_supabase)) ->
             "stats": payload.stats, "last_seen": now,
         }).execute()
         sid = res.data[0]["id"] if res.data else None
-        return {"ok": True, "session_id": sid}
+        return {"ok": True, "session_id": sid,
+                "command": _bot_command(sb, payload.bot_name)}
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001 — name the real failure
@@ -138,3 +150,25 @@ async def session_events(session_id: str, limit: int = 100,
              .eq("session_id", session_id)
              .order("id", desc=True).limit(limit).execute())
     return {"events": res.data or []}
+
+
+from auth import get_current_user  # noqa: E402
+
+
+@router.post("/control")
+async def control(bot_name: str, command: str,
+                  user=Depends(get_current_user),
+                  sb: Client = Depends(get_supabase)) -> dict:
+    """Dashboard start/pause for a bot. command: run | pause.
+    Delivered to the runner on its next heartbeat (within ~30s)."""
+    if command not in ("run", "pause"):
+        return {"ok": False, "reason": "command must be run|pause"}
+    try:
+        sb.table("bot_controls").upsert(
+            {"bot_name": bot_name, "desired_state": command,
+             "updated_by": str(user.id)},
+            on_conflict="bot_name").execute()
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "reason": str(exc)[:200]}
+    return {"ok": True, "bot_name": bot_name, "command": command,
+            "note": "applies at next heartbeat (~30s)"}
