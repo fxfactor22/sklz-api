@@ -94,7 +94,7 @@ async def heartbeat(payload: HeartbeatIn, sb: Client = Depends(get_supabase)) ->
                 "stats": payload.stats, "mode": payload.mode,
             }).eq("id", payload.session_id).execute()
             return {"ok": True, "session_id": payload.session_id,
-                    "command": _bot_command(sb, payload.bot_name)}
+                    "command": _bot_command(sb, payload.bot)}
         res = sb.table("bot_sessions").insert({
             "bot_key": "default", "bot": payload.bot, "symbol": payload.symbol,
             "timeframe": payload.timeframe, "mode": payload.mode,
@@ -103,7 +103,7 @@ async def heartbeat(payload: HeartbeatIn, sb: Client = Depends(get_supabase)) ->
         }).execute()
         sid = res.data[0]["id"] if res.data else None
         return {"ok": True, "session_id": sid,
-                "command": _bot_command(sb, payload.bot_name)}
+                "command": _bot_command(sb, payload.bot)}
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001 — name the real failure
