@@ -507,7 +507,7 @@ async def toggle_share(account_id: str, public: bool,
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)[:200]) from exc
     site = os.environ.get("SITE_URL", "https://www.sklzlabs.com")
     return {"ok": True, "public": public,
-            "share_link": f"{site}/p/{code}" if public else ""}
+            "share_link": f"{site}/perf.html?c={code}" if public else ""}
 
 
 @router.get("/public/{share_code}")
