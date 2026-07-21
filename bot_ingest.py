@@ -172,3 +172,10 @@ async def control(bot_name: str, command: str,
         return {"ok": False, "reason": str(exc)[:200]}
     return {"ok": True, "bot_name": bot_name, "command": command,
             "note": "applies at next heartbeat (~30s)"}
+
+
+@router.get("/command")
+async def get_command(bot_name: str, _=Depends(require_bot_key),
+                      sb: Client = Depends(get_supabase)) -> dict:
+    """Runner polls this for its dashboard command. run | pause."""
+    return {"ok": True, "command": _bot_command(sb, bot_name)}
