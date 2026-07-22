@@ -114,6 +114,8 @@ async def signup(payload: SignupIn, request: Request,
         })
     except Exception as exc:  # Supabase raises on duplicate / weak password etc.
         msg = str(exc)
+        import sys as _s
+        print(f"[signup-error] {type(exc).__name__}: {msg}", file=_s.stderr, flush=True)
         # Supabase already hides account-existence in most cases; keep generic.
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "Could not create account. " + _clean(msg))
