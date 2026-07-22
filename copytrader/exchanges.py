@@ -154,10 +154,15 @@ class ExchangeAdapter:
                 res = (r or {}).get("result", {}) or {}
                 perms = res.get("permissions", {}) or {}
                 spot = perms.get("Spot") or []
-                wallet = perms.get("Wallet") or []
+                # readOnly: 1 = read-only key, 0 = read/write
+                read_only = str(res.get("readOnly", "")) == "1"
+                # fail-safe: look for ANY withdrawal right anywhere in the
+                # permission tree, not just the Wallet section
+                withdraw = "withdraw" in str(perms).lower()
                 return {"known": True,
-                        "trade": bool(spot),
-                        "withdraw": any("Withdraw" in str(p) for p in wallet),
+                        "trade": bool(spot) and not read_only,
+                        "withdraw": withdraw,
+                        "read_only": read_only,
                         "raw": res}
             if self.exchange_id == "kucoin":
                 # KuCoin returns permissions on the key info endpoint
