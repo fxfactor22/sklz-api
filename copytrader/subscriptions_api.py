@@ -103,6 +103,7 @@ async def public_leaders(sb: Client = Depends(get_supabase)) -> dict:
         rows = (sb.table("copy_leaders")
                 .select("id,display_name,headline,bio,strategy,country,follower_count,created_at")
                 .eq("is_public", True).eq("status", "active")
+                .eq("approval_status", "approved")
                 .order("follower_count", desc=True).limit(100).execute()).data or []
     except Exception:
         rows = []
@@ -188,6 +189,9 @@ async def subscribe(body: SubscribeIn, request: Request,
     if leader[0].get("status") != "active":
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "this leader is not currently accepting followers")
+    if leader[0].get("approval_status") not in (None, "approved"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "this trader has not been approved as a master trader yet")
 
     # confirm the follower actually holds the capital they are allocating
     try:
