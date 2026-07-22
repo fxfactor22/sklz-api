@@ -20,13 +20,13 @@ from db import get_supabase
 router = APIRouter(prefix="/api/account", tags=["account"])
 
 # Affiliate tiers — real thresholds, 50% commission on software revenue.
+# Partner Program levels — must match partner.py (single source of truth).
+# Based on ACTIVE CUSTOMERS, not raw referrals. 50% recurring at every level.
 TIERS = [
-    ("Starter",  0,   50),
-    ("Bronze",   3,   50),
-    ("Silver",   10,  50),
-    ("Gold",     25,  50),
-    ("Platinum", 60,  50),
-    ("Elite",    150, 50),
+    ("Partner",       0,   50),
+    ("Elite Partner", 25,  50),
+    ("Ambassador",    100, 50),
+    ("Legend",        500, 50),
 ]
 
 

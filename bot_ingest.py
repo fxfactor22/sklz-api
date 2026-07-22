@@ -22,6 +22,15 @@ from pydantic import BaseModel, Field
 from supabase import Client
 
 from auth import get_current_user
+
+
+def _require_admin(user):
+    """Bot control is owner-only until per-user bot ownership ships."""
+    admins = {e.strip().lower() for e in
+              os.environ.get("ADMIN_EMAILS", "fxfactor24@gmail.com").split(",")}
+    if (getattr(user, "email", "") or "").lower() not in admins:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "Bot control is limited to the account owner.")
 from db import get_supabase
 
 router = APIRouter(prefix="/api/bot", tags=["bot"])
@@ -161,6 +170,7 @@ async def control(bot_name: str, command: str,
                   sb: Client = Depends(get_supabase)) -> dict:
     """Dashboard start/pause for a bot. command: run | pause.
     Delivered to the runner on its next heartbeat (within ~30s)."""
+    _require_admin(user)
     if command not in ("run", "pause"):
         return {"ok": False, "reason": "command must be run|pause"}
     try:
@@ -237,4 +247,5 @@ async def place_order(body: OrderIn, user=Depends(get_current_user),
 async def bot_state(bot_name: str, user=Depends(get_current_user),
                     sb: Client = Depends(get_supabase)) -> dict:
     """Current desired state for a bot, for the dashboard to reflect."""
+    _require_admin(user)
     return {"ok": True, "bot_name": bot_name, "state": _bot_command(sb, bot_name)}
