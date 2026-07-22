@@ -20,6 +20,7 @@ from journal import router as journal_router
 from marketplace import router as marketplace_router
 from copytrader.connections_api import router as copy_router
 from copytrader.subscriptions_api import router as copy_subs_router
+from copytrader.execution_api import router as copy_exec_router
 from signals_engine import router as signals_router
 from scanner import router as scanner_router
 from academy import router as academy_router
@@ -56,6 +57,7 @@ app.include_router(journal_router)
 app.include_router(marketplace_router)
 app.include_router(copy_router)
 app.include_router(copy_subs_router)
+app.include_router(copy_exec_router)
 app.include_router(signals_router)
 app.include_router(scanner_router)
 app.include_router(academy_router)
