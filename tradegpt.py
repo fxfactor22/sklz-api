@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 from supabase import Client
 
 from auth import get_current_user
+from entitlements import require_plan
 from db import get_supabase
 
 router = APIRouter(prefix="/api/gpt", tags=["tradegpt"])
@@ -187,6 +188,8 @@ def _content_blocks(text: str, img: str | None, media: str) -> list:
 @router.post("/chat")
 async def chat(payload: ChatIn, user=Depends(get_current_user),
                sb: Client = Depends(get_supabase)) -> dict:
+    require_plan(sb, user, {"TradeGPT Pro", "Bundle", "Bundle (Founder)"}, "TradeGPT")
+
     prof = _load_profile(sb, user.id)
     if payload.language:
         prof = {**prof, "language": payload.language}
@@ -245,6 +248,8 @@ A day with no trade is a perfectly good day."""
 @router.post("/analyze")
 async def analyze(payload: AnalyzeIn, user=Depends(get_current_user),
                   sb: Client = Depends(get_supabase)) -> dict:
+    require_plan(sb, user, {"TradeGPT Pro", "Bundle", "Bundle (Founder)"}, "TradeGPT")
+
     if not payload.image_base64 and not payload.text.strip():
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "send a chart image or written market data")
@@ -314,6 +319,8 @@ say so first and do not over-interpret noise."""
 @router.post("/review")
 async def review(payload: ReviewIn, user=Depends(get_current_user),
                  sb: Client = Depends(get_supabase)) -> dict:
+    require_plan(sb, user, {"TradeGPT Pro", "Bundle", "Bundle (Founder)"}, "TradeGPT")
+
     if not payload.trades:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "no trades supplied")
     prof = _load_profile(sb, user.id)

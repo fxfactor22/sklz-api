@@ -20,6 +20,8 @@ from fastapi import APIRouter, Depends, Query
 from supabase import Client
 
 from auth import get_current_user
+from db import get_supabase
+from entitlements import require_paid
 
 router = APIRouter(prefix="/api/scanner", tags=["scanner"])
 
@@ -80,8 +82,10 @@ def _score(c: dict) -> dict:
 
 @router.get("/crypto")
 async def crypto_scan(user=Depends(get_current_user),
+                      sb: Client = Depends(get_supabase),
                       sort: str = Query("score"),
                       limit: int = Query(50)) -> dict:
+    require_paid(sb, user, "The Crypto Scanner")
     now = time.time()
     if not _CACHE["data"] or now - _CACHE["ts"] > _TTL:
         try:
@@ -175,8 +179,10 @@ def _coin_context(sym: str) -> dict | None:
 
 
 @router.get("/read/{symbol}")
-async def coin_read(symbol: str, user=Depends(get_current_user)) -> dict:
+async def coin_read(symbol: str, user=Depends(get_current_user),
+                    sb: Client = Depends(get_supabase)) -> dict:
     """On-demand honest read for one coin."""
+    require_paid(sb, user, "The Scanner AI read")
     import os
     c = _coin_context(symbol)
     if not c:
@@ -205,8 +211,10 @@ async def coin_read(symbol: str, user=Depends(get_current_user)) -> dict:
 
 
 @router.get("/top")
-async def top_read(user=Depends(get_current_user)) -> dict:
+async def top_read(user=Depends(get_current_user),
+                   sb: Client = Depends(get_supabase)) -> dict:
     """Daily top-of-scanner: 3 real setups vs 3 traps."""
+    require_paid(sb, user, "The Scanner AI read")
     import os
     data = _CACHE.get("data") or []
     STABLE = {"USDT", "USDC", "DAI", "BUSD", "TUSD", "FDUSD"}
