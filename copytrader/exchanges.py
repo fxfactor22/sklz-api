@@ -88,13 +88,23 @@ class ExchangeAdapter:
             self.client.fetch_balance()
             chk.can_read = True
         except ccxt.AuthenticationError as exc:
-            chk.message = f"authentication failed: {_clean(exc)}"
+            chk.message = ("The exchange rejected these credentials. Check the "
+                           f"key and secret are correct. ({_clean(exc)})")
             return chk
         except ccxt.PermissionDenied as exc:
-            chk.message = f"key lacks read permission: {_clean(exc)}"
+            chk.message = f"This key lacks read permission. ({_clean(exc)})"
+            return chk
+        except ccxt.BadRequest as exc:
+            chk.message = ("The exchange rejected the request — usually an "
+                           f"invalid key format. ({_clean(exc)})")
+            return chk
+        except ccxt.NetworkError as exc:
+            chk.message = (f"Could not reach {self.display_name} right now. "
+                           f"Try again shortly. ({_clean(exc)})")
             return chk
         except Exception as exc:  # noqa: BLE001
-            chk.message = f"could not reach {self.display_name}: {_clean(exc)}"
+            chk.message = (f"{self.display_name} returned an unexpected error. "
+                           f"({_clean(exc)})")
             return chk
 
         # 2) ask the exchange for its permission set where possible
@@ -221,11 +231,30 @@ class ExchangeAdapter:
         return self.client.fetch_order(order_id, symbol)
 
 
+_SENSITIVE_PARAMS = ("signature", "apikey", "api_key", "secret", "passphrase",
+                     "sign", "token", "recvwindow")
+
+
 def _clean(exc: Exception) -> str:
-    """Exchange errors sometimes echo request params. Never let a secret leak
-    into a log or an API response."""
+    """Exchange errors routinely echo the full signed request URL, which
+    contains the HMAC signature (derived from the secret) and sometimes the
+    API key itself. Strip all of it before this text reaches a log or a
+    response body."""
+    import re
     s = str(exc)
-    return (s[:160] + "…") if len(s) > 160 else s
+
+    # 1) drop any query string entirely — that is where signatures live
+    s = re.sub(r"\?[^\s]*", "", s)
+
+    # 2) belt and braces: redact any key=value pair naming a sensitive param
+    for p in _SENSITIVE_PARAMS:
+        s = re.sub(rf"(?i){p}\s*[=:]\s*[^\s,&}}\"']+", f"{p}=[redacted]", s)
+
+    # 3) redact anything that looks like a long hex blob (signatures, keys)
+    s = re.sub(r"\b[a-fA-F0-9]{32,}\b", "[redacted]", s)
+
+    s = " ".join(s.split())
+    return (s[:200] + "…") if len(s) > 200 else s
 
 
 def list_supported() -> list[dict]:
