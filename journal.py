@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from supabase import Client
 
 from auth import get_current_user
+from entitlements import require_paid
 from db import get_supabase
 
 router = APIRouter(prefix="/api/journal", tags=["journal"])
@@ -96,6 +97,7 @@ def _outcome(pnl) -> str:
 @router.post("/trade")
 async def add_trade(t: TradeIn, user=Depends(get_current_user),
                     sb: Client = Depends(get_supabase)) -> dict:
+    require_paid(sb, user, "The Trading Journal")
     row = {
         "user_id": str(user.id),
         "symbol": t.symbol.upper(), "side": t.side.lower(),
@@ -152,6 +154,7 @@ async def list_trades(user=Depends(get_current_user),
                       setup: str | None = None, outcome: str | None = None,
                       account_id: str | None = None,
                       limit: int = 200) -> dict:
+    require_paid(sb, user, "The Trading Journal")
     q = (sb.table("journal_trades").select("*").eq("user_id", str(user.id)))
     if account_id:
         q = q.eq("account_id", account_id)
@@ -254,6 +257,7 @@ def compute_analytics(trades: list[dict]) -> dict:
 @router.get("/analytics")
 async def analytics(user=Depends(get_current_user),
                     sb: Client = Depends(get_supabase)) -> dict:
+    require_paid(sb, user, "The Trading Journal")
     return compute_analytics(_load_all(sb, str(user.id)))
 
 
@@ -287,6 +291,7 @@ Return STRICT JSON:
 @router.post("/review")
 async def ai_review(user=Depends(get_current_user),
                     sb: Client = Depends(get_supabase)) -> dict:
+    require_paid(sb, user, "The Trading Journal")
     trades = _load_all(sb, str(user.id))
     stats = compute_analytics(trades)
     if stats.get("empty"):
@@ -432,6 +437,7 @@ class AccountIn(BaseModel):
 @router.get("/accounts")
 async def list_accounts(user=Depends(get_current_user),
                         sb: Client = Depends(get_supabase)) -> dict:
+    require_paid(sb, user, "The Trading Journal")
     try:
         rows = (sb.table("journal_accounts").select("*")
                 .eq("user_id", str(user.id))
@@ -455,6 +461,7 @@ async def list_accounts(user=Depends(get_current_user),
 @router.post("/accounts")
 async def create_account(body: AccountIn, user=Depends(get_current_user),
                          sb: Client = Depends(get_supabase)) -> dict:
+    require_paid(sb, user, "The Trading Journal")
     # if this account_no+server already exists (e.g. auto-registered by the bot),
     # return it instead of erroring on the unique constraint
     if body.account_no:
