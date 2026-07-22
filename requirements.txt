@@ -4,3 +4,5 @@ supabase>=2.9
 pydantic[email]>=2.9
 anthropic>=0.40
 stripe>=10
+ccxt>=4.4
+cryptography>=42
