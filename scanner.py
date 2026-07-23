@@ -198,15 +198,17 @@ async def coin_read(symbol: str, user=Depends(get_current_user),
     try:
         import anthropic
         cl = anthropic.Anthropic(api_key=key)
-        m = cl.messages.create(model="claude-sonnet-4-6", max_tokens=700,
+        m = cl.messages.create(model="claude-sonnet-4-5", max_tokens=700,
                                system=READ_SYSTEM,
                                messages=[{"role": "user", "content": prompt}])
         t = "".join(b.text for b in m.content if b.type == "text").strip()
         t = t.removeprefix("```json").removeprefix("```").removesuffix("```")
         return {"read": _json.loads(t), "coin": c}
     except Exception as exc:  # noqa: BLE001
+        import sys as _s
+        print(f"[scanner-ai] {type(exc).__name__}: {exc}", file=_s.stderr, flush=True)
         fb = _fallback_read(c)
-        fb["headline"] = f"(AI unavailable) " + fb["headline"]
+        fb["headline"] = "(AI unavailable) " + fb["headline"]
         return {"read": fb, "coin": c}
 
 
@@ -228,7 +230,7 @@ async def top_read(user=Depends(get_current_user),
     try:
         import anthropic
         cl = anthropic.Anthropic(api_key=key)
-        m = cl.messages.create(model="claude-sonnet-4-6", max_tokens=900,
+        m = cl.messages.create(model="claude-sonnet-4-5", max_tokens=900,
                                system=TOP_SYSTEM,
                                messages=[{"role": "user",
                                           "content": f"Live scan:\n{_json.dumps(slim)}\n\nReturn JSON."}])
@@ -236,6 +238,8 @@ async def top_read(user=Depends(get_current_user),
         t = t.removeprefix("```json").removeprefix("```").removesuffix("```")
         return {"top": _json.loads(t)}
     except Exception as exc:  # noqa: BLE001
+        import sys as _s
+        print(f"[scanner-ai-top] {type(exc).__name__}: {exc}", file=_s.stderr, flush=True)
         return {"top": _fallback_top(rows)}
 
 

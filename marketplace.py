@@ -276,7 +276,7 @@ async def ai_read(slug: str, sb: Client = Depends(get_supabase)) -> dict:
         import anthropic
         cl = anthropic.Anthropic(api_key=key)
         msg = cl.messages.create(
-            model="claude-sonnet-4-6", max_tokens=600, system=AI_SYSTEM,
+            model="claude-sonnet-4-5", max_tokens=600, system=AI_SYSTEM,
             messages=[{"role": "user",
                        "content": f"Trader record:\n{_json.dumps(facts, indent=2)}\n\nReturn the JSON."}])
         txt = "".join(b.text for b in msg.content if b.type == "text").strip()
