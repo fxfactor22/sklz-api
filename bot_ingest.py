@@ -181,7 +181,7 @@ async def control(bot_name: str, command: str,
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": str(exc)[:200]}
     return {"ok": True, "bot_name": bot_name, "command": command,
-            "note": "applies at next heartbeat (~30s)"}
+            "note": "applies within a few seconds"}
 
 
 @router.get("/command")
@@ -240,7 +240,7 @@ async def place_order(body: OrderIn, user=Depends(get_current_user),
             "status": "pending", "created_by": str(user.id)}).execute()
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": str(exc)[:200]}
-    return {"ok": True, "note": "order queued — bot executes within ~30s"}
+    return {"ok": True, "note": "order queued — bot executes within a few seconds"}
 
 
 @router.get("/state")
