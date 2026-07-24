@@ -171,6 +171,7 @@ class Announcement(BaseModel):
     detail: str = ""
     symbol: str = ""
     broadcast: bool = True
+    channels: list[str] = ["all"]      # category names, "general", or "all"
 
 
 @router.post("/announce")
@@ -184,8 +185,66 @@ async def announce(body: Announcement, user=Depends(get_current_user),
            "broadcast": body.broadcast, "created_by": str(user.id),
            "created_at": _now()}
     saved = _save(sb, row)
-    tg = _broadcast(row) if body.broadcast else {"sent": False, "reason": "muted"}
+    tg = {"sent": False, "reason": "muted"}
+    if body.broadcast:
+        try:
+            from signals_engine import send_to_channels
+            tg = send_to_channels(body.channels, _format(row))
+        except Exception as exc:  # noqa: BLE001
+            tg = {"sent": False, "reason": str(exc)[:120]}
     return {"ok": True, "update": saved, "telegram": tg}
+
+
+@router.get("/channels")
+async def channels(user=Depends(get_current_user)) -> dict:
+    """Which Telegram channels exist and are configured."""
+    if not _is_admin(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+    try:
+        from signals_engine import list_channels
+        return {"channels": list_channels()}
+    except Exception:
+        return {"channels": []}
+
+
+# ── AI content assistant ────────────────────────────────────────────
+class GenerateIn(BaseModel):
+    kind: str                       # news | holiday | session | morning
+    context: str = ""
+
+
+@router.post("/generate")
+async def generate(body: GenerateIn, user=Depends(get_current_user)) -> dict:
+    """Draft a message. Returns it for review — does NOT post it."""
+    if not _is_admin(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+    try:
+        import content_assistant as CA
+        msg = CA.build(body.kind, body.context)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            f"could not generate: {str(exc)[:200]}") from exc
+    if not msg:
+        return {"ok": True, "message": None,
+                "note": ("Nothing to report right now. No high-impact event is "
+                         "close and there is no holiday — so there is nothing "
+                         "honest to say.")}
+    return {"ok": True, "message": msg}
+
+
+@router.get("/calendar")
+async def calendar_today(user=Depends(get_current_user)) -> dict:
+    """Today's real economic events, so you can see what the assistant sees."""
+    if not _is_admin(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+    try:
+        import content_assistant as CA
+        return {"high_impact_today": CA.todays_high_impact(),
+                "holidays_today": CA.todays_holidays(),
+                "upcoming_90min": CA.upcoming_high_impact(90),
+                "session": CA.session_state()}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)[:200]}
 
 
 @router.get("/feed")

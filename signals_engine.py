@@ -103,6 +103,45 @@ def _tg_channel(category: str) -> str:
     return os.environ.get(f"TG_CHANNEL_{category.upper()}", "")
 
 
+CHANNEL_KEYS = ("forex", "crypto", "stocks", "metals")
+
+
+def list_channels() -> list[dict]:
+    """Every channel we can post to, and whether it is configured."""
+    out = []
+    for k in CHANNEL_KEYS:
+        out.append({"id": k, "label": k.capitalize(),
+                    "configured": bool(_tg_channel(k))})
+    out.append({"id": "general", "label": "General / marketing",
+                "configured": bool(_general_channel())})
+    return out
+
+
+def send_to_channels(channels: list[str], text: str) -> dict:
+    """Post one message to an explicit set of channels.
+
+    `channels` may contain category names, "general", or "all".
+    """
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    if not token:
+        return {"sent": False, "reason": "TELEGRAM_BOT_TOKEN not set", "results": {}}
+
+    wanted = set(channels or [])
+    if "all" in wanted:
+        wanted = set(CHANNEL_KEYS) | {"general"}
+
+    results, any_ok = {}, False
+    for name in sorted(wanted):
+        chat = _general_channel() if name == "general" else _tg_channel(name)
+        if not chat:
+            results[name] = "not configured"
+            continue
+        ok = _post_telegram(chat, text)
+        results[name] = "sent" if ok else "failed"
+        any_ok = any_ok or ok
+    return {"sent": any_ok, "results": results}
+
+
 def format_signal(sig: dict) -> str:
     arrow = "🟢 BUY" if sig["side"] == "buy" else "🔴 SELL"
     cat = sig["category"].upper()
