@@ -13,6 +13,7 @@ dependency every protected route will use.
 """
 from __future__ import annotations
 
+import os
 import time
 from collections import defaultdict
 
@@ -230,3 +231,78 @@ def _clean(msg: str) -> str:
     if "already" in low or "registered" in low or "exists" in low:
         return "If this email is new, your account was created."
     return "Please check your details and try again."
+
+
+# ── password reset ──────────────────────────────────────────────────
+class ResetRequest(BaseModel):
+    email: EmailStr
+
+
+@router.post("/reset-password")
+async def reset_password(payload: ResetRequest, request: Request,
+                         sb: Client = Depends(get_supabase)) -> dict:
+    """Send a password reset email.
+
+    Always reports success, whether or not the address is registered —
+    otherwise this endpoint becomes a way to discover who has an account.
+    """
+    ip = request.client.host if request.client else "unknown"
+    if not _rate_ok(f"reset:{ip}", 5):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                            "Too many reset requests. Please wait a minute.")
+    site = os.environ.get("SITE_URL") or "https://www.sklzlabs.com"
+    try:
+        sb.auth.reset_password_for_email(
+            payload.email,
+            {"redirect_to": f"{site}/reset.html"})
+    except Exception as exc:  # noqa: BLE001
+        import sys as _s
+        print(f"[reset] {type(exc).__name__}: {exc}", file=_s.stderr, flush=True)
+    return {"ok": True,
+            "message": ("If that address has an account, a reset link is on "
+                        "its way. Check your inbox and spam folder.")}
+
+
+class NewPassword(BaseModel):
+    access_token: str
+    password: str = Field(min_length=8)
+
+
+@router.post("/set-password")
+async def set_password(payload: NewPassword,
+                       sb: Client = Depends(get_supabase)) -> dict:
+    """Complete a reset using the token from the emailed link."""
+    try:
+        sb.auth.set_session(payload.access_token, payload.access_token)
+        sb.auth.update_user({"password": payload.password})
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "That reset link has expired or already been used. "
+            "Request a new one.") from exc
+    return {"ok": True, "message": "Password updated. You can log in now."}
+
+
+class ChangePassword(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
+@router.post("/change-password")
+async def change_password(payload: ChangePassword,
+                          user=Depends(get_current_user),
+                          sb: Client = Depends(get_supabase)) -> dict:
+    """Change password while logged in. Verifies the current one first."""
+    email = getattr(user, "email", "")
+    try:
+        sb.auth.sign_in_with_password({"email": email,
+                                       "password": payload.current_password})
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "Current password is not correct.") from exc
+    try:
+        sb.auth.update_user({"password": payload.new_password})
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            f"could not update password: {str(exc)[:160]}") from exc
+    return {"ok": True, "message": "Password changed."}
