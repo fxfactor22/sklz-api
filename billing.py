@@ -340,6 +340,16 @@ async def webhook(request: Request,
     etype = event["type"]
     obj = event["data"]["object"]
 
+    # Stripe's SDK returns StripeObject, which supports obj["k"] but NOT
+    # obj.get("k"). Convert to a plain dict so ordinary dict access works.
+    try:
+        obj = dict(obj)
+    except Exception:
+        try:
+            obj = obj.to_dict_recursive()
+        except Exception:
+            pass
+
     try:
         return await _handle_event(etype, obj, sb)
     except Exception as exc:  # noqa: BLE001
@@ -351,6 +361,16 @@ async def webhook(request: Request,
         # and the log above names it.
         return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:200]}",
                 "event": etype}
+
+
+def _d(v):
+    """Stripe objects are dict-like but lack .get(); normalise them."""
+    if isinstance(v, dict):
+        return v
+    try:
+        return dict(v)
+    except Exception:
+        return {}
 
 
 async def _handle_event(etype: str, obj: dict, sb: Client) -> dict:
@@ -366,17 +386,17 @@ async def _handle_event(etype: str, obj: dict, sb: Client) -> dict:
             pass
 
     if etype == "checkout.session.completed":
-        uid = obj.get("client_reference_id") or (obj.get("metadata") or {}).get("user_id", "")
+        uid = obj.get("client_reference_id") or _d(obj.get("metadata")).get("user_id", "")
         fields = {"stripe_customer_id": obj.get("customer")}
         if obj.get("mode") == "payment":            # lifetime purchase
-            product = (obj.get("metadata") or {}).get("product", "suite_lifetime")
+            product = _d(obj.get("metadata")).get("product", "suite_lifetime")
             fields.update({"plan": PLAN_NAMES.get(product, "Indicator Suite — Lifetime"),
                            "active": True, "current_period_end": None})
         upsert(uid, fields)
         _credit_referrer(uid)
 
     elif etype in ("customer.subscription.created", "customer.subscription.updated"):
-        meta = obj.get("metadata") or {}
+        meta = _d(obj.get("metadata"))
         uid = meta.get("user_id", "")
         product = meta.get("product", "")
         active = obj.get("status") in ("active", "trialing")
@@ -410,7 +430,7 @@ async def _handle_event(etype: str, obj: dict, sb: Client) -> dict:
             _partner_payment(uid, amount if amount in (39.0, 49.0) else 49.0, True)
 
     elif etype == "customer.subscription.deleted":
-        uid = (obj.get("metadata") or {}).get("user_id", "")
+        uid = _d(obj.get("metadata")).get("user_id", "")
         upsert(uid, {"active": False})
         _partner_churn(uid)
 
