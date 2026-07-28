@@ -273,7 +273,6 @@ async def status_ep(user=Depends(get_current_user),
 
 
 # ------------------------------------------------------------------ webhook
-@router.post("/webhook")
 def _partner_payment(uid: str, price: float, active: bool, email: str = "") -> None:
     """Tell the partner engine a referred customer paid — recurring commission."""
     import os, urllib.request, json as _json
@@ -325,6 +324,7 @@ def _credit_referrer(uid: str) -> None:
 
 
 
+@router.post("/webhook")
 async def webhook(request: Request,
                   stripe_signature: str = Header(default=""),
                   sb: Client = Depends(get_supabase)) -> dict:
