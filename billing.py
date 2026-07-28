@@ -340,6 +340,21 @@ async def webhook(request: Request,
     etype = event["type"]
     obj = event["data"]["object"]
 
+    try:
+        return await _handle_event(etype, obj, sb)
+    except Exception as exc:  # noqa: BLE001
+        import sys as _s, traceback as _tb
+        print(f"[stripe-webhook] {etype} FAILED: {type(exc).__name__}: {exc}",
+              file=_s.stderr, flush=True)
+        _tb.print_exc(file=_s.stderr)
+        # acknowledge so Stripe stops retrying; the error is ours, not theirs,
+        # and the log above names it.
+        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:200]}",
+                "event": etype}
+
+
+async def _handle_event(etype: str, obj: dict, sb: Client) -> dict:
+
     def upsert(uid: str, fields: dict) -> None:
         if not uid:
             return
