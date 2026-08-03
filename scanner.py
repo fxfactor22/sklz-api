@@ -146,6 +146,20 @@ guaranteed profit. Never predict a specific price will be reached.
 - Prefer "stand aside" when the picture is mixed/extended. Protecting the trader \
 from a bad entry is the product.
 
+ORDER FLOW (when provided):
+- Order book depth and trade aggression are MEASURED from the exchange. Momentum \
+is derived from price. When they disagree, the measured data wins and you say so.
+- ABSORPTION — heavy one-sided aggression while price barely moves — means someone \
+large is trading against the crowd. Price looking strong while buying is absorbed \
+is distribution, not a breakout. Call it plainly.
+- A WALL is a resting order far larger than its neighbours. Price tends to stall \
+there. A target beyond an untested wall needs saying out loud.
+- Book lean is resting liquidity, not intent. It can be pulled. Treat it as \
+context, not confirmation.
+- Say how many trades the delta is based on. A read built on 40 trades is weaker \
+than one built on 4,000, and pretending otherwise is the failure this brand exists \
+to avoid.
+
 Return STRICT JSON only:
 {
  "bias": "long|short|stand aside",
@@ -153,7 +167,8 @@ Return STRICT JSON only:
  "headline": "one honest sentence",
  "why": "the read: alignment, whether it's early or extended/late, with the numbers",
  "if_you_act": {"entry":"zone or price", "invalidation":"level", "target":"level"},
- "honest_flag": "the main risk — e.g. 'this is a late chase' — or '' if genuinely clean"
+ "honest_flag": "the main risk — e.g. 'this is a late chase' — or '' if genuinely clean",
+ "flow_note": "what the order book says, especially where it contradicts momentum — or '' if no flow data"
 }"""
 
 TOP_SYSTEM = """You are the SKLZ Scanner daily read. From live crypto momentum data, \
@@ -194,7 +209,44 @@ async def coin_read(symbol: str, user=Depends(get_current_user),
     prompt = (f"Live data for {c['symbol']} ({c.get('name')}):\n"
               f"price ${c.get('price')}, 1h {c.get('h1')}%, 24h {c.get('h24')}%, "
               f"7d {c.get('d7')}%, momentum score {c.get('score')} ({c.get('read')}), "
-              f"aligned={c.get('aligned')}.\nGive the honest read JSON.")
+              f"aligned={c.get('aligned')}.")
+
+    # real order book depth, where the venue provides it. This is measured
+    # rather than inferred, so the model is told to weigh it above momentum.
+    flow = None
+    try:
+        import ccxt
+        from copytrader import cryptobook as CB
+
+        class _Pub:
+            pass
+        pub = _Pub()
+        pub.client = ccxt.bybit({"enableRateLimit": True, "timeout": 12000})
+        sym = c["symbol"].upper()
+        flow = CB.assess_crypto(pub, f"{sym}/USDT",
+                                1 if (c.get("score") or 0) >= 0 else -1,
+                                price_move_pct=float(c.get("h1") or 0))
+    except Exception:
+        flow = None
+
+    if flow and flow.get("book", {}).get("available"):
+        d = flow.get("delta") or {}
+        prompt += (
+            f"\n\nORDER FLOW (measured from Bybit, not inferred):\n"
+            f"book imbalance {flow['book'].get('imbalance')} "
+            f"({'bid' if (flow['book'].get('imbalance') or 0) >= 0 else 'ask'} heavy), "
+            f"spread {flow['book'].get('spread')}\n"
+            f"trade aggression {d.get('imbalance')} over {d.get('trades_seen')} trades\n")
+        if flow.get("wall", {}).get("found"):
+            prompt += f"WALL: {flow['wall'].get('reason')}\n"
+        if flow.get("absorbed"):
+            prompt += "ABSORPTION detected — aggression one-sided, price not responding\n"
+        prompt += ("Weigh this measured data above the momentum score, and say so "
+                   "if they disagree.\n")
+    else:
+        prompt += "\n\nNo order book data for this symbol — say the read is momentum-only.\n"
+
+    prompt += "\nGive the honest read JSON."
     try:
         import anthropic
         cl = anthropic.Anthropic(api_key=key)
@@ -203,7 +255,7 @@ async def coin_read(symbol: str, user=Depends(get_current_user),
                                messages=[{"role": "user", "content": prompt}])
         t = "".join(b.text for b in m.content if b.type == "text").strip()
         t = t.removeprefix("```json").removeprefix("```").removesuffix("```")
-        return {"read": _json.loads(t), "coin": c}
+        return {"read": _json.loads(t), "coin": c, "flow": flow}
     except Exception as exc:  # noqa: BLE001
         import sys as _s
         print(f"[scanner-ai] {type(exc).__name__}: {exc}", file=_s.stderr, flush=True)
