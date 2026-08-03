@@ -16,7 +16,7 @@ import json
 import time
 import urllib.request
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from supabase import Client
 
 from auth import get_current_user
@@ -280,3 +280,52 @@ def _fallback_top(rows: list) -> dict:
                        "why": f"extended +{r['d7']}% on 7d — late entry"} for r in traps],
             "note": "Deterministic read (add ANTHROPIC_API_KEY for full analysis). "
                     "Extended movers are flagged as traps, not setups."}
+
+
+# ── live order flow (crypto only) ───────────────────────────────────
+@router.get("/orderflow/{symbol}")
+async def orderflow(symbol: str, exchange: str = "bybit",
+                    side: int = 1,
+                    user=Depends(get_current_user),
+                    sb: Client = Depends(get_supabase)) -> dict:
+    """Real order book depth and measured delta for a crypto pair.
+
+    Unlike the forex path — where there is no central exchange and delta has
+    to be inferred from tick side — this reads genuine resting liquidity and
+    trades whose aggressor side the exchange reports. It is measured data.
+
+    No API key needed: order books and public trades are public.
+    """
+    require_paid(sb, user, "Live order flow")
+
+    try:
+        import ccxt
+        from copytrader import cryptobook as CB
+    except ImportError as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            f"order flow unavailable: {exc}") from exc
+
+    sym = symbol.upper()
+    if "/" not in sym:
+        sym = f"{sym}/USDT"
+
+    class _Pub:
+        pass
+
+    try:
+        pub = _Pub()
+        pub.client = getattr(ccxt, exchange)({"enableRateLimit": True,
+                                              "timeout": 15000})
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"unknown exchange '{exchange}'") from exc
+
+    try:
+        result = CB.assess_crypto(pub, sym, 1 if side >= 0 else -1)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            f"could not read order flow: {str(exc)[:180]}") from exc
+
+    result["symbol"] = sym
+    result["exchange"] = exchange
+    return result
