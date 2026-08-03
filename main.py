@@ -54,7 +54,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    # PATCH and DELETE were missing, which made every update and delete
+    # endpoint unreachable from the browser — the preflight was rejected
+    # before the request was ever sent.
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
