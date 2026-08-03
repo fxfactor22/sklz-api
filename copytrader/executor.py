@@ -190,6 +190,16 @@ def _state(sb: Client, sub: dict, free_quote: float) -> FollowerState:
                          emergency_stopped=bool(sub.get("emergency_stopped")))
 
 
+def _clean_exc(exc: Exception) -> str:
+    """Readable error text with any credentials stripped out."""
+    import re
+    s = str(exc)
+    s = re.sub(r"[a-fA-F0-9]{32,}", "<redacted>", s)
+    s = re.sub(r"(api[_-]?key|secret|signature)=[^&\s]+", r"\1=<redacted>", s,
+               flags=re.I)
+    return s[:220] if s else type(exc).__name__
+
+
 def resolve_for_follower(adapter, leader_symbol: str, log=print) -> dict:
     """Find the equivalent pair on the follower's exchange.
 
@@ -327,13 +337,33 @@ def _copy_one(sb: Client, sub: dict, lt: dict, load_adapter,
                        f"DRY RUN — would {lt['side']} {d.amount:.8f} "
                        f"{lt['symbol']} (~{d.notional:.2f} {cfg.quote})", log)
 
+    # ---- pre-flight: does this clear the venue's own minimums? ----
+    lim = (market or {}).get("limits") or {}
+    min_cost = (lim.get("cost") or {}).get("min")
+    min_amt = (lim.get("amount") or {}).get("min")
+    notional_now = d.amount * price if price else 0
+
+    if min_cost and notional_now < float(min_cost):
+        return _record(sb, sub, lt, d, "skipped",
+                       (f"order of {notional_now:.2f} {spend_quote} is below "
+                        f"this exchange's minimum of {min_cost} — increase the "
+                        f"allocation or risk level to copy trades this size"),
+                       log)
+    if min_amt and d.amount < float(min_amt):
+        return _record(sb, sub, lt, d, "skipped",
+                       (f"amount {d.amount} is below the exchange minimum of "
+                        f"{min_amt} {follower_symbol.split('/')[0]}"), log)
+
     # ---- live execution ----
     try:
         order = adapter.create_spot_order(follower_symbol, lt["side"], d.amount,
                                           client_order_id=d.client_order_id)
     except Exception as exc:  # noqa: BLE001
+        # the exception TYPE alone is nearly useless — "InvalidOrder" could be
+        # size, precision, or an unsupported order type. Keep the message.
+        msg = _clean_exc(exc)
         return _record(sb, sub, lt, d, "failed",
-                       f"exchange rejected order: {type(exc).__name__}", log)
+                       f"exchange rejected order: {msg}", log)
 
     rec = _record(sb, sub, lt, d, "filled", "order placed", log,
                   exchange_order_id=str(order.get("id") or ""),
