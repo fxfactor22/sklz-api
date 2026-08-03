@@ -152,6 +152,53 @@ def _state(sb: Client, sub: dict, free_quote: float) -> FollowerState:
                          emergency_stopped=bool(sub.get("emergency_stopped")))
 
 
+def resolve_for_follower(adapter, leader_symbol: str, log=print) -> dict:
+    """Find the equivalent pair on the follower's exchange.
+
+    Exchanges quote against different stablecoins — Bybit uses USDT, Coinbase
+    largely USDC, Kraken often USD. Sending the leader's symbol verbatim means
+    the order simply fails on any venue that quotes differently.
+
+    So: keep the base asset, try the quotes the follower actually supports.
+    A USDC pair is not identical to a USDT one — the price can differ slightly
+    and the stablecoins carry different risk — but for copying a directional
+    spot position it is the right equivalent, and that difference is disclosed
+    rather than hidden.
+    """
+    base = leader_symbol.split("/")[0].upper() if "/" in leader_symbol else leader_symbol
+    leader_quote = (leader_symbol.split("/")[1].upper()
+                    if "/" in leader_symbol else "USDT")
+
+    try:
+        markets = adapter.load_markets() or {}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "reason": f"could not read markets: {str(exc)[:120]}"}
+
+    # exact match first — no translation needed
+    if leader_symbol in markets and markets[leader_symbol].get("active"):
+        return {"ok": True, "symbol": leader_symbol, "translated": False,
+                "reason": "exact pair available"}
+
+    # otherwise try equivalent quotes, in order of closeness
+    for quote in ("USDT", "USDC", "USD", "EUR", "GBP"):
+        if quote == leader_quote:
+            continue
+        cand = f"{base}/{quote}"
+        m = markets.get(cand)
+        if m and m.get("active") and m.get("spot"):
+            note = (f"leader traded {leader_symbol}; this exchange quotes "
+                    f"{base} in {quote}, so {cand} was used instead")
+            log(f"[fanout] {note}")
+            return {"ok": True, "symbol": cand, "translated": True,
+                    "from_quote": leader_quote, "to_quote": quote,
+                    "reason": note}
+
+    return {"ok": False,
+            "reason": (f"{base} is not tradeable on this exchange against any "
+                       f"supported quote currency — the follower cannot copy "
+                       f"this trade")}
+
+
 def fan_out(sb: Client, leader_trade: dict, load_adapter, log=print) -> list[dict]:
     """Run one leader fill through every subscriber.
 
@@ -193,8 +240,22 @@ def _copy_one(sb: Client, sub: dict, lt: dict, load_adapter,
         adapter = load_adapter(sub["follower_id"], sub["connection_id"])
         free = adapter.quote_balance(cfg.quote)
         adapter.load_markets()
-        market = adapter.market_rules(lt["symbol"])
-        price = adapter.price(lt["symbol"])
+        # the follower may quote in a different stablecoin than the leader
+        resolved = resolve_for_follower(adapter, lt["symbol"], log)
+        if not resolved.get("ok"):
+            # the follower simply cannot trade this pair — record why rather
+            # than failing silently, so they can see it on their dashboard
+            class _NoCopy:
+                copy = False
+                amount = 0.0
+                notional = 0.0
+                reason = resolved["reason"]
+            return _record(sb, sub, lt, _NoCopy(), "skipped",
+                           resolved["reason"], log)
+        follower_symbol = resolved["symbol"]
+
+        market = adapter.market_rules(follower_symbol)
+        price = adapter.price(follower_symbol)
     except Exception as exc:  # noqa: BLE001
         return _record(sb, sub, lt, None, "failed",
                        f"could not read follower account: {type(exc).__name__}", log)
@@ -212,7 +273,7 @@ def _copy_one(sb: Client, sub: dict, lt: dict, load_adapter,
 
     # ---- live execution ----
     try:
-        order = adapter.create_spot_order(lt["symbol"], lt["side"], d.amount,
+        order = adapter.create_spot_order(follower_symbol, lt["side"], d.amount,
                                           client_order_id=d.client_order_id)
     except Exception as exc:  # noqa: BLE001
         return _record(sb, sub, lt, d, "failed",
