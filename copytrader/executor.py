@@ -45,11 +45,49 @@ def poll_leader_fills(adapter: ExchangeAdapter, sb: Client, leader_id: str,
     """
     since = int((datetime.now(timezone.utc)
                  - timedelta(minutes=lookback_minutes)).timestamp() * 1000)
+    # Bybit and several others will not return account trades without a
+    # symbol — they answer with an empty list rather than an error, which
+    # looks exactly like "no trades" and hides the problem.
+    trades = []
     try:
-        trades = adapter.client.fetch_my_trades(since=since, limit=100)
+        trades = adapter.client.fetch_my_trades(since=since, limit=100) or []
     except Exception as exc:  # noqa: BLE001
-        log(f"[fills] could not read trades: {type(exc).__name__}")
-        return []
+        log(f"[fills] account-wide read failed ({type(exc).__name__}), "
+            f"falling back to per-symbol")
+
+    if not trades:
+        # ask per symbol, using whatever the account actually holds plus the
+        # pairs already seen from this leader
+        symbols = set()
+        try:
+            for b in adapter.balances(non_zero=True):
+                asset = getattr(b, "asset", None) or (b.get("asset") if isinstance(b, dict) else None)
+                if asset and asset.upper() not in ("USDT", "USDC", "USD"):
+                    symbols.add(f"{asset.upper()}/USDT")
+        except Exception:
+            pass
+        try:
+            prev = (sb.table("copy_leader_trades").select("symbol")
+                    .eq("leader_id", leader_id)
+                    .order("created_at", desc=True).limit(50).execute()).data or []
+            symbols.update(r["symbol"] for r in prev if r.get("symbol"))
+        except Exception:
+            pass
+        # a sensible default set, so a first-ever trade is not missed
+        symbols.update(os.environ.get(
+            "COPY_WATCH_SYMBOLS",
+            "BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,XRP/USDT,ADA/USDT"
+        ).split(","))
+
+        for sym in sorted(s.strip() for s in symbols if s and s.strip()):
+            try:
+                got = adapter.client.fetch_my_trades(
+                    symbol=sym, since=since, limit=50) or []
+                trades.extend(got)
+            except Exception:
+                continue
+        if trades:
+            log(f"[fills] read {len(trades)} trade(s) via per-symbol query")
 
     # what have we already recorded?
     try:
