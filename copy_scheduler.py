@@ -89,19 +89,58 @@ def state() -> dict:
 
 
 async def _one_pass(log=print) -> dict:
-    """Run a single poll + fan-out cycle."""
+    """Poll every approved leader, then fan out anything new.
+
+    poll_leader_fills works per leader and needs that leader's own exchange
+    adapter, so this walks the approved list rather than making one call.
+    """
     from db import get_supabase
     from copytrader import executor as EX
+    from copytrader.connections_api import _load_adapter
 
     sb = get_supabase()
-    fills = EX.poll_leader_fills(sb, log=log)
-    out = {"checked_leaders": fills.get("checked_leaders", 0),
-           "new_fills": fills.get("new_fills", 0), "fanned_out": 0}
+    out = {"checked_leaders": 0, "new_fills": 0, "fanned_out": 0, "skipped": 0}
 
-    if fills.get("new_fills"):
-        res = EX.fan_out(sb, log=log)
-        out["fanned_out"] = res.get("orders", 0)
-        out["skipped"] = res.get("skipped", 0)
+    try:
+        leaders = (sb.table("copy_leaders").select("*")
+                   .eq("approval_status", "approved")
+                   .neq("suspended", True).execute()).data or []
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"could not list leaders: {str(exc)[:140]}") from exc
+
+    for leader in leaders:
+        conn_id = leader.get("connection_id")
+        uid = leader.get("user_id")
+        if not conn_id or not uid:
+            continue
+        try:
+            adapter = _load_adapter(sb, str(uid), str(conn_id))
+        except Exception as exc:  # noqa: BLE001
+            log(f"[copy-poll] leader {leader.get('display_name')}: "
+                f"could not load exchange ({type(exc).__name__})")
+            continue
+
+        out["checked_leaders"] += 1
+        try:
+            fills = EX.poll_leader_fills(adapter, sb, str(leader["id"]), log=log)
+        except Exception as exc:  # noqa: BLE001
+            log(f"[copy-poll] leader {leader.get('display_name')}: "
+                f"poll failed ({type(exc).__name__}: {exc})")
+            continue
+
+        for fill in fills or []:
+            out["new_fills"] += 1
+            try:
+                results = EX.fan_out(sb, fill, _load_adapter, log=log)
+            except Exception as exc:  # noqa: BLE001
+                log(f"[copy-poll] fan-out failed for {fill.get('symbol')}: "
+                    f"{type(exc).__name__}: {exc}")
+                continue
+            for r in results or []:
+                if (r or {}).get("status") in ("placed", "simulated"):
+                    out["fanned_out"] += 1
+                else:
+                    out["skipped"] += 1
     return out
 
 
