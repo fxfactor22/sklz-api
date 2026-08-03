@@ -131,7 +131,12 @@ async def _one_pass(log=print) -> dict:
         for fill in fills or []:
             out["new_fills"] += 1
             try:
-                results = EX.fan_out(sb, fill, _load_adapter, log=log)
+                # fan_out calls load_adapter(user_id, connection_id) with two
+                # arguments; _load_adapter needs sb first, so bind it here
+                results = EX.fan_out(
+                    sb, fill,
+                    lambda uid, cid: _load_adapter(sb, str(uid), str(cid)),
+                    log=log)
             except Exception as exc:  # noqa: BLE001
                 log(f"[copy-poll] fan-out failed for {fill.get('symbol')}: "
                     f"{type(exc).__name__}: {exc}")
