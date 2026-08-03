@@ -276,9 +276,12 @@ def _copy_one(sb: Client, sub: dict, lt: dict, load_adapter,
     adapter = None
     try:
         adapter = load_adapter(sub["follower_id"], sub["connection_id"])
-        free = adapter.quote_balance(cfg.quote)
         adapter.load_markets()
-        # the follower may quote in a different stablecoin than the leader
+
+        # Resolve the pair FIRST. The follower may quote in a different
+        # stablecoin than the leader, and checking the balance before knowing
+        # which currency will actually be spent asks the wrong question —
+        # "no free USDT" on an account holding USDC is not a real constraint.
         resolved = resolve_for_follower(adapter, lt["symbol"], log)
         if not resolved.get("ok"):
             # the follower simply cannot trade this pair — record why rather
@@ -292,6 +295,15 @@ def _copy_one(sb: Client, sub: dict, lt: dict, load_adapter,
                            resolved["reason"], log)
         follower_symbol = resolved["symbol"]
 
+        # the quote actually being spent, which may differ from the
+        # subscription's configured quote after translation
+        spend_quote = (follower_symbol.split("/")[1].upper()
+                       if "/" in follower_symbol else cfg.quote)
+        free = adapter.quote_balance(spend_quote)
+        if resolved.get("translated"):
+            log(f"[fanout] checking {spend_quote} balance "
+                f"(subscription is configured in {cfg.quote})")
+
         market = adapter.market_rules(follower_symbol)
         price = adapter.price(follower_symbol)
     except Exception as exc:  # noqa: BLE001
@@ -299,6 +311,12 @@ def _copy_one(sb: Client, sub: dict, lt: dict, load_adapter,
                        f"could not read follower account: {type(exc).__name__}", log)
 
     state = _state(sb, sub, free)
+    # tell the decision engine which currency this balance is in, so a skip
+    # message names the right one
+    try:
+        state.spend_quote = spend_quote
+    except Exception:
+        pass
     d = decide(trade, cfg, state, market, price)
 
     if not d.copy:

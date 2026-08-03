@@ -171,11 +171,14 @@ def decide(trade: LeaderTrade, cfg: FollowerConfig, state: FollowerState,
         warn.append("reduced to remaining allocation")
 
     # actual spendable cash
+    # after cross-exchange translation the currency actually spent may differ
+    # from the subscription's configured quote — report the real one
+    spend = getattr(state, "spend_quote", None) or cfg.quote
     if notional > state.free_quote:
         notional = state.free_quote
-        warn.append(f"reduced to available {cfg.quote} balance")
+        warn.append(f"reduced to available {spend} balance")
     if notional <= 0:
-        return no(f"no free {cfg.quote} balance")
+        return no(f"no free {spend} balance")
 
     if price <= 0:
         return no("no price available")
