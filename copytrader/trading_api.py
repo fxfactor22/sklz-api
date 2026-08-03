@@ -372,10 +372,17 @@ async def tradeable_symbols(connection_id: str,
 
     q = (quote or "USDT").upper()
     out = []
+    quotes_available: dict = {}
+
     for sym, m in (markets or {}).items():
         if not m.get("spot") or not m.get("active"):
             continue
-        if (m.get("quote") or "").upper() != q:
+        mq = (m.get("quote") or "").upper()
+        # count what this venue offers, so the UI can let the user pick a
+        # quote that matches their followers rather than assuming USDT
+        if mq in ("USDT", "USDC", "USD", "EUR", "GBP", "BTC", "ETH"):
+            quotes_available[mq] = quotes_available.get(mq, 0) + 1
+        if mq != q:
             continue
         limits = m.get("limits") or {}
         cost = limits.get("cost") or {}
@@ -397,6 +404,10 @@ async def tradeable_symbols(connection_id: str,
     out.sort(key=rank)
 
     return {"symbols": out, "count": len(out), "quote": q,
+            "quotes_available": [
+                {"quote": k, "pairs": v}
+                for k, v in sorted(quotes_available.items(),
+                                   key=lambda kv: kv[1], reverse=True)],
             "note": ("Minimum notional is the exchange's own floor — an order "
                      "below it will be rejected by the venue, not by us.")}
 
