@@ -103,6 +103,31 @@ def _tg_channel(category: str) -> str:
     return os.environ.get(f"TG_CHANNEL_{category.upper()}", "")
 
 
+def _mirror_targets() -> list[dict]:
+    """Extra destinations that receive EVERY signal, whatever its category.
+
+    Each may use its own bot token, so a group administered by a different
+    bot still works without changing the main one.
+
+        TG_MIRROR_CHAT    -100xxxxxxxxxx
+        TG_MIRROR_TOKEN   (optional; falls back to TELEGRAM_BOT_TOKEN)
+
+    A second one can be added with TG_MIRROR2_CHAT / TG_MIRROR2_TOKEN.
+    """
+    out = []
+    for prefix in ("TG_MIRROR", "TG_MIRROR2", "TG_MIRROR3"):
+        chat = os.environ.get(f"{prefix}_CHAT", "").strip()
+        if not chat:
+            continue
+        out.append({
+            "chat": chat,
+            "token": (os.environ.get(f"{prefix}_TOKEN", "").strip()
+                      or os.environ.get("TELEGRAM_BOT_TOKEN", "")),
+            "name": prefix.lower(),
+        })
+    return out
+
+
 CHANNEL_KEYS = ("forex", "crypto", "stocks", "metals")
 
 
@@ -114,6 +139,9 @@ def list_channels() -> list[dict]:
                     "configured": bool(_tg_channel(k))})
     out.append({"id": "general", "label": "General / marketing",
                 "configured": bool(_general_channel())})
+    for m in _mirror_targets():
+        out.append({"id": m["name"], "label": f"Signal group ({m['name']})",
+                    "configured": True})
     return out
 
 
@@ -131,6 +159,15 @@ def send_to_channels(channels: list[str], text: str) -> dict:
         wanted = set(CHANNEL_KEYS) | {"general"}
 
     results, any_ok = {}, False
+    if "all" in (channels or []) or "mirrors" in wanted:
+        for m in _mirror_targets():
+            try:
+                ok = _post_telegram(m["chat"], text, m["token"])
+            except Exception:
+                ok = False
+            results[m["name"]] = "sent" if ok else "failed"
+            any_ok = any_ok or ok
+        wanted.discard("mirrors")
     for name in sorted(wanted):
         chat = _general_channel() if name == "general" else _tg_channel(name)
         if not chat:
@@ -159,8 +196,8 @@ def format_signal(sig: dict) -> str:
     )
 
 
-def _post_telegram(chat: str, text: str) -> bool:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+def _post_telegram(chat: str, text: str, token: str = "") -> bool:
+    token = token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
     if not token or not chat:
         return False
     url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -195,9 +232,20 @@ def send_to_telegram(category: str, text: str) -> dict:
     cat_ok = _post_telegram(cat_chat, text) if cat_chat else False
     # every signal also goes to the public/marketing channel
     gen_ok = _post_telegram(gen_chat, text) if gen_chat else None
-    return {"sent": bool(cat_ok or gen_ok),
+
+    # and to any mirror destinations — groups that take every signal
+    # regardless of category, each possibly via its own bot
+    mirrors = {}
+    for m in _mirror_targets():
+        try:
+            mirrors[m["name"]] = _post_telegram(m["chat"], text, m["token"])
+        except Exception:
+            mirrors[m["name"]] = False
+
+    return {"sent": bool(cat_ok or gen_ok or any(mirrors.values())),
             "category_channel": cat_ok,
             "general_channel": gen_ok,
+            "mirrors": mirrors or None,
             "reason": None if cat_chat else f"no channel configured for {category}"}
 
 
