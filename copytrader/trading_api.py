@@ -51,6 +51,43 @@ def _is_admin(user) -> bool:
     return (getattr(user, "email", "") or "").lower() in admins
 
 
+def _may_trade(sb: Client, user) -> dict:
+    """Who is allowed to place manual orders.
+
+    Manual trading is for the people whose trades others copy — admins and
+    approved master traders. A subscriber or affiliate with a connected
+    exchange should not be able to fire orders through this panel: it is a
+    leader tool, not a broker terminal, and every order here can become a
+    fan-out to other people accounts.
+    """
+    if _is_admin(user):
+        return {"allowed": True, "role": "admin"}
+
+    try:
+        rows = (sb.table("copy_leaders").select("approval_status,suspended")
+                .eq("user_id", str(user.id)).execute()).data or []
+    except Exception:
+        rows = []
+
+    if not rows:
+        return {"allowed": False, "role": "subscriber",
+                "reason": ("Manual trading is available to approved master "
+                           "traders only. Apply from this page if you want "
+                           "others to be able to copy you.")}
+
+    leader = rows[0]
+    if leader.get("suspended"):
+        return {"allowed": False, "role": "suspended_leader",
+                "reason": ("Your listing is suspended, so manual trading is "
+                           "paused. Contact support if you think this is wrong.")}
+    if (leader.get("approval_status") or "") != "approved":
+        return {"allowed": False, "role": "pending_leader",
+                "reason": (f"Your master trader application is "
+                           f"{leader.get('approval_status') or 'pending'}. "
+                           f"Manual trading unlocks once it is approved.")}
+    return {"allowed": True, "role": "leader"}
+
+
 # ─────────────────────────── manual trading ───────────────────────────
 class ManualOrderIn(BaseModel):
     connection_id: str
@@ -67,6 +104,10 @@ async def trade_preview(connection_id: str, symbol: str,
                         user=Depends(get_current_user),
                         sb: Client = Depends(get_supabase)) -> dict:
     """What would this order look like? Price, minimums, balance, limits."""
+    perm = _may_trade(sb, user)
+    if not perm["allowed"]:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, perm["reason"])
+
     adapter = _load_adapter(sb, str(user.id), connection_id)
     try:
         adapter.load_markets()
@@ -96,6 +137,10 @@ async def manual_trade(body: ManualOrderIn, request: Request,
                        sb: Client = Depends(get_supabase)) -> dict:
     uid = str(user.id)
     mode = execution_mode()
+
+    perm = _may_trade(sb, user)
+    if not perm["allowed"]:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, perm["reason"])
 
     if body.side not in ("buy", "sell"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "side must be buy or sell")
@@ -354,3 +399,16 @@ async def tradeable_symbols(connection_id: str,
     return {"symbols": out, "count": len(out), "quote": q,
             "note": ("Minimum notional is the exchange's own floor — an order "
                      "below it will be rejected by the venue, not by us.")}
+
+
+@router.get("/can-trade")
+async def can_trade(user=Depends(get_current_user),
+                    sb: Client = Depends(get_supabase)) -> dict:
+    """Is this user permitted to place manual orders?
+
+    The UI calls this to decide whether to render the trade panel at all —
+    showing a button that always returns 403 is worse than not showing it.
+    """
+    perm = _may_trade(sb, user)
+    return {"allowed": perm["allowed"], "role": perm.get("role"),
+            "reason": perm.get("reason", "")}
