@@ -326,10 +326,22 @@ async def webhook(secret: str, request: Request,
     except Exception:
         return {"ok": True}
 
+    # channel posts and edits are not conversations — drop them before
+    # anything else looks at them
+    if upd.get("channel_post") or upd.get("edited_channel_post"):
+        return {"ok": True}
+
     # ── button presses ──
     cq = upd.get("callback_query")
     if cq:
-        chat_id = cq["message"]["chat"]["id"]
+        chat = (cq.get("message") or {}).get("chat") or {}
+        # The bot is an admin in the channel, so it receives group and channel
+        # updates too. The qualification flow is a one-to-one conversation and
+        # must never run in public — replying there spams the channel.
+        if chat.get("type") != "private":
+            _api("answerCallbackQuery", {"callback_query_id": cq["id"]})
+            return {"ok": True}
+        chat_id = chat["id"]
         msg_id = cq["message"]["message_id"]
         data = cq.get("data") or ""
         _api("answerCallbackQuery", {"callback_query_id": cq["id"]})
@@ -372,9 +384,18 @@ async def webhook(secret: str, request: Request,
 
     # ── plain messages ──
     m = upd.get("message") or {}
-    chat_id = (m.get("chat") or {}).get("id")
+    chat = m.get("chat") or {}
+    chat_id = chat.get("id")
     text = (m.get("text") or "").strip()
     if not chat_id:
+        return {"ok": True}
+
+    # private chats only — never reply in the channel or a group
+    if chat.get("type") != "private":
+        return {"ok": True}
+
+    # ignore other bots
+    if (m.get("from") or {}).get("is_bot"):
         return {"ok": True}
 
     lead = _get_lead(sb, chat_id)
