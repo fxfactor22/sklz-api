@@ -26,6 +26,7 @@ from copytrader.newtokens_api import router as newtokens_router
 from public_stats import router as public_router
 from updates_api import router as updates_router
 from profile_api import router as profile_router
+from profile_api import codes_router
 from signals_engine import router as signals_router
 from scanner import router as scanner_router
 from academy import router as academy_router
@@ -68,6 +69,7 @@ app.include_router(newtokens_router)
 app.include_router(public_router)
 app.include_router(updates_router)
 app.include_router(profile_router)
+app.include_router(codes_router)
 app.include_router(signals_router)
 app.include_router(scanner_router)
 app.include_router(academy_router)

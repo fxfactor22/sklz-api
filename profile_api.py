@@ -178,3 +178,80 @@ async def disable_2fa(body: Disable2FA, user=Depends(get_current_user),
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
                             f"could not disable 2FA: {str(exc)[:180]}") from exc
     return {"ok": True, "message": "Two-factor authentication is off."}
+
+
+# ── access codes (admin) ────────────────────────────────────────────
+codes_router = APIRouter(prefix="/api/codes", tags=["codes"])
+
+
+def _admin_only(user) -> None:
+    admins = {e.strip().lower() for e in
+              os.environ.get("ADMIN_EMAILS", "fxfactor24@gmail.com").split(",")}
+    if (getattr(user, "email", "") or "").lower() not in admins:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+
+
+class CodeIn(BaseModel):
+    code: str = Field(min_length=3, max_length=40)
+    plan: str = "Bundle"
+    max_uses: int = 1
+    days_valid: int = 30
+    note: str = ""
+
+
+@codes_router.get("")
+async def list_codes(user=Depends(get_current_user),
+                     sb: Client = Depends(get_supabase)) -> dict:
+    _admin_only(user)
+    try:
+        rows = (sb.table("access_codes").select("*")
+                .order("created_at", desc=True).limit(200).execute()).data or []
+    except Exception:
+        rows = []
+    return {"codes": rows,
+            "signup_mode": os.environ.get("SKLZ_SIGNUP_MODE", "open")}
+
+
+@codes_router.post("")
+async def create_code(body: CodeIn, user=Depends(get_current_user),
+                      sb: Client = Depends(get_supabase)) -> dict:
+    _admin_only(user)
+    from datetime import timedelta
+    expires = (datetime.now(timezone.utc)
+               + timedelta(days=max(1, body.days_valid))).isoformat()
+    row = {"code": body.code.strip().upper(), "plan": body.plan,
+           "max_uses": max(0, body.max_uses), "expires_at": expires,
+           "note": body.note[:200], "active": True,
+           "created_by": str(user.id)}
+    try:
+        sb.table("access_codes").upsert(row, on_conflict="code").execute()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            f"could not save code: {str(exc)[:160]}") from exc
+    uses = row["max_uses"] or "unlimited"
+    return {"ok": True, "code": row["code"],
+            "message": f"{row['code']} created — {uses} use(s), "
+                       f"valid {body.days_valid} days."}
+
+
+@codes_router.post("/{code}/disable")
+async def disable_code(code: str, user=Depends(get_current_user),
+                       sb: Client = Depends(get_supabase)) -> dict:
+    _admin_only(user)
+    sb.table("access_codes").update({"active": False}) \
+        .eq("code", code.upper()).execute()
+    return {"ok": True, "message": f"{code.upper()} disabled."}
+
+
+@codes_router.get("/{code}/uses")
+async def code_uses(code: str, user=Depends(get_current_user),
+                    sb: Client = Depends(get_supabase)) -> dict:
+    """Who redeemed it — so you can see which promotion actually worked."""
+    _admin_only(user)
+    try:
+        rows = (sb.table("access_code_uses").select("*")
+                .eq("code", code.upper())
+                .order("used_at", desc=True).limit(200).execute()).data or []
+    except Exception:
+        rows = []
+    return {"code": code.upper(), "uses": rows, "count": len(rows)}

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import datetime, timezone
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -42,6 +43,7 @@ class SignupIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     display_name: str | None = Field(default=None, max_length=80)
+    access_code: str | None = Field(default=None, max_length=40)
 
 
 class LoginIn(BaseModel):
@@ -99,7 +101,88 @@ def _user_public(user) -> dict:
     }
 
 
-# --- routes --------------------------------------------------------------
+
+
+# ── signup gating ───────────────────────────────────────────────────
+# SKLZ_SIGNUP_MODE:
+#   open   (default) anyone may create an account; paid features stay
+#          behind the paywall, which is the usual SaaS shape
+#   code   an access code is required — use during closed promotions
+#
+# Kept as a switch rather than hard-coded, because closing signup also
+# closes the top of the funnel: nobody can look around before buying.
+def _signup_mode() -> str:
+    return os.environ.get("SKLZ_SIGNUP_MODE", "open").strip().lower()
+
+
+def _check_access_code(sb: Client, code: str) -> dict:
+    """Validate a code without consuming it. Returns {ok, plan, reason}."""
+    if not code:
+        return {"ok": False, "reason": "An access code is required to sign up."}
+    code = code.strip().upper()
+    try:
+        rows = (sb.table("access_codes").select("*")
+                .eq("code", code).execute()).data or []
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "reason": f"Could not check the code: {str(exc)[:120]}"}
+    if not rows:
+        return {"ok": False, "reason": "That code is not recognised."}
+
+    c = rows[0]
+    if not c.get("active", True):
+        return {"ok": False, "reason": "That code is no longer active."}
+
+    exp = c.get("expires_at")
+    if exp:
+        try:
+            when = datetime.fromisoformat(str(exp).replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) > when:
+                return {"ok": False, "reason": "That code has expired."}
+        except ValueError:
+            pass
+
+    mx = int(c.get("max_uses") or 0)
+    used = int(c.get("used_count") or 0)
+    if mx and used >= mx:
+        return {"ok": False, "reason": "That code has already been fully used."}
+
+    return {"ok": True, "plan": c.get("plan") or "Bundle", "code": code}
+
+
+def _consume_access_code(sb: Client, code: str, user_id: str, email: str,
+                         plan: str) -> None:
+    """Mark a code used and grant the plan it carries."""
+    try:
+        sb.table("access_code_uses").insert(
+            {"code": code, "user_id": user_id, "email": email}).execute()
+        rows = (sb.table("access_codes").select("used_count")
+                .eq("code", code).execute()).data or []
+        cur = int((rows[0] if rows else {}).get("used_count") or 0)
+        sb.table("access_codes").update({"used_count": cur + 1}) \
+            .eq("code", code).execute()
+    except Exception:
+        pass
+    try:
+        sb.table("subscriptions").upsert(
+            {"user_id": user_id, "plan": plan, "active": True,
+             "updated_at": datetime.now(timezone.utc).isoformat()},
+            on_conflict="user_id").execute()
+    except Exception:
+        pass
+
+# --- routes ---
+@router.get("/signup-mode")
+async def signup_mode() -> dict:
+    """PUBLIC — does signup need an access code right now?"""
+    mode = _signup_mode()
+    return {"mode": mode,
+            "message": ("Signup is invite-only. Enter your access code."
+                        if mode == "code" else
+                        "Anyone can create a free account; paid features "
+                        "require a subscription.")}
+
+
+# -----------------------------------------------------------
 @router.post("/signup", response_model=SessionOut)
 async def signup(payload: SignupIn, request: Request,
                  sb: Client = Depends(get_supabase)) -> SessionOut:
@@ -107,6 +190,18 @@ async def signup(payload: SignupIn, request: Request,
     if not _rate_ok(f"signup:{ip}", 10):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
                             "Too many attempts. Please wait a minute.")
+
+    granted = None
+    if _signup_mode() == "code":
+        chk = _check_access_code(sb, payload.access_code or "")
+        if not chk["ok"]:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, chk["reason"])
+        granted = chk
+    elif payload.access_code:
+        # codes still work when signup is open — they just grant a plan
+        chk = _check_access_code(sb, payload.access_code)
+        if chk["ok"]:
+            granted = chk
     try:
         res = sb.auth.sign_up({
             "email": payload.email,
@@ -125,6 +220,11 @@ async def signup(payload: SignupIn, request: Request,
     session = res.session
     if user is not None:
         _profile_from_user(user, sb)
+        # redeem the code only now the account genuinely exists, so a failed
+        # signup never burns a use
+        if granted:
+            _consume_access_code(sb, granted["code"], str(user.id),
+                                 payload.email, granted["plan"])
 
     # If email confirmation is on, session is None until they confirm.
     if session is None:
