@@ -304,3 +304,53 @@ async def review_application(leader_id: str, body: ReviewIn, request: Request,
     _audit(sb, str(user.id), "application_review",
            {"leader_id": leader_id, "approved": body.approve}, request)
     return {"ok": True, "approved": body.approve, "leader": res.data[0]}
+
+
+@router.get("/symbols/{connection_id}")
+async def tradeable_symbols(connection_id: str,
+                            quote: str = "USDT",
+                            user=Depends(get_current_user),
+                            sb: Client = Depends(get_supabase)) -> dict:
+    """Spot pairs this connection can actually trade, with their minimums.
+
+    Read from the exchange rather than hard-coded, so the list matches what
+    the venue really offers and the minimum notional shown is the real one —
+    a rejected order because $5 was below the floor is a confusing failure.
+    """
+    # _load_adapter enforces ownership of the connection
+    adapter = _load_adapter(sb, str(user.id), connection_id)
+    try:
+        markets = adapter.load_markets()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            f"could not read markets: {str(exc)[:160]}") from exc
+
+    q = (quote or "USDT").upper()
+    out = []
+    for sym, m in (markets or {}).items():
+        if not m.get("spot") or not m.get("active"):
+            continue
+        if (m.get("quote") or "").upper() != q:
+            continue
+        limits = m.get("limits") or {}
+        cost = limits.get("cost") or {}
+        amount = limits.get("amount") or {}
+        out.append({
+            "symbol": sym,
+            "base": m.get("base"),
+            "quote": m.get("quote"),
+            "min_notional": cost.get("min"),
+            "min_amount": amount.get("min"),
+        })
+
+    # majors first, then alphabetical — the common ones should be reachable
+    priority = ["BTC", "ETH", "SOL", "XRP", "BNB", "ADA", "DOGE", "LINK",
+                "AVAX", "DOT", "MATIC", "LTC", "TRX", "ATOM"]
+    def rank(row):
+        b = (row.get("base") or "").upper()
+        return (priority.index(b) if b in priority else 999, b)
+    out.sort(key=rank)
+
+    return {"symbols": out, "count": len(out), "quote": q,
+            "note": ("Minimum notional is the exchange's own floor — an order "
+                     "below it will be rejected by the venue, not by us.")}
