@@ -250,10 +250,28 @@ def run_alerts(sb: Client, coins: list[dict], log=print) -> dict:
     return {"checked": len(prefs), "sent": sent, "quiet_skipped": skipped}
 
 
+def _is_owner(user) -> bool:
+    """Alert settings are owner-only.
+
+    The alerts feed a private channel and drive the owner's own decisions.
+    Admins can do plenty on this platform; changing what the owner is told
+    about the market is not one of them.
+    """
+    owner = os.environ.get("OWNER_EMAIL", "fxfactor24@gmail.com").strip().lower()
+    return (getattr(user, "email", "") or "").strip().lower() == owner
+
+
+def _require_owner(user) -> None:
+    if not _is_owner(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "Alert settings are limited to the account owner.")
+
+
 # ── endpoints ───────────────────────────────────────────────────────
 @router.get("/prefs")
 async def get_prefs(user=Depends(get_current_user),
                     sb: Client = Depends(get_supabase)) -> dict:
+    _require_owner(user)
     try:
         rows = (sb.table("alert_prefs").select("*")
                 .eq("user_id", str(user.id)).execute()).data or []
@@ -277,6 +295,7 @@ async def get_prefs(user=Depends(get_current_user),
 @router.put("/prefs")
 async def save_prefs(body: AlertPrefs, user=Depends(get_current_user),
                      sb: Client = Depends(get_supabase)) -> dict:
+    _require_owner(user)
     row = {"user_id": str(user.id), **body.model_dump(),
            "updated_at": _now().isoformat()}
     try:
@@ -292,6 +311,7 @@ async def test_alert(user=Depends(get_current_user),
                      sb: Client = Depends(get_supabase)) -> dict:
     """Send one test message, so a wrong chat id is found now rather than
     when something actually matters."""
+    _require_owner(user)
     try:
         rows = (sb.table("alert_prefs").select("telegram_chat_id")
                 .eq("user_id", str(user.id)).execute()).data or []

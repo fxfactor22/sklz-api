@@ -25,9 +25,9 @@ from auth import get_current_user
 
 
 def _require_admin(user):
-    """Bot control is owner-only until per-user bot ownership ships."""
+    """Bot control is owner-only. Not admin-only — owner."""
     admins = {e.strip().lower() for e in
-              os.environ.get("ADMIN_EMAILS", "fxfactor24@gmail.com").split(",")}
+              os.environ.get("OWNER_EMAIL", "fxfactor24@gmail.com").split(",")}
     if (getattr(user, "email", "") or "").lower() not in admins:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             "Bot control is limited to the account owner.")
@@ -218,6 +218,26 @@ class OrderIn(_BM):
     tp: float = 0.0
 
 
+def _is_owner(user) -> bool:
+    """Strictly the platform owner — not merely an admin.
+
+    ADMIN_EMAILS can hold several people, and admin covers plenty of useful
+    but recoverable things. Placing a live order is different: it spends real
+    money and, once followers exist, propagates to other people accounts.
+    That stays with one address.
+    """
+    owner = os.environ.get("OWNER_EMAIL", "fxfactor24@gmail.com").strip().lower()
+    return (getattr(user, "email", "") or "").strip().lower() == owner
+
+
+def _require_owner(user) -> None:
+    if not _is_owner(user):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "This action is limited to the account owner. Administrators "
+            "cannot place live orders.")
+
+
 def _is_admin_user(user) -> bool:
     admins = {e.strip().lower() for e in
               os.environ.get("ADMIN_EMAILS", "fxfactor24@gmail.com").split(",")}
@@ -228,8 +248,7 @@ def _is_admin_user(user) -> bool:
 async def place_order(body: OrderIn, user=Depends(get_current_user),
                       sb: Client = Depends(get_supabase)) -> dict:
     """Admin-only: queue a manual entry for the bot to execute on next poll."""
-    if not _is_admin_user(user):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+    _require_owner(user)
     if body.side not in ("buy", "sell"):
         return {"ok": False, "reason": "side must be buy|sell"}
     try:
