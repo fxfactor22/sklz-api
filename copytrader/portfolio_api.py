@@ -609,32 +609,61 @@ async def dashboard(days: int = 30, user=Depends(get_current_user),
             continue
     balance = invested + cash
 
-    # realised results per asset, matching sells against buys
+    # Realised results per asset, using average cost.
+    #
+    # The previous version computed  sold - min(bought, sold)  which is always
+    # zero whenever a position sells for less than it cost — so every losing
+    # trade scored exactly 0, nothing counted as closed, and both the curve and
+    # the share card reported no activity at all.
+    #
+    # Correct method: track quantity and cost as buys happen, and when a sell
+    # occurs realise (sell price - average cost) x quantity sold.
     per_asset: dict = {}
+    closed_wins = closed_losses = 0
+
     for o in sorted(placed, key=lambda x: x.get("created_at") or ""):
         asset = (o.get("symbol") or "").split("/")[0]
-        d = per_asset.setdefault(asset, {"bought": 0.0, "sold": 0.0, "trades": 0})
+        if not asset:
+            continue
+        d = per_asset.setdefault(asset, {"qty": 0.0, "cost": 0.0,
+                                         "realised": 0.0, "trades": 0,
+                                         "closes": 0})
         d["trades"] += 1
-        if o.get("side") == "buy":
-            d["bought"] += _num(o.get("notional"))
-        else:
-            d["sold"] += _num(o.get("notional"))
 
-    top = []
-    closed_wins = closed_losses = 0
-    for asset, d in per_asset.items():
-        if d["sold"] > 0:
-            pnl = d["sold"] - min(d["bought"], d["sold"])
-            if pnl > 0:
+        notional = _num(o.get("notional"))
+        price = _num(o.get("filled_price")) or None
+        qty = _num(o.get("amount")) or ((notional / price) if price else 0.0)
+
+        if o.get("side") == "buy":
+            d["qty"] += qty
+            d["cost"] += notional
+            continue
+
+        # a sell realises the difference against average cost
+        if d["qty"] > 0 and qty > 0:
+            avg = d["cost"] / d["qty"]
+            sold_qty = min(qty, d["qty"])
+            proceeds = (price * sold_qty) if price else (notional or 0)
+            realised = proceeds - (avg * sold_qty)
+            d["realised"] += realised
+            d["qty"] -= sold_qty
+            d["cost"] -= avg * sold_qty
+            d["closes"] += 1
+            if realised > 0:
                 closed_wins += 1
-            elif pnl < 0:
+            elif realised < 0:
                 closed_losses += 1
-        else:
-            pnl = 0.0
-        top.append({"asset": asset, "pnl": round(pnl, 2), "trades": d["trades"]})
+        elif notional:
+            # sold something we have no buy record for — count the proceeds
+            # rather than dropping the trade entirely
+            d["realised"] += 0.0
+            d["closes"] += 1
+
+    top = [{"asset": a, "pnl": round(d["realised"], 2), "trades": d["trades"]}
+           for a, d in per_asset.items()]
     top.sort(key=lambda r: abs(r["pnl"]), reverse=True)
 
-    realised = sum(r["pnl"] for r in top)
+    realised = sum(d["realised"] for d in per_asset.values())
     closed_total = closed_wins + closed_losses
 
     # Equity curve: cumulative realised P/L over time, computed by matching
@@ -662,7 +691,10 @@ async def dashboard(days: int = 30, user=Depends(get_current_user),
                 running += realised_here
                 h["qty"] -= sold_qty
                 h["cost"] -= avg * sold_qty
-        curve.append({"t": o.get("created_at"), "v": round(running, 2)})
+        # only points where something was actually realised — a curve with a
+        # point per buy is a flat line with steps in the wrong places
+        if o.get("side") == "sell":
+            curve.append({"t": o.get("created_at"), "v": round(running, 2)})
 
     # daily points rather than per-trade, so the chart reads as a timeline
     daily: dict = {}
