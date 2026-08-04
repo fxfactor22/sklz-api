@@ -120,6 +120,71 @@ def _in_quiet_hours() -> bool:
     return h >= 22 or h < 7
 
 
+def alert_channel() -> str:
+    """A single destination for scanner alerts.
+
+    Simpler than per-user delivery and it sidesteps Telegram's rule that a bot
+    cannot message someone who has never contacted it — a channel just needs
+    the bot as an admin.
+    """
+    return os.environ.get("ALERT_CHANNEL_ID", "").strip()
+
+
+def _channel_recently_alerted(sb: Client, symbol: str) -> bool:
+    """Deduplication is global in channel mode: one post per coin per cooldown,
+    not one per subscriber."""
+    cutoff = (_now() - timedelta(hours=COOLDOWN_HOURS)).isoformat()
+    try:
+        rows = (sb.table("scanner_alerts").select("id")
+                .eq("symbol", symbol).is_("user_id", "null")
+                .gte("sent_at", cutoff).limit(1).execute()).data or []
+        return bool(rows)
+    except Exception:
+        return False
+
+
+def run_channel_alerts(sb: Client, coins: list[dict], log=print) -> dict:
+    """Post clean setups to the configured channel."""
+    chat = alert_channel()
+    if not chat:
+        return {"mode": "channel", "sent": 0,
+                "reason": "ALERT_CHANNEL_ID is not set"}
+
+    try:
+        min_score = float(os.environ.get("ALERT_MIN_SCORE", "0.35"))
+    except (TypeError, ValueError):
+        min_score = 0.35
+    quiet = os.environ.get("ALERT_QUIET_HOURS", "1") != "0"
+    if quiet and _in_quiet_hours():
+        return {"mode": "channel", "sent": 0, "reason": "quiet hours"}
+
+    sent = 0
+    for c in coins:
+        sym = (c.get("symbol") or "").upper()
+        if not sym:
+            continue
+        if c.get("read") != "clean setup":
+            continue
+        if abs(float(c.get("score") or 0)) < min_score:
+            continue
+        if _channel_recently_alerted(sb, sym):
+            continue
+
+        if _send_telegram(chat, format_alert(c)):
+            sent += 1
+            try:
+                sb.table("scanner_alerts").insert({
+                    "user_id": None, "symbol": sym,
+                    "score": c.get("score"),
+                    "sent_at": _now().isoformat(),
+                }).execute()
+            except Exception:
+                pass
+            log(f"[alerts] {sym} posted to channel")
+
+    return {"mode": "channel", "sent": sent, "channel": chat[:8] + "..."}
+
+
 def run_alerts(sb: Client, coins: list[dict], log=print) -> dict:
     """Check the current scan against every subscriber's preferences."""
     try:
@@ -253,7 +318,8 @@ async def run_now(authorization: str = Header(default=""),
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             f"scan failed: {str(exc)[:150]}") from exc
 
-    return run_alerts(sb, scored)
+    return (run_channel_alerts(sb, scored) if alert_channel()
+            else run_alerts(sb, scored))
 
 
 # ── scheduler ───────────────────────────────────────────────────────
@@ -319,7 +385,10 @@ async def _scan_pass(log=print) -> dict:
     coins = SC._fetch_markets(100)
     scored = [SC._score(c) for c in coins]
     clean = [c for c in scored if c.get("read") == "clean setup"]
-    result = run_alerts(sb, scored, log=log)
+    # a configured channel takes precedence — one post for everyone rather
+    # than a message per subscriber
+    result = (run_channel_alerts(sb, scored, log=log) if alert_channel()
+              else run_alerts(sb, scored, log=log))
     result["scanned"] = len(scored)
     result["clean"] = len(clean)
     return result
