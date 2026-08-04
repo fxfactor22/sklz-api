@@ -254,3 +254,113 @@ async def run_now(authorization: str = Header(default=""),
                             f"scan failed: {str(exc)[:150]}") from exc
 
     return run_alerts(sb, scored)
+
+
+# ── scheduler ───────────────────────────────────────────────────────
+# Runs the scan on a loop and dispatches alerts. Same shape as the copy
+# poller: record every run, expose health, and back off when failing rather
+# than hammering a broken dependency every interval.
+import asyncio  # noqa: E402
+
+_sched: dict = {
+    "running": False, "runs": 0, "failures": 0, "consecutive_failures": 0,
+    "last_run_at": None, "last_success_at": None, "last_error": "",
+    "last_result": {},
+}
+
+
+def scan_interval() -> int:
+    try:
+        return max(120, int(os.environ.get("ALERT_SCAN_SECONDS", "300")))
+    except (TypeError, ValueError):
+        return 300
+
+
+def alerts_enabled() -> bool:
+    return os.environ.get("ALERTS_ENABLED", "1") != "0"
+
+
+@router.get("/health")
+async def alert_health() -> dict:
+    """Is the alert loop actually running? Public: someone relying on alerts
+    should be able to check rather than assume silence means no setups."""
+    import time as _t
+    s = dict(_sched)
+    last = s.get("last_success_at")
+    if not alerts_enabled():
+        s["health"] = "disabled"
+        s["message"] = "Alerts are switched off."
+    elif not s["running"]:
+        s["health"] = "stopped"
+        s["message"] = "The alert loop is not running. No alerts will be sent."
+    elif last is None:
+        s["health"] = "never_succeeded"
+        s["message"] = f"Running but no scan has succeeded yet. {s.get('last_error','')}"
+    else:
+        age = _t.time() - last
+        if age > scan_interval() * 3:
+            s["health"] = "stale"
+            s["message"] = (f"Last successful scan was {age/60:.0f} minutes ago. "
+                            f"Alerts are probably not working. {s.get('last_error','')}")
+        else:
+            s["health"] = "ok"
+            s["message"] = (f"Scanning every {scan_interval()//60} min. "
+                            f"Last success {age:.0f}s ago.")
+    for k in ("last_run_at", "last_success_at"):
+        if isinstance(s.get(k), float):
+            s[k] = datetime.fromtimestamp(s[k], timezone.utc).isoformat()
+    return s
+
+
+async def _scan_pass(log=print) -> dict:
+    from db import get_supabase
+    import scanner as SC
+    sb = get_supabase()
+    coins = SC._fetch_markets(100)
+    scored = [SC._score(c) for c in coins]
+    clean = [c for c in scored if c.get("read") == "clean setup"]
+    result = run_alerts(sb, scored, log=log)
+    result["scanned"] = len(scored)
+    result["clean"] = len(clean)
+    return result
+
+
+async def alert_loop(log=print) -> None:
+    import time as _t
+    if not alerts_enabled():
+        log("[alerts] disabled by ALERTS_ENABLED=0")
+        return
+    _sched["running"] = True
+    log(f"[alerts] started — scanning every {scan_interval()//60} min")
+
+    while True:
+        try:
+            _sched["last_run_at"] = _t.time()
+            _sched["runs"] += 1
+            res = await _scan_pass(log=log)
+            _sched["last_success_at"] = _t.time()
+            _sched["last_error"] = ""
+            _sched["consecutive_failures"] = 0
+            _sched["last_result"] = res
+            if res.get("sent"):
+                log(f"[alerts] {res['sent']} alert(s) sent from "
+                    f"{res.get('clean', 0)} clean setup(s)")
+        except Exception as exc:  # noqa: BLE001
+            _sched["failures"] += 1
+            _sched["consecutive_failures"] += 1
+            _sched["last_error"] = f"{type(exc).__name__}: {exc}"[:200]
+            n = _sched["consecutive_failures"]
+            if n == 1 or n % 10 == 0:
+                log(f"[alerts] FAILED ({n} in a row): {_sched['last_error']}")
+
+        delay = scan_interval()
+        if _sched["consecutive_failures"] > 3:
+            delay = min(1800, delay * min(6, _sched["consecutive_failures"]))
+        await asyncio.sleep(delay)
+
+
+def start(app, log=print) -> None:
+    @app.on_event("startup")
+    async def _start_alerts() -> None:  # noqa: ANN202
+        if alerts_enabled():
+            asyncio.create_task(alert_loop(log=log))
