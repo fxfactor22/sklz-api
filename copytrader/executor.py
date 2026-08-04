@@ -357,7 +357,8 @@ def _copy_one(sb: Client, sub: dict, lt: dict, load_adapter,
     # ---- live execution ----
     try:
         order = adapter.create_spot_order(follower_symbol, lt["side"], d.amount,
-                                          client_order_id=d.client_order_id)
+                                          client_order_id=d.client_order_id,
+                                          price=price)
     except Exception as exc:  # noqa: BLE001
         # the exception TYPE alone is nearly useless — "InvalidOrder" could be
         # size, precision, or an unsupported order type. Keep the message.

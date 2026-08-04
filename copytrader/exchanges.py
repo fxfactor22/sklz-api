@@ -221,14 +221,36 @@ class ExchangeAdapter:
 
     # ────────────────────────── execution ──────────────────────────
     def create_spot_order(self, symbol: str, side: str, amount: float,
-                          client_order_id: str | None = None) -> dict:
+                          client_order_id: str | None = None,
+                          price: float | None = None) -> dict:
         """Market spot order. `client_order_id` gives idempotency: the same id
-        will be rejected by the exchange rather than filled twice."""
+        will be rejected by the exchange rather than filled twice.
+
+        Exchanges differ on market BUY orders. Bybit takes an amount in the
+        base asset. Coinbase wants to know the total quote to spend, and
+        refuses a market buy without a price to work it out from. Passing the
+        price satisfies both — it is used for the calculation, not as a limit.
+        """
         if side not in ("buy", "sell"):
             raise ValueError("side must be buy or sell")
         params: dict[str, Any] = {}
         if client_order_id:
             params["clientOrderId"] = client_order_id
+
+        if side == "buy":
+            # let ccxt compute cost from amount * price where the venue needs it
+            params["createMarketBuyOrderRequiresPrice"] = False
+            if price is None:
+                try:
+                    price = self.price(symbol)
+                except Exception:
+                    price = None
+            if price:
+                # ccxt uses this to derive the quote total on venues that
+                # require it; it does not turn the order into a limit
+                return self.client.create_order(symbol, "market", side,
+                                                amount, price, params)
+
         return self.client.create_order(symbol, "market", side, amount,
                                         None, params)
 
