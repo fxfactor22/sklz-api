@@ -375,3 +375,225 @@ async def sell_partial(body: PartialIn, user=Depends(get_current_user),
     return {"ok": True, "sold": calc["amount"], "percent": body.percent,
             "remaining": calc["remaining"], "order_id": order.get("id"),
             "note": calc["note"]}
+
+
+def _enrich(orders: list[dict], subs: list[dict], sb, uid: str) -> list[dict]:
+    """Add current price and live P/L to each recent order.
+
+    Priced once per symbol rather than per row — a dashboard that makes twelve
+    identical price calls is slow for no reason.
+    """
+    if not orders:
+        return []
+    adapter = None
+    for sub in subs:
+        try:
+            adapter = _load_adapter(sb, uid, sub["connection_id"])
+            break
+        except Exception:
+            continue
+
+    prices: dict = {}
+    out = []
+    for o in orders:
+        row = dict(o)
+        sym = o.get("symbol") or ""
+        entry = _num(o.get("filled_price"))
+        cur = None
+        if adapter and sym and o.get("status") == "placed":
+            if sym not in prices:
+                try:
+                    prices[sym] = adapter.price(sym)
+                except Exception:
+                    prices[sym] = None
+            cur = prices[sym]
+        row["current_price"] = cur
+        if entry and cur:
+            pct = (cur - entry) / entry * 100
+            if o.get("side") == "sell":
+                pct = -pct
+            row["pnl_pct"] = round(pct, 2)
+            row["pnl_usd"] = round(_num(o.get("notional")) * pct / 100, 2)
+        out.append(row)
+    return out
+
+
+@router.get("/dashboard")
+async def dashboard(days: int = 30, user=Depends(get_current_user),
+                    sb: Client = Depends(get_supabase)) -> dict:
+    """Everything the client dashboard needs, in one call.
+
+    Win rate and similar headline figures are reported with their honest
+    uncertainty. A 72% win rate over 42 trades sounds authoritative and is
+    not: the true value could sit anywhere from 57% to 85%. Showing the
+    number alone is how every other platform flatters itself.
+    """
+    uid = str(user.id)
+    since = (datetime.now(timezone.utc) - timedelta(days=min(days, 365))).isoformat()
+
+    try:
+        subs = (sb.table("copy_subscriptions").select("*")
+                .eq("follower_id", uid).execute()).data or []
+    except Exception:
+        subs = []
+    ids = [s["id"] for s in subs]
+
+    orders = []
+    if ids:
+        try:
+            orders = (sb.table("copy_orders").select("*")
+                      .in_("subscription_id", ids)
+                      .gte("created_at", since)
+                      .order("created_at", desc=True)
+                      .limit(1000).execute()).data or []
+        except Exception:
+            orders = []
+
+    placed = [o for o in orders if o.get("status") == "placed"]
+
+    # holdings and cash, live from the exchange
+    balance = invested = cash = unrealised = 0.0
+    holdings = []
+    for sub in subs:
+        try:
+            adapter = _load_adapter(sb, uid, sub["connection_id"])
+            for b in adapter.balances(non_zero=True) or []:
+                asset = (getattr(b, "asset", None)
+                         or (b.get("asset") if isinstance(b, dict) else "") or "").upper()
+                total = _num(getattr(b, "total", None)
+                             if not isinstance(b, dict) else b.get("total"))
+                if not asset or total <= 0:
+                    continue
+                if asset in ("USDT", "USDC", "USD", "EUR", "GBP"):
+                    cash += total
+                    continue
+                price = None
+                for q in ("USDT", "USDC", "USD"):
+                    try:
+                        price = adapter.price(f"{asset}/{q}")
+                        if price:
+                            break
+                    except Exception:
+                        continue
+                val = total * price if price else 0
+                invested += val
+                holdings.append({"asset": asset, "amount": total,
+                                 "value": round(val, 2)})
+        except Exception:
+            continue
+    balance = invested + cash
+
+    # realised results per asset, matching sells against buys
+    per_asset: dict = {}
+    for o in sorted(placed, key=lambda x: x.get("created_at") or ""):
+        asset = (o.get("symbol") or "").split("/")[0]
+        d = per_asset.setdefault(asset, {"bought": 0.0, "sold": 0.0, "trades": 0})
+        d["trades"] += 1
+        if o.get("side") == "buy":
+            d["bought"] += _num(o.get("notional"))
+        else:
+            d["sold"] += _num(o.get("notional"))
+
+    top = []
+    closed_wins = closed_losses = 0
+    for asset, d in per_asset.items():
+        if d["sold"] > 0:
+            pnl = d["sold"] - min(d["bought"], d["sold"])
+            if pnl > 0:
+                closed_wins += 1
+            elif pnl < 0:
+                closed_losses += 1
+        else:
+            pnl = 0.0
+        top.append({"asset": asset, "pnl": round(pnl, 2), "trades": d["trades"]})
+    top.sort(key=lambda r: abs(r["pnl"]), reverse=True)
+
+    realised = sum(r["pnl"] for r in top)
+    closed_total = closed_wins + closed_losses
+
+    # Equity curve: cumulative realised P/L over time, computed by matching
+    # each sell against the average cost of what was bought before it. Without
+    # this the chart is decorative, and a decorative equity curve on a trading
+    # platform is worse than none.
+    curve = []
+    running = 0.0
+    held: dict = {}          # asset -> {"qty": float, "cost": float}
+    for o in sorted(placed, key=lambda x: x.get("created_at") or ""):
+        asset = (o.get("symbol") or "").split("/")[0]
+        notional = _num(o.get("notional"))
+        price = _num(o.get("filled_price")) or None
+        qty = (notional / price) if price else 0
+
+        h = held.setdefault(asset, {"qty": 0.0, "cost": 0.0})
+        if o.get("side") == "buy":
+            h["qty"] += qty
+            h["cost"] += notional
+        else:
+            if h["qty"] > 0 and qty > 0:
+                avg = h["cost"] / h["qty"]
+                sold_qty = min(qty, h["qty"])
+                realised_here = (price - avg) * sold_qty if price else 0
+                running += realised_here
+                h["qty"] -= sold_qty
+                h["cost"] -= avg * sold_qty
+        curve.append({"t": o.get("created_at"), "v": round(running, 2)})
+
+    # daily points rather than per-trade, so the chart reads as a timeline
+    daily: dict = {}
+    for p in curve:
+        day = (p["t"] or "")[:10]
+        if day:
+            daily[day] = p["v"]
+    curve_daily = [{"t": k, "v": v} for k, v in sorted(daily.items())]
+
+    # the honest bit
+    win_rate = (closed_wins / closed_total) if closed_total else None
+    verdict = None
+    if closed_total == 0:
+        verdict = "No positions have been closed yet, so there is nothing to measure."
+    elif closed_total < 30:
+        try:
+            import research_stats as RS
+            lo, hi = RS.wilson_interval(closed_wins, closed_total)
+            verdict = (f"{closed_total} closed position(s). The true win rate "
+                       f"could be anywhere from {lo:.0%} to {hi:.0%} — far too "
+                       f"few to judge. Treat this number as decoration until "
+                       f"there are at least 30.")
+        except Exception:
+            verdict = (f"Only {closed_total} closed position(s) — too few to "
+                       f"draw any conclusion from.")
+    else:
+        try:
+            import research_stats as RS
+            lo, hi = RS.wilson_interval(closed_wins, closed_total)
+            verdict = (f"{closed_total} closed positions, win rate "
+                       f"{win_rate:.0%} (range {lo:.0%}-{hi:.0%})."
+                       + (" That range includes 50%, so this is not yet "
+                          "distinguishable from chance."
+                          if lo <= 0.5 <= hi else ""))
+        except Exception:
+            verdict = f"{closed_total} closed positions."
+
+    return {
+        "balance": round(balance, 2),
+        "invested": round(invested, 2),
+        "cash": round(cash, 2),
+        "realised_pnl": round(realised, 2),
+        "realised_pct": round(realised / balance * 100, 2) if balance else None,
+        "trades_total": len(orders),
+        "trades_placed": len(placed),
+        "open_positions": len(holdings),
+        "closed_positions": closed_total,
+        "wins": closed_wins,
+        "losses": closed_losses,
+        "win_rate": round(win_rate, 4) if win_rate is not None else None,
+        "sample_verdict": verdict,
+        "enough_data": closed_total >= 30,
+        "top_assets": top[:6],
+        "holdings": sorted(holdings, key=lambda h: -h["value"])[:8],
+        "recent": _enrich(orders[:12], subs, sb, uid),
+        "curve": curve_daily[-60:],
+        "distribution": {"wins": closed_wins, "losses": closed_losses,
+                         "open": len(holdings)},
+        "following": len(subs),
+    }
