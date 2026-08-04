@@ -98,6 +98,11 @@ def format_alert(coin: dict, read: dict | None = None) -> str:
     if h1 is not None and h24 is not None:
         lines.append(f"1h {h1:+.1f}%  ·  24h {h24:+.1f}%")
 
+    if coin.get("why"):
+        lines.append(f"\n{coin['why']}")
+    if coin.get("bias"):
+        lines.append(f"bias: *{coin['bias'].upper()}*")
+
     if read:
         bias = (read.get("bias") or "").upper()
         conf = read.get("confidence") or ""
@@ -345,9 +350,7 @@ async def run_now(authorization: str = Header(default=""),
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "unauthorized")
 
     try:
-        import scanner as SC
-        coins = SC._fetch_markets(100)
-        scored = [SC._score(c) for c in coins]
+        scored = _clean_setups()
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             f"scan failed: {str(exc)[:150]}") from exc
@@ -412,18 +415,48 @@ async def alert_health() -> dict:
     return s
 
 
+def _clean_setups(log=print) -> list[dict]:
+    """The coins the scanner actually calls clean setups.
+
+    _score() returns "strong up" / "up" / "neutral" — never the literal string
+    "clean setup". That label comes from the daily top read, which weighs
+    momentum against how extended a move already is and separates real setups
+    from late chases. Filtering on _score's `read` matched nothing, which is
+    why the loop reported clean: 0 while the screen showed setups.
+    """
+    import scanner as SC
+
+    rows = SC._fetch_markets(100)
+    scored = []
+    for r in rows:
+        scored.append({**r, **SC._score(r)})
+
+    top = SC._fallback_top(scored)
+    setups = top.get("setups") or []
+    wanted = {(x.get("symbol") or "").upper(): x for x in setups}
+    if not wanted:
+        return []
+
+    out = []
+    for r in scored:
+        sym = (r.get("symbol") or "").upper()
+        if sym in wanted:
+            meta = wanted[sym]
+            out.append({**r, "read": "clean setup",
+                        "why": meta.get("why", ""),
+                        "bias": meta.get("bias", "")})
+    return out
+
+
 async def _scan_pass(log=print) -> dict:
     from db import get_supabase
-    import scanner as SC
     sb = get_supabase()
-    coins = SC._fetch_markets(100)
-    scored = [SC._score(c) for c in coins]
-    clean = [c for c in scored if c.get("read") == "clean setup"]
+    clean = _clean_setups(log=log)
     # a configured channel takes precedence — one post for everyone rather
     # than a message per subscriber
-    result = (run_channel_alerts(sb, scored, log=log) if alert_channel()
-              else run_alerts(sb, scored, log=log))
-    result["scanned"] = len(scored)
+    result = (run_channel_alerts(sb, clean, log=log) if alert_channel()
+              else run_alerts(sb, clean, log=log))
+    result["scanned"] = 100
     result["clean"] = len(clean)
     return result
 
