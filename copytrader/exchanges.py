@@ -238,16 +238,29 @@ class ExchangeAdapter:
             params["clientOrderId"] = client_order_id
 
         if side == "buy":
-            # let ccxt compute cost from amount * price where the venue needs it
-            params["createMarketBuyOrderRequiresPrice"] = False
             if price is None:
                 try:
                     price = self.price(symbol)
                 except Exception:
                     price = None
+
+            # Coinbase Advanced Trade expresses a market BUY as the amount of
+            # quote currency to SPEND, not the base amount to receive. Passing
+            # a base amount there produces UNSUPPORTED_ORDER_CONFIGURATION.
+            # Most other venues take the base amount, so branch on the venue.
+            wants_quote = self.exchange_id in (
+                "coinbase", "coinbaseadvanced", "coinbaseexchange",
+                "coinbasepro")
+
+            if wants_quote and price:
+                cost = amount * price
+                params["createMarketBuyOrderRequiresPrice"] = False
+                # ccxt reads `amount` as the quote total when this flag is set
+                return self.client.create_order(symbol, "market", side,
+                                                cost, None, params)
+
             if price:
-                # ccxt uses this to derive the quote total on venues that
-                # require it; it does not turn the order into a limit
+                params["createMarketBuyOrderRequiresPrice"] = False
                 return self.client.create_order(symbol, "market", side,
                                                 amount, price, params)
 
