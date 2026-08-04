@@ -308,8 +308,18 @@ async def protect(body: ProtectIn, user=Depends(get_current_user),
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             f"could not reach your exchange: {str(exc)[:140]}") from exc
 
-    result = PR.place_protection(adapter, body.symbol, body.amount,
+    symbol = body.symbol
+    try:
+        from copytrader.executor import resolve_for_follower
+        res = resolve_for_follower(adapter, body.symbol)
+        if res.get("ok"):
+            symbol = res["symbol"]
+    except Exception:
+        pass
+
+    result = PR.place_protection(adapter, symbol, body.amount,
                                  body.stop_price, body.take_profit)
+    result["symbol"] = symbol
     result["explanation"] = PR.describe_protection(result)
 
     try:
@@ -357,20 +367,37 @@ async def sell_partial(body: PartialIn, user=Depends(get_current_user),
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             f"you do not hold any {asset}")
 
-    market = adapter.market_rules(body.symbol) if hasattr(adapter, "market_rules") else None
+    # The page sends a symbol built from a guessed quote currency. Trust the
+    # exchange instead: Coinbase lists USDC where Bybit lists USDT, and sending
+    # BTC/USDT to Coinbase returns "target is not enabled for trading", which
+    # looks like a broken button rather than a wrong pair name.
+    symbol = body.symbol
+    try:
+        from copytrader.executor import resolve_for_follower
+        res = resolve_for_follower(adapter, body.symbol)
+        if res.get("ok"):
+            symbol = res["symbol"]
+        else:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, res["reason"])
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    market = adapter.market_rules(symbol) if hasattr(adapter, "market_rules") else None
     calc = PR.partial_sell_amount(held, body.percent, market)
     if not calc["ok"]:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, calc["reason"])
 
     try:
-        order = adapter.create_spot_order(body.symbol, "sell", calc["amount"])
+        order = adapter.create_spot_order(symbol, "sell", calc["amount"])
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             f"exchange rejected the sell: {str(exc)[:160]}") from exc
 
     return {"ok": True, "sold": calc["amount"], "percent": body.percent,
             "remaining": calc["remaining"], "order_id": order.get("id"),
-            "note": calc["note"]}
+            "symbol": symbol, "note": calc["note"]}
 
 
 def _user_connections(sb, uid: str) -> list[dict]:
@@ -502,6 +529,10 @@ async def dashboard(days: int = 30, user=Depends(get_current_user),
                     continue
                 if asset in ("USDT", "USDC", "USD", "EUR", "GBP"):
                     cash += total
+                    # surface it so the client knows which quote this account
+                    # actually trades in rather than assuming USDT
+                    holdings.append({"asset": asset, "amount": total,
+                                     "value": round(total, 2), "is_cash": True})
                     continue
                 price = None
                 for q in ("USDT", "USDC", "USD"):
