@@ -395,9 +395,47 @@ async def sell_partial(body: PartialIn, user=Depends(get_current_user),
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             f"exchange rejected the sell: {str(exc)[:160]}") from exc
 
+    # Record it. Holdings are read live from the exchange, but realised P/L is
+    # computed from our own order history — so a manual close that is not
+    # written here makes the position vanish while the profit never appears.
+    filled = None
+    try:
+        filled = float(order.get("average") or order.get("price") or 0) or None
+    except (TypeError, ValueError):
+        filled = None
+    if not filled:
+        try:
+            filled = float(adapter.price(symbol))
+        except Exception:
+            filled = None
+
+    try:
+        sub_id = None
+        for cn in _user_connections(sb, str(user.id)):
+            if cn["connection_id"] == body.connection_id and cn.get("subscription"):
+                sub_id = cn["subscription"].get("id")
+                break
+        sb.table("copy_orders").insert({
+            "subscription_id": sub_id,
+            "symbol": symbol,
+            "side": "sell",
+            "amount": calc["amount"],
+            "notional": round(calc["amount"] * filled, 2) if filled else None,
+            "filled_price": filled,
+            "status": "placed",
+            "skip_reason": "",
+            "source": "manual",
+            "exchange_order_id": str(order.get("id") or ""),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+    except Exception as exc:  # noqa: BLE001
+        # the trade happened either way; losing the record is bad but must not
+        # look like a failed sell
+        pass
+
     return {"ok": True, "sold": calc["amount"], "percent": body.percent,
             "remaining": calc["remaining"], "order_id": order.get("id"),
-            "symbol": symbol, "note": calc["note"]}
+            "symbol": symbol, "filled_price": filled, "note": calc["note"]}
 
 
 def _user_connections(sb, uid: str) -> list[dict]:
@@ -511,6 +549,27 @@ async def dashboard(days: int = 30, user=Depends(get_current_user),
                       .limit(1000).execute()).data or []
         except Exception:
             orders = []
+
+    # Manual trades live in their own table but are real fills on the same
+    # account. Excluding them made a hand-closed position vanish from holdings
+    # while its profit never showed up anywhere.
+    try:
+        manual = (sb.table("copy_manual_orders").select("*")
+                  .eq("user_id", uid)
+                  .gte("created_at", since)
+                  .order("created_at", desc=True)
+                  .limit(500).execute()).data or []
+        for m in manual:
+            orders.append({**m, "status": m.get("status") or "placed",
+                           "source": "manual"})
+    except Exception:
+        pass
+
+    # normalise status wording across the two tables, then re-sort
+    for o in orders:
+        if o.get("status") == "filled":
+            o["status"] = "placed"
+    orders.sort(key=lambda o: o.get("created_at") or "", reverse=True)
 
     placed = [o for o in orders if o.get("status") == "placed"]
 
