@@ -429,22 +429,50 @@ def _clean_setups(log=print) -> list[dict]:
     rows = SC._fetch_markets(100)
     scored = []
     for r in rows:
-        scored.append({**r, **SC._score(r)})
+        s = SC._score(r)
+        # keep the scorer's own wording for the message, before we relabel
+        scored.append({**r, **s, "momentum_read": s.get("read")})
 
-    top = SC._fallback_top(scored)
-    setups = top.get("setups") or []
-    wanted = {(x.get("symbol") or "").upper(): x for x in setups}
-    if not wanted:
-        return []
+    # Alert on the CONDITION, not the ranking.
+    #
+    # _fallback_top returns the best three by score right now, but a ranking
+    # is not a signal: a coin at rank four can be just as good and gets
+    # nothing, while a marginal one reaches rank three simply because two
+    # others faded. Worse, a coin dropping out and returning would alert twice
+    # without its own situation changing at all.
+    #
+    # The condition underneath that ranking is what actually means something:
+    # momentum is strong AND the move is not already extended. That is
+    # stable, comparable between coins, and either true or false for each one
+    # on its own terms.
+    try:
+        min_score = float(os.environ.get("ALERT_MIN_SCORE", "0.35"))
+    except (TypeError, ValueError):
+        min_score = 0.35
+    try:
+        max_extended = float(os.environ.get("ALERT_MAX_7D_PCT", "25"))
+    except (TypeError, ValueError):
+        max_extended = 25.0
 
     out = []
     for r in scored:
-        sym = (r.get("symbol") or "").upper()
-        if sym in wanted:
-            meta = wanted[sym]
-            out.append({**r, "read": "clean setup",
-                        "why": meta.get("why", ""),
-                        "bias": meta.get("bias", "")})
+        score = float(r.get("score") or 0)
+        d7 = abs(float(r.get("d7") or 0))
+        if abs(score) < min_score:
+            continue
+        if d7 > max_extended:
+            continue                      # already run — a late entry, not a setup
+        if not r.get("aligned"):
+            continue                      # timeframes disagree
+
+        out.append({**r, "read": "clean setup",
+                    "bias": "long" if score > 0 else "short",
+                    "why": (f"{r.get('momentum_read', '')}, 7d {r.get('d7')}% — "
+                            f"not extended, timeframes agree")})
+
+    out.sort(key=lambda r: abs(float(r.get("score") or 0)), reverse=True)
+    if log and out:
+        log(f"[alerts] {len(out)} coin(s) meet the clean-setup condition")
     return out
 
 
