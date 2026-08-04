@@ -24,6 +24,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from supabase import Client
 
 from auth import get_current_user
@@ -281,3 +282,96 @@ async def vs_leader(user=Depends(get_current_user),
                             "Different exchange, different fees, and a delay "
                             "between their fill and yours. Anyone promising "
                             "identical results is not telling you the truth.")}
+
+
+# ── position protection and partial exits ───────────────────────────
+class ProtectIn(BaseModel):
+    connection_id: str
+    symbol: str
+    amount: float
+    stop_price: float | None = None
+    take_profit: float | None = None
+
+
+@router.post("/protect")
+async def protect(body: ProtectIn, user=Depends(get_current_user),
+                  sb: Client = Depends(get_supabase)) -> dict:
+    """Set a stop loss and/or take profit on a position.
+
+    The response says whether the exchange is holding the order or SKLZ is
+    watching it. That distinction is the whole point: a bot-watched stop does
+    not fire when SKLZ is offline, and someone who believes otherwise has been
+    misled rather than protected.
+    """
+    from copytrader import protection as PR
+
+    try:
+        adapter = _load_adapter(sb, str(user.id), body.connection_id)
+        adapter.load_markets()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            f"could not reach your exchange: {str(exc)[:140]}") from exc
+
+    result = PR.place_protection(adapter, body.symbol, body.amount,
+                                 body.stop_price, body.take_profit)
+    result["explanation"] = PR.describe_protection(result)
+
+    try:
+        sb.table("position_protection").upsert({
+            "user_id": str(user.id), "connection_id": body.connection_id,
+            "symbol": body.symbol, "amount": body.amount,
+            "stop_price": body.stop_price, "take_profit": body.take_profit,
+            "protection": result.get("protection"),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }, on_conflict="user_id,connection_id,symbol").execute()
+    except Exception:
+        pass
+    return result
+
+
+class PartialIn(BaseModel):
+    connection_id: str
+    symbol: str
+    percent: float = Field(ge=1, le=100)
+
+
+@router.post("/sell-partial")
+async def sell_partial(body: PartialIn, user=Depends(get_current_user),
+                       sb: Client = Depends(get_supabase)) -> dict:
+    """Sell part of a holding — take some profit, keep the rest running."""
+    from copytrader import protection as PR
+
+    try:
+        adapter = _load_adapter(sb, str(user.id), body.connection_id)
+        adapter.load_markets()
+        asset = body.symbol.split("/")[0].upper()
+        held = 0.0
+        for b in adapter.balances(non_zero=True) or []:
+            a = (getattr(b, "asset", None)
+                 or (b.get("asset") if isinstance(b, dict) else "") or "").upper()
+            if a == asset:
+                held = _num(getattr(b, "free", None)
+                            if not isinstance(b, dict) else b.get("free"))
+                break
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            f"could not read your balance: {str(exc)[:140]}") from exc
+
+    if held <= 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"you do not hold any {asset}")
+
+    market = adapter.market_rules(body.symbol) if hasattr(adapter, "market_rules") else None
+    calc = PR.partial_sell_amount(held, body.percent, market)
+    if not calc["ok"]:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, calc["reason"])
+
+    try:
+        order = adapter.create_spot_order(body.symbol, "sell", calc["amount"])
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            f"exchange rejected the sell: {str(exc)[:160]}") from exc
+
+    return {"ok": True, "sold": calc["amount"], "percent": body.percent,
+            "remaining": calc["remaining"], "order_id": order.get("id"),
+            "note": calc["note"]}
