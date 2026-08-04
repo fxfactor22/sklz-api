@@ -187,6 +187,15 @@ def partial_sell_amount(held: float, pct: float, market: dict | None = None
     pct = max(1.0, min(100.0, float(pct)))
     amount = held * pct / 100.0
 
+    # Closing "everything" rarely works at exactly 100%. Fees are taken from
+    # the asset on some venues, part of the balance may be reserved against an
+    # open order, and the reported free amount can be a hair stale. Asking for
+    # every last unit then gets rejected as insufficient — which reads as a
+    # broken button rather than a rounding artefact. Shaving a fraction off
+    # closes the position in practice and leaves only dust.
+    if pct >= 100.0:
+        amount = held * 0.999
+
     step = None
     min_amt = None
     if market:
@@ -215,7 +224,12 @@ def partial_sell_amount(held: float, pct: float, market: dict | None = None
         return {"ok": False, "amount": 0,
                 "reason": "that share rounds to zero at this exchange's step size"}
 
+    remaining = held - amount
+    note = f"selling {pct:.0f}% ({amount:.8f}), leaving {remaining:.8f}"
+    if pct >= 100.0 and remaining > 0:
+        note = (f"closing the position ({amount:.8f}). A fraction "
+                f"({remaining:.8f}) is left behind because exchanges reject an "
+                f"order for the exact full balance — fees and rounding make it "
+                f"unfillable. What remains is dust.")
     return {"ok": True, "amount": amount, "pct": pct,
-            "remaining": round(held - amount, 10),
-            "note": (f"selling {pct:.0f}% ({amount:.8f}), leaving "
-                     f"{held - amount:.8f}")}
+            "remaining": round(remaining, 10), "note": note}

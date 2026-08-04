@@ -60,17 +60,13 @@ async def open_positions(user=Depends(get_current_user),
     balance wins and we should show it.
     """
     uid = str(user.id)
-    try:
-        subs = (sb.table("copy_subscriptions").select("*")
-                .eq("follower_id", uid).execute()).data or []
-    except Exception:
-        subs = []
-    if not subs:
+    conns = _user_connections(sb, uid)
+    if not conns:
         return {"positions": [], "connected": False,
                 "message": "No exchange connected yet."}
 
     out, errors = [], []
-    for sub in subs:
+    for sub in conns:
         try:
             adapter = _load_adapter(sb, uid, sub["connection_id"])
             balances = adapter.balances(non_zero=True)
@@ -377,6 +373,44 @@ async def sell_partial(body: PartialIn, user=Depends(get_current_user),
             "note": calc["note"]}
 
 
+def _user_connections(sb, uid: str) -> list[dict]:
+    """Every exchange connection this user can trade through.
+
+    Looking these up only via copy_subscriptions was wrong: a master trader
+    has no subscription — they have a leader row — so their own holdings never
+    loaded and every position control had nothing to attach to. Connections
+    are the real anchor; subscriptions and leadership are both just ways of
+    pointing at one.
+    """
+    out, seen = [], set()
+
+    # anything they connected directly
+    try:
+        for r in (sb.table("copy_connections").select("id,exchange_id")
+                  .eq("user_id", uid).eq("status", "active").execute()).data or []:
+            if r["id"] not in seen:
+                seen.add(r["id"])
+                out.append({"connection_id": r["id"], "role": "owner",
+                            "quote": "USDT"})
+    except Exception:
+        pass
+
+    # connections named by a subscription they follow through
+    try:
+        for s in (sb.table("copy_subscriptions").select("*")
+                  .eq("follower_id", uid).execute()).data or []:
+            cid = s.get("connection_id")
+            if cid and cid not in seen:
+                seen.add(cid)
+                out.append({"connection_id": cid, "role": "follower",
+                            "quote": s.get("quote") or "USDT",
+                            "subscription": s})
+    except Exception:
+        pass
+
+    return out
+
+
 def _enrich(orders: list[dict], subs: list[dict], sb, uid: str) -> list[dict]:
     """Add current price and live P/L to each recent order.
 
@@ -431,12 +465,14 @@ async def dashboard(days: int = 30, user=Depends(get_current_user),
     uid = str(user.id)
     since = (datetime.now(timezone.utc) - timedelta(days=min(days, 365))).isoformat()
 
+    conns = _user_connections(sb, uid)
     try:
-        subs = (sb.table("copy_subscriptions").select("*")
-                .eq("follower_id", uid).execute()).data or []
+        follow_subs = (sb.table("copy_subscriptions").select("id")
+                       .eq("follower_id", uid).execute()).data or []
     except Exception:
-        subs = []
-    ids = [s["id"] for s in subs]
+        follow_subs = []
+    ids = [s["id"] for s in follow_subs]
+    subs = conns          # holdings come from connections, not subscriptions
 
     orders = []
     if ids:
