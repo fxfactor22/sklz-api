@@ -53,17 +53,31 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _send_telegram(chat_id: str, text: str) -> bool:
+def _send_telegram(chat_id: str, text: str, symbol: str = "") -> bool:
     token = (os.environ.get("TG_SALES_BOT_TOKEN")
              or os.environ.get("TELEGRAM_BOT_TOKEN", ""))
     if not token or not chat_id:
         return False
+
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown",
+               "disable_web_page_preview": True}
+
+    # A button straight to the terminal with the chart and trade panel already
+    # loaded on this coin. That removes the friction from LOOKING, which is
+    # useful. It deliberately does not place the order: the alert itself says
+    # these setups are frequently coin-flips, and a one-tap path from
+    # notification to filled position is how people end up trading the
+    # notification rather than the setup.
+    if symbol:
+        site = os.environ.get("SITE_URL") or "https://www.sklzlabs.com"
+        payload["reply_markup"] = {"inline_keyboard": [[
+            {"text": f"\U0001F4C8  Open {symbol} chart",
+             "url": f"{site}/copydash.html?symbol={symbol}"}]]}
+
     try:
         req = urllib.request.Request(
             f"https://api.telegram.org/bot{token}/sendMessage",
-            data=json.dumps({"chat_id": chat_id, "text": text,
-                             "parse_mode": "Markdown",
-                             "disable_web_page_preview": True}).encode(),
+            data=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=12) as r:
             return json.loads(r.read().decode()).get("ok", False)
@@ -170,7 +184,7 @@ def run_channel_alerts(sb: Client, coins: list[dict], log=print) -> dict:
         if _channel_recently_alerted(sb, sym):
             continue
 
-        if _send_telegram(chat, format_alert(c)):
+        if _send_telegram(chat, format_alert(c), symbol=sym):
             sent += 1
             try:
                 sb.table("scanner_alerts").insert({
@@ -221,7 +235,7 @@ def run_alerts(sb: Client, coins: list[dict], log=print) -> dict:
             if _recently_alerted(sb, uid, sym):
                 continue
 
-            if _send_telegram(chat, format_alert(c)):
+            if _send_telegram(chat, format_alert(c), symbol=sym):
                 sent += 1
                 try:
                     sb.table("scanner_alerts").insert({
