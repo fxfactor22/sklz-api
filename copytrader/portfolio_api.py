@@ -597,3 +597,145 @@ async def dashboard(days: int = 30, user=Depends(get_current_user),
                          "open": len(holdings)},
         "following": len(subs),
     }
+
+
+@router.get("/leader")
+async def leader_dashboard(user=Depends(get_current_user),
+                           sb: Client = Depends(get_supabase)) -> dict:
+    """What a master trader needs to see.
+
+    Their own record, who is following, how much capital is tracking them, and
+    whether fan-out is actually reaching those people. That last one matters
+    most: a leader whose trades are silently failing to copy has followers
+    paying for nothing, and would never know from their own account.
+    """
+    uid = str(user.id)
+    try:
+        leaders = (sb.table("copy_leaders").select("*")
+                   .eq("user_id", uid).execute()).data or []
+    except Exception:
+        leaders = []
+    if not leaders:
+        return {"is_leader": False,
+                "message": "You are not registered as a master trader."}
+
+    leader = leaders[0]
+    lid = leader["id"]
+
+    try:
+        subs = (sb.table("copy_subscriptions").select("*")
+                .eq("leader_id", lid).execute()).data or []
+    except Exception:
+        subs = []
+
+    sub_ids = [s["id"] for s in subs]
+    orders = []
+    if sub_ids:
+        try:
+            orders = (sb.table("copy_orders").select("*")
+                      .in_("subscription_id", sub_ids)
+                      .order("created_at", desc=True)
+                      .limit(500).execute()).data or []
+        except Exception:
+            orders = []
+
+    placed = [o for o in orders if o.get("status") == "placed"]
+    skipped = [o for o in orders if o.get("status") in ("skipped", "failed")]
+
+    # the number that matters: are the trades actually reaching people?
+    delivery = (len(placed) / len(orders) * 100) if orders else None
+    fail_reasons: dict = {}
+    for o in skipped:
+        why = (o.get("skip_reason") or "unknown")[:70]
+        fail_reasons[why] = fail_reasons.get(why, 0) + 1
+
+    tracking = sum(_num(s.get("allocation")) for s in subs)
+    active = [s for s in subs if not s.get("paused")
+              and not s.get("emergency_stopped")]
+
+    share_pct = _num(leader.get("revenue_share_pct"), 10)
+    try:
+        earnings = (sb.table("leader_earnings").select("amount,paid")
+                    .eq("leader_id", lid).execute()).data or []
+    except Exception:
+        earnings = []
+    earned = sum(_num(e.get("amount")) for e in earnings)
+    unpaid = sum(_num(e.get("amount")) for e in earnings if not e.get("paid"))
+
+    return {
+        "is_leader": True,
+        "profile": {
+            "display_name": leader.get("display_name"),
+            "status": leader.get("approval_status"),
+            "suspended": bool(leader.get("suspended")),
+            "verified_trades": leader.get("verified_trades") or 0,
+            "verified_months": leader.get("verified_months") or 0,
+            "revenue_share_pct": share_pct,
+        },
+        "followers": {
+            "total": len(subs),
+            "active": len(active),
+            "paused": len(subs) - len(active),
+            "capital_tracking": round(tracking, 2),
+        },
+        "delivery": {
+            "copied": len(placed),
+            "not_copied": len(skipped),
+            "rate_pct": round(delivery, 1) if delivery is not None else None,
+            "reasons": [{"reason": k, "count": v}
+                        for k, v in sorted(fail_reasons.items(),
+                                           key=lambda kv: kv[1], reverse=True)][:6],
+            "note": ("This is the share of your trades that actually reached a "
+                     "follower account. A low rate means people following you "
+                     "are paying for trades they never received — the reasons "
+                     "below say why."),
+        },
+        "earnings": {
+            "total": round(earned, 2),
+            "unpaid": round(unpaid, 2),
+            "share_pct": share_pct,
+            "note": (f"{share_pct:.0f}% of subscription revenue from followers "
+                     f"you bring, paid monthly while they stay subscribed."),
+        },
+        "recent": orders[:10],
+    }
+
+
+@router.get("/share")
+async def share_card(user=Depends(get_current_user),
+                     sb: Client = Depends(get_supabase)) -> dict:
+    """A shareable summary of the user's own results.
+
+    Deliberately includes the sample size and the period. A screenshot showing
+    "+43%" with no context is what every trading grifter posts; including the
+    number of trades and the timeframe is what makes it a claim rather than a
+    boast.
+    """
+    uid = str(user.id)
+    d = await dashboard(30, user, sb)
+
+    pnl = d.get("realised_pnl") or 0
+    closed = d.get("closed_positions") or 0
+
+    if closed == 0:
+        headline = "Just getting started"
+        detail = "No positions closed yet."
+    else:
+        headline = ("+" if pnl >= 0 else "") + f"${pnl:,.2f}"
+        detail = f"over {closed} closed position" + ("s" if closed != 1 else "")
+
+    honest = None
+    if 0 < closed < 30:
+        honest = (f"{closed} trades is too small a sample to mean much — "
+                  f"this could easily be luck.")
+
+    return {
+        "headline": headline,
+        "detail": detail,
+        "period": "last 30 days",
+        "closed_positions": closed,
+        "win_rate": d.get("win_rate") if d.get("enough_data") else None,
+        "honest_note": honest,
+        "disclaimer": ("Past results do not predict future returns. "
+                       "Trading involves risk of loss."),
+    }
