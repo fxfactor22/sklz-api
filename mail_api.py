@@ -196,3 +196,98 @@ async def unsubscribe(token: str, email: str = "",
             "message": ("You will not receive marketing email from SKLZ Labs. "
                         "Account notices such as receipts and password resets "
                         "will still be sent — those are not marketing.")}
+
+
+class InviteIn(BaseModel):
+    email: EmailStr
+    display_name: str = Field(default="", max_length=80)
+    role: str = "affiliate"          # affiliate | subscriber
+    plan: str = ""                   # only if granting access
+
+
+@router.post("/invite")
+async def invite(body: InviteIn, user=Depends(get_current_user),
+                 sb: Client = Depends(get_supabase)) -> dict:
+    """Create an account and email an invitation.
+
+    NO PASSWORD IS SET OR SENT. The invitee receives a link to choose their
+    own, which is the only safe way to do this: a password travelling through
+    email is readable by every mail server it passes, sits in two inboxes
+    indefinitely, and is usually reused elsewhere. Sending one would undo the
+    2FA and reset flow built earlier in the same week.
+    """
+    _owner_only(user)
+    email = body.email.strip().lower()
+
+    # create, or find an existing account — inviting someone twice should not
+    # fail loudly, it should just resend
+    uid = None
+    existed = False
+    try:
+        created = sb.auth.admin.create_user({
+            "email": email,
+            "email_confirm": True,
+            "user_metadata": {"display_name": body.display_name or "",
+                              "invited_as": body.role},
+        })
+        uid = str(getattr(getattr(created, "user", None), "id", "") or "")
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc).lower()
+        if "already" in msg or "registered" in msg or "exists" in msg:
+            existed = True
+            try:
+                page = sb.auth.admin.list_users()
+                for u in (page or []):
+                    if (getattr(u, "email", "") or "").lower() == email:
+                        uid = str(u.id)
+                        break
+            except Exception:
+                pass
+        else:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                                f"could not create the account: {str(exc)[:180]}") from exc
+
+    if not uid:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            "account created but the id could not be read")
+
+    # seed the affiliate row so their code exists before first login
+    code = ""
+    if body.role == "affiliate":
+        try:
+            import hashlib
+            h = hashlib.sha256(uid.encode()).hexdigest()
+            code = h[:8].upper()
+            sb.table("affiliates").upsert(
+                {"user_id": uid, "code": code,
+                 "created_at": datetime.now(timezone.utc).isoformat()},
+                on_conflict="user_id").execute()
+        except Exception:
+            pass
+
+    # optional plan grant
+    if body.plan:
+        try:
+            sb.table("subscriptions").upsert(
+                {"user_id": uid, "plan": body.plan, "active": True,
+                 "updated_at": datetime.now(timezone.utc).isoformat()},
+                on_conflict="user_id").execute()
+        except Exception:
+            pass
+
+    # they set their own password from this link
+    try:
+        site = os.environ.get("SITE_URL") or "https://www.sklzlabs.com"
+        sb.auth.reset_password_for_email(email, {"redirect_to": f"{site}/reset.html"})
+    except Exception:
+        pass
+
+    sent = mailer.affiliate_welcome(email, body.display_name, code)
+
+    return {"ok": True, "user_id": uid, "code": code,
+            "account_existed": existed,
+            "email_sent": sent.get("ok"),
+            "email_error": sent.get("reason", ""),
+            "note": ("Two emails were sent: this welcome, and a separate link "
+                     "from Supabase to set a password. No password was chosen "
+                     "or transmitted by us.")}

@@ -299,6 +299,51 @@ def subscription_cancelled(to: str, plan: str, ends: str = "") -> dict:
     return send_transactional(to, "Your SKLZ subscription is cancelled", body)
 
 
+def affiliate_welcome(to: str, display_name: str = "", code: str = "") -> dict:
+    """Invitation for a new affiliate."""
+    name = display_name or "there"
+    link = f"{SITE}/?ref={code}" if code else SITE
+
+    body = (
+        _h1(f"Welcome to the SKLZ affiliate programme, {name}") +
+        _p("Your account is ready. You earn <b style='color:#EAEEF6;'>50% "
+           "recurring</b> on every subscription you refer \u2014 not just the "
+           "first month, but for as long as they stay.") +
+        _stats([("50%", "recurring commission"),
+                ("lifetime", "of the subscription"),
+                ("$19.50", "per Bundle, per month"),
+                ("30 days", "cookie window")]) +
+        _divider() +
+        _p("<b style='color:#EAEEF6;'>Your referral link</b>") +
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'style="margin:8px 0 18px;"><tr><td style="background:#141A26;'
+        f'border:1px solid #1E2735;border-radius:9px;padding:14px;'
+        f'font-family:ui-monospace,Menlo,monospace;font-size:13px;'
+        f'color:#F5A623;word-break:break-all;">{link}</td></tr></table>' +
+        _feature("\U0001F511", "Setting your password",
+                 "A separate email from us has a link to choose one. We never "
+                 "pick a password for you or send one by email \u2014 mail is "
+                 "not a safe place for credentials.") +
+        _feature("\U0001F4CA", "Tracking",
+                 "Your dashboard shows clicks, signups and commission owed, "
+                 "updated as they happen.") +
+        _feature("\U0001F4B0", "Getting paid",
+                 "Request a payout from the dashboard once you have earned "
+                 "your first commission.") +
+        _button("Open your affiliate dashboard", f"{SITE}/partner.html") +
+        _note("One thing worth knowing before you promote us: SKLZ publishes "
+              "its losing periods and refuses to show statistics below 200 "
+              "trades. If you are used to promoting products that claim "
+              "guaranteed returns, this will feel different \u2014 and that "
+              "honesty is the thing worth selling.", "info") +
+        _p("<span style='font-size:13.5px;color:#5B6377;'>Reply to this email "
+           "with any questions \u2014 it reaches a person.</span>")
+    )
+    return send_transactional(
+        to, "Your SKLZ Labs affiliate account is ready", body,
+        preheader="50% recurring commission \u2014 here is your link and how it works.")
+
+
 # ── marketing ───────────────────────────────────────────────────────
 def send_campaign(to: str, subject: str, body_html: str,
                   unsubscribe_token: str) -> dict:
