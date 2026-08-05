@@ -50,11 +50,32 @@ class TestIn(BaseModel):
 async def send_test(body: TestIn, user=Depends(get_current_user)) -> dict:
     """One test message, so a broken setup is found now."""
     _owner_only(user)
+    # the test shows the real layout — a plain test proves delivery but tells
+    # you nothing about what customers will actually receive
+    html = (
+        mailer._h1("Email is working") +
+        mailer._p("This is what your customers will see. Resend is wired "
+                  "correctly and mail is leaving the verified domain.") +
+        mailer._stats([("verified", "sklzlabs.com"),
+                       ("live", "transactional"),
+                       ("live", "campaigns"),
+                       ("on", "one-click opt-out")]) +
+        mailer._divider() +
+        mailer._feature("\U0001F4E7", "Transactional",
+                        "Receipts, password resets and payment notices. Sent "
+                        "regardless of marketing preferences.") +
+        mailer._feature("\U0001F4E3", "Campaigns",
+                        "Updates to customers, with a working unsubscribe in "
+                        "every message.") +
+        mailer._button("Open the dashboard", f"{mailer.SITE}/dashboard.html") +
+        mailer._note("If this looks plain in your client, it is probably "
+                     "blocking remote styling \u2014 the layout uses tables and "
+                     "inline styles precisely so that it degrades readably "
+                     "rather than breaking.", "info")
+    )
     r = mailer.send_transactional(
-        body.to, "SKLZ Labs — test email",
-        "<h1 style='font-size:19px;margin:0 0 12px;'>This is a test</h1>"
-        "<p style='color:#8B94A8;margin:0;'>If you can read this, Resend is "
-        "wired correctly and mail is leaving the verified domain.</p>")
+        body.to, "SKLZ Labs \u2014 email is working", html,
+        preheader="Your Resend setup is live and sending from sklzlabs.com.")
     if not r.get("ok"):
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, r.get("reason", "failed"))
     return {"ok": True, "id": r.get("id")}
