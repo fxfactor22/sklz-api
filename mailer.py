@@ -48,7 +48,12 @@ def _post(payload: dict) -> dict:
             "https://api.resend.com/emails",
             data=json.dumps(payload).encode(),
             headers={"Authorization": f"Bearer {key}",
-                     "Content-Type": "application/json"})
+                     "Content-Type": "application/json",
+                     # Cloudflare fronts the Resend API and rejects the default
+                     # Python-urllib agent outright (403, error code 1010).
+                     # A named agent is all it wants.
+                     "User-Agent": "SKLZ-Labs/1.0 (+https://www.sklzlabs.com)",
+                     "Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=20) as r:
             body = json.loads(r.read().decode())
         return {"ok": True, "id": body.get("id")}
@@ -58,7 +63,11 @@ def _post(payload: dict) -> dict:
             detail = exc.read().decode()[:300]
         except Exception:
             pass
-        return {"ok": False, "reason": f"HTTP {exc.code}: {detail}"}
+        if exc.code == 403 and "1010" in detail:
+            return {"ok": False,
+                    "reason": ("Cloudflare blocked the request (error 1010). "
+                               "This is the User-Agent, not your API key.")}
+        return {"ok": False, "reason": f"HTTP {exc.code}: {detail[:200]}"}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": str(exc)[:200]}
 
@@ -226,7 +235,9 @@ def verify_domain() -> dict:
     try:
         req = urllib.request.Request(
             "https://api.resend.com/domains",
-            headers={"Authorization": f"Bearer {key}"})
+            headers={"Authorization": f"Bearer {key}",
+                     "User-Agent": "SKLZ-Labs/1.0 (+https://www.sklzlabs.com)",
+                     "Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read().decode())
         domains = data.get("data") or []
