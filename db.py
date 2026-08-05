@@ -29,3 +29,22 @@ def get_supabase() -> Client:
             "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_KEY."
         )
     return client
+
+
+def admin_client() -> Client:
+    """A FRESH client for admin operations, never the shared one.
+
+    The cached client is a single instance for the whole process, and
+    sb.auth.set_session() — used when completing a password reset — mutates
+    its auth context in place. After any reset the shared client is
+    authenticated as that user and every admin call fails with "User not
+    allowed", intermittently and confusingly.
+
+    Admin work therefore gets its own short-lived client. Slightly wasteful,
+    and much better than an API whose privileges depend on what happened to run
+    before it.
+    """
+    s = get_settings()
+    if not s.configured:
+        raise RuntimeError("Supabase is not configured.")
+    return create_client(s.supabase_url, s.supabase_service_key)

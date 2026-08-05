@@ -10,7 +10,7 @@ from pydantic import BaseModel, EmailStr, Field
 from supabase import Client
 
 from auth import get_current_user
-from db import get_supabase
+from db import admin_client, get_supabase
 import mailer
 
 router = APIRouter(prefix="/api/mail", tags=["mail"])
@@ -133,14 +133,14 @@ async def campaign(body: CampaignIn, user=Depends(get_current_user),
             recipients = []
             for uid in ids:
                 try:
-                    u = sb.auth.admin.get_user_by_id(uid)
+                    u = admin_client().auth.admin.get_user_by_id(uid)
                     em = getattr(getattr(u, "user", None), "email", "")
                     if em:
                         recipients.append(em)
                 except Exception:
                     continue
         else:
-            page = sb.auth.admin.list_users()
+            page = admin_client().auth.admin.list_users()
             recipients = [getattr(u, "email", "") for u in (page or [])]
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
@@ -219,12 +219,16 @@ async def invite(body: InviteIn, user=Depends(get_current_user),
     _owner_only(user)
     email = body.email.strip().lower()
 
+    # admin auth calls need a client whose session has not been mutated by a
+    # password reset elsewhere in the process
+    admin = admin_client()
+
     # create, or find an existing account — inviting someone twice should not
     # fail loudly, it should just resend
     uid = None
     existed = False
     try:
-        created = sb.auth.admin.create_user({
+        created = admin.auth.admin.create_user({
             "email": email,
             "email_confirm": True,
             "user_metadata": {"display_name": body.display_name or "",
@@ -236,7 +240,7 @@ async def invite(body: InviteIn, user=Depends(get_current_user),
         if "already" in msg or "registered" in msg or "exists" in msg:
             existed = True
             try:
-                page = sb.auth.admin.list_users()
+                page = admin.auth.admin.list_users()
                 for u in (page or []):
                     if (getattr(u, "email", "") or "").lower() == email:
                         uid = str(u.id)
@@ -278,7 +282,7 @@ async def invite(body: InviteIn, user=Depends(get_current_user),
     # they set their own password from this link
     try:
         site = os.environ.get("SITE_URL") or "https://www.sklzlabs.com"
-        sb.auth.reset_password_for_email(email, {"redirect_to": f"{site}/reset.html"})
+        admin.auth.reset_password_for_email(email, {"redirect_to": f"{site}/reset.html"})
     except Exception:
         pass
 

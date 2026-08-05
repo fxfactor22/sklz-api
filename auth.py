@@ -373,8 +373,14 @@ async def set_password(payload: NewPassword,
                        sb: Client = Depends(get_supabase)) -> dict:
     """Complete a reset using the token from the emailed link."""
     try:
-        sb.auth.set_session(payload.access_token, payload.access_token)
-        sb.auth.update_user({"password": payload.password})
+        # A FRESH client, not the shared one. set_session() mutates the client
+        # it is called on, and the shared client is a single cached instance —
+        # so doing this on it leaves the whole process authenticated as this
+        # user, breaking every later admin call with "User not allowed".
+        from db import admin_client
+        tmp = admin_client()
+        tmp.auth.set_session(payload.access_token, payload.access_token)
+        tmp.auth.update_user({"password": payload.password})
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
@@ -394,14 +400,16 @@ async def change_password(payload: ChangePassword,
                           sb: Client = Depends(get_supabase)) -> dict:
     """Change password while logged in. Verifies the current one first."""
     email = getattr(user, "email", "")
+    from db import admin_client
+    tmp = admin_client()
     try:
-        sb.auth.sign_in_with_password({"email": email,
-                                       "password": payload.current_password})
+        tmp.auth.sign_in_with_password({"email": email,
+                                        "password": payload.current_password})
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "Current password is not correct.") from exc
     try:
-        sb.auth.update_user({"password": payload.new_password})
+        tmp.auth.update_user({"password": payload.new_password})
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
                             f"could not update password: {str(exc)[:160]}") from exc
