@@ -87,9 +87,12 @@ async def status_check(user=Depends(get_current_user)) -> dict:
 async def generate(body: GenIn, user=Depends(get_current_user)) -> dict:
     """Start a generation. Returns immediately with an id to poll."""
     _owner_only(user)
-    out = _call("/predictions", "POST", {
-        "model": body.model,
-        "input": {"prompt": body.prompt, "prompt_optimizer": False},
+    # Official models use their own endpoint. The generic /predictions path
+    # wants a pinned version hash, which changes whenever the model updates —
+    # /models/{owner}/{name}/predictions always runs the current version.
+    owner_name = body.model.strip("/")
+    out = _call(f"/models/{owner_name}/predictions", "POST", {
+        "input": {"prompt": body.prompt},
     })
     return {"ok": True, "id": out.get("id"), "status": out.get("status"),
             "note": ("Started. Poll /api/video/result/{id} — abstract clips "
