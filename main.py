@@ -31,7 +31,8 @@ from research_api import router as research_router
 import alerts_api
 from alerts_api import router as alerts_router
 from mail_api import router as mail_router
-from video_api import router as video_routerimport signal_lifecycle
+from video_api import router as video_router
+import signal_lifecycle
 import copy_scheduler
 from copy_scheduler import router as poll_router
 from tgbot import router as tgbot_router
@@ -85,8 +86,10 @@ app.include_router(profile_router)
 app.include_router(research_router)
 app.include_router(alerts_router)
 app.include_router(mail_router)
-app.include_router(video_router)app.include_router(signal_lifecycle.router)
-alerts_api.start(app)    signal_lifecycle.start(app)
+app.include_router(video_router)
+app.include_router(signal_lifecycle.router)
+alerts_api.start(app)
+signal_lifecycle.start(app)
 app.include_router(poll_router)
 copy_scheduler.start(app)
 app.include_router(tgbot_router)
