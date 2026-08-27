@@ -144,6 +144,22 @@ async def poll(key: str, sb: Client = Depends(get_supabase)) -> dict:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad copy key")
     if not sl["enabled"]:
         return {"instructions": [], "note": "copying paused"}
+    # STALE OPENS DO NOT EXECUTE. A slave EA that reconnects after an
+    # outage must not fire entries queued at long-dead prices — five
+    # 40-minute-old opens were found waiting for exactly that. Opens
+    # older than 90 seconds expire unfetched; closes always deliver,
+    # because closing a position you hold is right at any age.
+    cutoff = (datetime.now(timezone.utc)
+              - __import__("datetime").timedelta(seconds=90)).isoformat()
+    stale = (sb.table("copy_queue").select("id,instruction")
+             .eq("slave_id", sl["id"]).eq("status", "pending")
+             .lt("created_at", cutoff).execute()).data or []
+    stale_ids = [r["id"] for r in stale
+                 if (r.get("instruction") or {}).get("event") == "open"]
+    if stale_ids:
+        sb.table("copy_queue").update({"status": "expired"}) \
+          .in_("id", stale_ids).execute()
+
     rows = (sb.table("copy_queue").select("id,instruction")
             .eq("slave_id", sl["id"]).eq("status", "pending")
             .order("id").limit(10).execute()).data or []
