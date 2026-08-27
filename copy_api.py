@@ -238,6 +238,8 @@ async def toggle_slave(slave_id: str, body: SlaveToggle,
 class ConfigIn(BaseModel):
     slave_id: str
     master_id: str
+    account_type: str = "normal"
+    account_size: float = 10000
     lot_mode: str = "multiplier"
     lot_value: float = 1.0
     max_lot: float = 1.0
@@ -288,3 +290,39 @@ async def copy_log(user=Depends(get_current_user),
     r = (sb.table("copied_trades").select("*").in_("slave_id", ids)
          .order("at", desc=True).limit(100).execute())
     return {"log": r.data or []}
+
+
+# ── recommended settings by account type ────────────────────────────
+@router.get("/recommend")
+async def recommend(account_type: str = "normal",
+                    account_size: float = 10000) -> dict:
+    """One source of truth for 'what should my settings be'.
+
+    The prop preset encodes the engine's own survival math: a 5%/5% prop
+    account is a lifetime budget, so risk 0.5%/trade, stop the day at 4%
+    (the last 1% is the slippage budget), and cap concurrency at 3. The
+    normal preset breathes more but is still built to survive a bad week.
+    Everything returned here is a STARTING POINT the user can edit — it is
+    autofill, not policy.
+    """
+    size = max(100.0, min(float(account_size or 10000), 10_000_000))
+    if account_type == "prop":
+        out = {"lot_mode": "risk_pct", "lot_value": 0.5,
+               "max_daily_loss_pct": 4.0, "max_open": 3,
+               "max_lot": round(max(0.05, size / 10000 * 0.5), 2),
+               "max_spread_pips": 5.0,
+               "note": ("Prop preset: 0.5% risk/trade, day stops at 4% — "
+                        "the last 1% before the firm's 5% is slippage "
+                        "budget. Three positions max keeps a fully-loaded "
+                        "bad moment inside the daily stop.")}
+    else:
+        out = {"lot_mode": "risk_pct", "lot_value": 1.0,
+               "max_daily_loss_pct": 8.0, "max_open": 5,
+               "max_lot": round(max(0.05, size / 10000 * 1.0), 2),
+               "max_spread_pips": 5.0,
+               "note": ("Standard preset: 1% risk/trade, generous but "
+                        "survivable. Edit anything — these are starting "
+                        "points, not rules.")}
+    out["account_type"] = account_type
+    out["account_size"] = size
+    return out
