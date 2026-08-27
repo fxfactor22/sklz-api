@@ -57,6 +57,9 @@ CATALOG = {
     "copy_basic_monthly":  ("SKLZ Core", 2900, "month"),
     "copy_crypto_monthly": ("SKLZ Plus", 4900, "month"),
     "copy_pro_monthly":    ("SKLZ Pro", 7900, "month"),
+    "copy_basic_annual":   ("SKLZ Core", 27800, "year"),
+    "copy_crypto_annual":  ("SKLZ Plus", 47000, "year"),
+    "copy_pro_annual":     ("SKLZ Pro", 75800, "year"),
 }
 PLAN_NAMES = {
     "suite_monthly": "Indicator Suite", "suite_annual": "Indicator Suite",
@@ -67,6 +70,9 @@ PLAN_NAMES = {
     "copy_basic_monthly": "SKLZ Core",
     "copy_crypto_monthly": "SKLZ Plus",
     "copy_pro_monthly": "SKLZ Pro",
+    "copy_basic_annual": "SKLZ Core (Annual)",
+    "copy_crypto_annual": "SKLZ Plus (Annual)",
+    "copy_pro_annual": "SKLZ Pro (Annual)",
 }
 INTRO_COUPON_ID = "sklz-first-month-7"      # $22 off once -> $7 first month
 
@@ -136,6 +142,9 @@ async def config(sb: Client = Depends(get_supabase)) -> dict:
             "copy_basic_monthly": {"amount": 29},
             "copy_crypto_monthly": {"amount": 49},
             "copy_pro_monthly": {"amount": 79},
+            "copy_basic_annual": {"amount": 278},
+            "copy_crypto_annual": {"amount": 470},
+            "copy_pro_annual": {"amount": 758},
         },
         "founder_remaining": max(FOUNDER_CAP - taken, 0),
         "guarantee_days": 7,

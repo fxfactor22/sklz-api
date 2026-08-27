@@ -31,6 +31,9 @@ _MATRIX: dict[str, tuple[bool, int, bool]] = {
     "copy_basic_monthly":  (False, 1, False),
     "copy_crypto_monthly": (True,  1, False),
     "copy_pro_monthly":    (True, 10, True),
+    "copy_basic_annual":   (False, 1, False),
+    "copy_crypto_annual":  (True,  1, False),
+    "copy_pro_annual":     (True, 10, True),
     # legacy — promises kept, generously
     "bundle_monthly":  (True, 1, False),
     "bundle_annual":   (True, 1, False),
