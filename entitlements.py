@@ -99,3 +99,8 @@ async def require_crypto(user=Depends(get_current_user),
             status.HTTP_402_PAYMENT_REQUIRED,
             "Crypto trading needs SKLZ Plus ($49/mo) or Pro ($79/mo).")
     return user
+
+
+# ---- legacy interface (the module this one replaced) ----
+# journal.py gates its routes with require_paid; identical contract.
+require_paid = require_active
