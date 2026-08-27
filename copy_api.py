@@ -257,6 +257,18 @@ async def upsert_config(body: ConfigIn, user=Depends(get_current_user),
            .eq("user_id", user["id"]).limit(1).execute()).data
     if not own:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not your account")
+
+    # the page may say "sklz" instead of a UUID — resolve it here, because
+    # a client should never need to know our primary keys. This bug cost an
+    # end-to-end test: the config insert failed silently on the string and
+    # the slave sat enabled-but-subscribed-to-nothing.
+    if body.master_id in ("sklz", "system", ""):
+        m = (sb.table("copy_masters").select("id").eq("is_system", True)
+             .limit(1).execute()).data
+        if not m:
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                "system master missing")
+        body.master_id = m[0]["id"]
     if body.lot_mode not in ("fixed", "multiplier", "balance",
                              "equity", "risk_pct"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "bad lot mode")
