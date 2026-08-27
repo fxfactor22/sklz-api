@@ -232,7 +232,30 @@ async def toggle_slave(slave_id: str, body: SlaveToggle,
                        sb: Client = Depends(get_supabase)) -> dict:
     sb.table("copy_slaves").update({"enabled": body.enabled}) \
       .eq("id", slave_id).eq("user_id", user.id).execute()
-    return {"ok": True}
+
+    # RESUME IS ALSO REPAIR. A slave without a config row is "connected"
+    # on the dashboard and invisible to the fan-out — a stuck state that
+    # cost a full evening of debugging across four separate causes. If the
+    # user explicitly turns copying ON and no subscription to the system
+    # master exists, create one with the conservative defaults; the wizard
+    # can refine it, but a Resume must never be a no-op again.
+    ensured = False
+    if body.enabled:
+        m = (sb.table("copy_masters").select("id").eq("is_system", True)
+             .limit(1).execute()).data
+        if m:
+            has = (sb.table("copy_configs").select("id")
+                   .eq("slave_id", slave_id).eq("master_id", m[0]["id"])
+                   .limit(1).execute()).data
+            if not has:
+                sb.table("copy_configs").insert({
+                    "slave_id": slave_id, "master_id": m[0]["id"],
+                    "lot_mode": "risk_pct", "lot_value": 0.5,
+                    "max_lot": 1.0, "max_open": 3,
+                    "max_daily_loss_pct": 4.0, "max_spread_pips": 5.0,
+                    "enabled": True}).execute()
+                ensured = True
+    return {"ok": True, "config_created": ensured}
 
 
 class ConfigIn(BaseModel):
