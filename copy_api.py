@@ -138,12 +138,25 @@ def _slave_by_key(sb: Client, key: str) -> dict | None:
 
 
 @router.get("/poll")
-async def poll(key: str, sb: Client = Depends(get_supabase)) -> dict:
+async def poll(key: str, co: str = "",
+               sb: Client = Depends(get_supabase)) -> dict:
     sl = _slave_by_key(sb, key)
     if not sl:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad copy key")
     if not sl["enabled"]:
         return {"instructions": [], "note": "copying paused"}
+    # the EA reports its terminal's ACCOUNT_COMPANY (co=). Declared broker
+    # is checked at creation; this is the check that can't be typed around.
+    if co:
+        import entitlements as ent
+        owner = (sb.table("copy_slaves").select("user_id")
+                 .eq("id", sl["id"]).limit(1).execute()).data
+        if owner:
+            e = ent.entitlements_for(sb, owner[0]["user_id"])
+            if not e["any_broker"] and not ent.broker_allowed(co):
+                return {"instructions": [],
+                        "note": "this broker needs SKLZ Pro — your plan "
+                                "copies on our partner broker only"}
     # STALE OPENS DO NOT EXECUTE. A slave EA that reconnects after an
     # outage must not fire entries queued at long-dead prices — five
     # 40-minute-old opens were found waiting for exactly that. Opens
@@ -222,6 +235,29 @@ class SlaveIn(BaseModel):
 @router.post("/slaves")
 async def add_slave(body: SlaveIn, user=Depends(get_current_user),
                     sb: Client = Depends(get_supabase)) -> dict:
+    # entitlement wall: MT5 copy is a paid feature, and each tier draws
+    # its own lines — account count and broker. The error text always
+    # names the unlock, because a paywall that just says "no" is a
+    # support ticket, not a conversion.
+    import entitlements as ent
+    e = ent.entitlements_for(sb, user.id)
+    if e["mt5_max_accounts"] < 1:
+        raise HTTPException(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            "MT5 copy trading starts with SKLZ Core ($29/mo).")
+    have = (sb.table("copy_slaves").select("id", count="exact")
+            .eq("user_id", user.id).execute()).count or 0
+    if have >= e["mt5_max_accounts"]:
+        raise HTTPException(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            f"Your plan includes {e['mt5_max_accounts']} MT5 account(s). "
+            f"SKLZ Pro ($79/mo) unlocks multiple accounts on any broker.")
+    if not e["any_broker"] and body.broker and not ent.broker_allowed(body.broker):
+        raise HTTPException(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            "Your plan copies on our partner broker only. SKLZ Pro "
+            "($79/mo) unlocks any broker — or open a partner-broker "
+            "account from the dashboard.")
     key = "sk_copy_" + secrets.token_urlsafe(24)
     r = sb.table("copy_slaves").insert({
         "user_id": user.id, "label": body.label[:60],

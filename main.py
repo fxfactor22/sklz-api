@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
@@ -35,6 +35,7 @@ from video_api import router as video_router
 import signal_lifecycle
 import copy_api
 import copy_scheduler
+import entitlements
 from copy_scheduler import router as poll_router
 from tgbot import router as tgbot_router
 from profile_api import codes_router
@@ -75,11 +76,11 @@ app.include_router(gpt_router)
 app.include_router(account_router)
 app.include_router(journal_router)
 app.include_router(marketplace_router)
-app.include_router(copy_router)
-app.include_router(copy_subs_router)
-app.include_router(copy_exec_router)
-app.include_router(copy_trade_router)
-app.include_router(portfolio_router)
+app.include_router(copy_router, dependencies=[Depends(entitlements.require_crypto)])
+app.include_router(copy_subs_router, dependencies=[Depends(entitlements.require_crypto)])
+app.include_router(copy_exec_router, dependencies=[Depends(entitlements.require_crypto)])
+app.include_router(copy_trade_router, dependencies=[Depends(entitlements.require_crypto)])
+app.include_router(portfolio_router, dependencies=[Depends(entitlements.require_crypto)])
 app.include_router(newtokens_router)
 app.include_router(public_router)
 app.include_router(updates_router)
