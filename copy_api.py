@@ -208,7 +208,7 @@ async def add_slave(body: SlaveIn, user=Depends(get_current_user),
                     sb: Client = Depends(get_supabase)) -> dict:
     key = "sk_copy_" + secrets.token_urlsafe(24)
     r = sb.table("copy_slaves").insert({
-        "user_id": user["id"], "label": body.label[:60],
+        "user_id": user.id, "label": body.label[:60],
         "broker": body.broker[:60], "mt5_login": body.mt5_login[:30],
         "copy_key": key}).execute()
     return {"ok": True, "slave": r.data[0]}
@@ -218,7 +218,7 @@ async def add_slave(body: SlaveIn, user=Depends(get_current_user),
 async def my_slaves(user=Depends(get_current_user),
                     sb: Client = Depends(get_supabase)) -> dict:
     r = (sb.table("copy_slaves").select("*")
-         .eq("user_id", user["id"]).order("created_at").execute())
+         .eq("user_id", user.id).order("created_at").execute())
     return {"slaves": r.data or []}
 
 
@@ -231,7 +231,7 @@ async def toggle_slave(slave_id: str, body: SlaveToggle,
                        user=Depends(get_current_user),
                        sb: Client = Depends(get_supabase)) -> dict:
     sb.table("copy_slaves").update({"enabled": body.enabled}) \
-      .eq("id", slave_id).eq("user_id", user["id"]).execute()
+      .eq("id", slave_id).eq("user_id", user.id).execute()
     return {"ok": True}
 
 
@@ -254,7 +254,7 @@ class ConfigIn(BaseModel):
 async def upsert_config(body: ConfigIn, user=Depends(get_current_user),
                         sb: Client = Depends(get_supabase)) -> dict:
     own = (sb.table("copy_slaves").select("id").eq("id", body.slave_id)
-           .eq("user_id", user["id"]).limit(1).execute()).data
+           .eq("user_id", user.id).limit(1).execute()).data
     if not own:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not your account")
 
@@ -295,7 +295,7 @@ async def marketplace(sb: Client = Depends(get_supabase)) -> dict:
 async def copy_log(user=Depends(get_current_user),
                    sb: Client = Depends(get_supabase)) -> dict:
     slaves = (sb.table("copy_slaves").select("id")
-              .eq("user_id", user["id"]).execute()).data or []
+              .eq("user_id", user.id).execute()).data or []
     ids = [s["id"] for s in slaves]
     if not ids:
         return {"log": []}
