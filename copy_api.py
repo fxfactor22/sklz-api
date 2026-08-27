@@ -148,7 +148,7 @@ async def poll(key: str, co: str = "",
     # the EA reports its terminal's ACCOUNT_COMPANY (co=). Declared broker
     # is checked at creation; this is the check that can't be typed around.
     if co:
-        import entitlements as ent
+        import sklz_tiers as ent
         owner = (sb.table("copy_slaves").select("user_id")
                  .eq("id", sl["id"]).limit(1).execute()).data
         if owner:
@@ -239,7 +239,7 @@ async def add_slave(body: SlaveIn, user=Depends(get_current_user),
     # its own lines — account count and broker. The error text always
     # names the unlock, because a paywall that just says "no" is a
     # support ticket, not a conversion.
-    import entitlements as ent
+    import sklz_tiers as ent
     e = ent.entitlements_for(sb, user.id)
     if e["mt5_max_accounts"] < 1:
         raise HTTPException(

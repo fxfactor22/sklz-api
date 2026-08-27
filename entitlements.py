@@ -1,106 +1,56 @@
-"""SKLZ entitlements — one place that answers "what does this plan get".
+"""Shared subscription enforcement for SKLZ paid features.
 
-Tiers (new signups):
-  SKLZ Core  $29  everything except crypto; MT5 copy on the affiliate
-                  broker only, single account
-  SKLZ Plus  $49  + crypto trading/copy; MT5 copy affiliate broker, single
-  SKLZ Pro   $79  multi-account MT5 copy, any broker, everything on
-
-Legacy plans keep their promises — Founder $39 is locked for life and that
-stays true forever. Legacy mapping below is deliberately generous (bundle
-holders get Plus-level access including single-account MT5 copy) because
-downgrading a paying customer's expectations by surprise is how trust dies.
-
-Enforcement philosophy: entitlement checks answer 402 with a sentence that
-names the plan that unlocks the feature — never a bare "forbidden".
+Server-side gate — the API refuses to serve paid content to free users,
+regardless of what the UI shows. Admin emails bypass (owner access).
 """
 from __future__ import annotations
 
 import os
-import time
 
-from fastapi import Depends, HTTPException, status
+from fastapi import HTTPException, status
 from supabase import Client
 
-from db import get_supabase
-from auth import get_current_user
 
-# plan -> (crypto, mt5_max_accounts, any_broker)
-_MATRIX: dict[str, tuple[bool, int, bool]] = {
-    # new tiers
-    "copy_basic_monthly":  (False, 1, False),
-    "copy_crypto_monthly": (True,  1, False),
-    "copy_pro_monthly":    (True, 10, True),
-    # legacy — promises kept, generously
-    "bundle_monthly":  (True, 1, False),
-    "bundle_annual":   (True, 1, False),
-    "bundle_founder":  (True, 1, False),
-    "suite_monthly":   (False, 0, False),
-    "suite_annual":    (False, 0, False),
-    "suite_lifetime":  (False, 0, False),
-    "gpt_monthly":     (False, 0, False),
-    "gpt_annual":      (False, 0, False),
-}
-
-_AFFILIATE_BROKERS = [
-    s.strip().lower() for s in os.environ.get(
-        "AFFILIATE_BROKERS",
-        "IC Markets,ICMarkets,Raw Trading,International Capital").split(",")
-    if s.strip()]
-
-_cache: dict[str, tuple[float, dict]] = {}   # uid -> (ts, sub row)
+def _admin_emails() -> set[str]:
+    raw = os.environ.get("ADMIN_EMAILS", "fxfactor24@gmail.com")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
 
 
-def _sub(sb: Client, uid: str) -> dict:
-    hit = _cache.get(uid)
-    if hit and time.time() - hit[0] < 60:
-        return hit[1]
+def plan_of(sb: Client, uid: str, email: str = "") -> str:
+    """Current plan name, or 'Free'. Admins always get Bundle."""
+    if email and email.lower() in _admin_emails():
+        return "Bundle"
     try:
         r = (sb.table("subscriptions").select("plan,active")
-             .eq("user_id", uid).execute())
-        row = (r.data or [{}])[0]
+             .eq("user_id", uid).execute()).data or []
+        for row in r:
+            if row.get("active"):
+                return row.get("plan", "Free")
     except Exception:
-        row = {}
-    _cache[uid] = (time.time(), row)
-    return row
+        pass
+    return "Free"
 
 
-def entitlements_for(sb: Client, uid: str) -> dict:
-    row = _sub(sb, uid)
-    plan = (row.get("plan") or "") if row.get("active") else ""
-    crypto, mt5_max, any_broker = _MATRIX.get(plan, (False, 0, False))
-    return {"plan": plan, "active": bool(row.get("active")),
-            "crypto": crypto, "mt5_max_accounts": mt5_max,
-            "any_broker": any_broker}
+def is_paid(sb: Client, user) -> bool:
+    return plan_of(sb, str(user.id), getattr(user, "email", "")) != "Free"
 
 
-def broker_allowed(name: str) -> bool:
-    n = (name or "").lower()
-    return any(a in n for a in _AFFILIATE_BROKERS)
-
-
-# ---- FastAPI dependencies ----
-async def require_active(user=Depends(get_current_user),
-                         sb: Client = Depends(get_supabase)):
-    e = entitlements_for(sb, user.id)
-    if not e["active"]:
+def require_paid(sb: Client, user, feature: str = "This feature") -> str:
+    """Raise 402 unless the user has an active subscription."""
+    plan = plan_of(sb, str(user.id), getattr(user, "email", ""))
+    if plan == "Free":
         raise HTTPException(
             status.HTTP_402_PAYMENT_REQUIRED,
-            "SKLZ is a paid platform — plans start at $29/mo on the "
-            "pricing page.")
-    return user
+            f"{feature} requires a subscription. Upgrade at /pricing.html to unlock.")
+    return plan
 
 
-async def require_crypto(user=Depends(get_current_user),
-                         sb: Client = Depends(get_supabase)):
-    e = entitlements_for(sb, user.id)
-    if not e["crypto"]:
+def require_plan(sb: Client, user, allowed: set[str], feature: str = "This feature") -> str:
+    """Raise 402 unless the user's plan is in `allowed`."""
+    plan = plan_of(sb, str(user.id), getattr(user, "email", ""))
+    base = plan.split(" ")[0]           # "Bundle (Founder)" -> "Bundle"
+    if plan == "Free" or not (plan in allowed or base in allowed):
         raise HTTPException(
             status.HTTP_402_PAYMENT_REQUIRED,
-            "Crypto trading needs SKLZ Plus ($49/mo) or Pro ($79/mo).")
-    return user
-
-
-# ---- legacy interface (the module this one replaced) ----
-# journal.py gates its routes with require_paid; identical contract.
-require_paid = require_active
+            f"{feature} requires: {', '.join(sorted(allowed))}. Upgrade at /pricing.html.")
+    return plan
