@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 from supabase import Client
 
-from db import get_supabase
+from db import get_supabase, admin_client  # SESSIONS-OFF-SHARED-CLIENT
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -203,7 +203,7 @@ async def signup(payload: SignupIn, request: Request,
         if chk["ok"]:
             granted = chk
     try:
-        res = sb.auth.sign_up({
+        res = admin_client().auth.sign_up({
             "email": payload.email,
             "password": payload.password,
             "options": {"data": {"display_name": payload.display_name}},
@@ -248,7 +248,7 @@ async def login(payload: LoginIn, request: Request,
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
                             "Too many attempts. Please wait a minute.")
     try:
-        res = sb.auth.sign_in_with_password({
+        res = admin_client().auth.sign_in_with_password({
             "email": payload.email,
             "password": payload.password,
         })
@@ -270,7 +270,7 @@ async def login(payload: LoginIn, request: Request,
 @router.post("/refresh", response_model=SessionOut)
 async def refresh(payload: RefreshIn, sb: Client = Depends(get_supabase)) -> SessionOut:
     try:
-        res = sb.auth.refresh_session(payload.refresh_token)
+        res = admin_client().auth.refresh_session(payload.refresh_token)
     except Exception:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired. Please log in.")
     if res.session is None:
