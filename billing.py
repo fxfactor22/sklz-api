@@ -371,17 +371,41 @@ async def webhook(request: Request,
                             f"bad signature: {exc}") from exc
 
     etype = event["type"]
-    obj = event["data"]["object"]
 
-    # Stripe's SDK returns StripeObject, which supports obj["k"] but NOT
-    # obj.get("k"). Convert to a plain dict so ordinary dict access works.
+    # The event object must be a PLAIN dict before it reaches _handle_event.
+    #
+    # Stripe's SDK hands back a StripeObject. Depending on the SDK version it
+    # is dict-like to varying degrees, and on newer versions .get() raises
+    #   AttributeError: 'get' is a dict method, but a Subscription is not a
+    #   dict. Use .to_dict() to convert it
+    # which is exactly how the 31 Aug customer.subscription.deleted delivery
+    # failed: every conversion attempt fell through and a StripeObject reached
+    # code that assumed a dict.
+    #
+    # The payload we just verified the signature over is authoritative JSON,
+    # so parse that. It cannot be half-converted and its nested values are
+    # plain dicts too. The SDK object is only a fallback.
+    obj = None
     try:
-        obj = dict(obj)
-    except Exception:
-        try:
-            obj = obj.to_dict_recursive()
-        except Exception:
-            pass
+        import json as _json
+        obj = _json.loads(payload)["data"]["object"]
+        if not isinstance(obj, dict):
+            obj = None
+    except Exception:  # noqa: BLE001
+        obj = None
+    if obj is None:
+        obj = _d(event["data"]["object"])
+        if not obj:
+            # Nothing survived. Answer 5xx, not 200: a 200 tells Stripe the
+            # event is done with and it is never delivered again, which is
+            # exactly how a cancellation goes unrecorded for a month. A 5xx
+            # gets retried and shows up as a failing endpoint in the Stripe
+            # dashboard, where somebody will see it.
+            import sys as _s
+            print(f"[stripe-webhook] {etype} UNDECODABLE payload — refusing to ack",
+                  file=_s.stderr, flush=True)
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                f"could not decode {etype} payload")
 
     try:
         return await _handle_event(etype, obj, sb)
@@ -441,13 +465,33 @@ def _attr_relay(ref: str, event: str, product: str = "",
 
 
 def _d(v):
-    """Stripe objects are dict-like but lack .get(); normalise them."""
+    """Return a plain dict for anything Stripe hands us.
+
+    Stripe objects are dict-ish, but which of dict(), .to_dict(),
+    .to_dict_recursive() and .get() actually work depends on the SDK version
+    installed at deploy time. Assuming any one of them is how a webhook comes
+    back 200 with an AttributeError in the body instead of doing its job, so
+    try each and fall back to reading keys directly.
+
+    An empty dict is only ever returned for something that genuinely has no
+    keys — a missing metadata field, typically — so callers can keep using
+    _d(x).get("k") without a None check.
+    """
+    if v is None:
+        return {}
     if isinstance(v, dict):
         return v
-    try:
-        return dict(v)
-    except Exception:
-        return {}
+    for attempt in (lambda: dict(v),
+                    lambda: v.to_dict_recursive(),
+                    lambda: v.to_dict(),
+                    lambda: {k: v[k] for k in v.keys()}):
+        try:
+            out = attempt()
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(out, dict):
+            return out
+    return {}
 
 
 async def _handle_event(etype: str, obj: dict, sb: Client) -> dict:
