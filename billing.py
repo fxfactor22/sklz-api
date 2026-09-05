@@ -44,6 +44,11 @@ router = APIRouter(prefix="/api/billing", tags=["billing"])
 SITE = os.environ.get("SITE_URL", "https://www.sklzlabs.com")
 FOUNDER_CAP = 100
 
+# Attribution refs are uuids and nothing else. Compiled once; used to reject
+# anything else before it reaches Stripe.
+_UUID_RE = __import__("re").compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
 # lookup_key -> (product name, unit_amount cents, interval|None for one-time)
 CATALOG = {
     "suite_monthly":  ("SKLZ Indicator Suite", 2900, "month"),
@@ -122,6 +127,15 @@ def _sub_row(sb: Client, uid: str) -> dict:
 
 class CheckoutIn(BaseModel):
     product: str
+    # An OPAQUE attribution id minted by whoever sent the customer here — the
+    # Telegram bot mints a uuid per checkout. It is echoed onto the Stripe
+    # session as client_reference_id and metadata.ref, and relayed back on
+    # payment so the sender can join a payment to the visit that produced it.
+    #
+    # It carries no meaning to us and must carry none to Stripe: never put a
+    # chat id, an email or a phone number in here. A uuid in Stripe metadata
+    # is a row number; an identifier is a person.
+    ref: str | None = None
 
 
 # ------------------------------------------------------------------- config
@@ -182,7 +196,8 @@ async def checkout(payload: CheckoutIn, user=Depends(get_current_user),
         "success_url": f"{SITE}/success.html?p={product}",
         "cancel_url": f"{SITE}/pricing.html",
         "client_reference_id": uid,
-        "metadata": {"user_id": uid, "product": product},
+        "metadata": {"user_id": uid, "product": product,
+                     **({"ref": payload.ref} if payload.ref and _UUID_RE.match(payload.ref) else {})},
         # NOTE: never add allow_promotion_codes here — Stripe rejects any
         # session carrying both it and `discounts` (the $7 intro coupon).
         # Promotion-code entry stays off by default anyway.
@@ -381,6 +396,50 @@ async def webhook(request: Request,
                 "event": etype}
 
 
+# ------------------------------------------------- attribution relay (out)
+def _attr_relay(ref: str, event: str, product: str = "",
+                amount: float | None = None, currency: str = "USD",
+                session_id: str = "") -> None:
+    """Tell whoever sent this customer that the payment cleared.
+
+    Stripe is payment truth and stays payment truth: this fires only from
+    inside a signature-verified Stripe webhook, never from a redirect, a
+    success URL or a button. The receiver must be able to prove the same, so
+    the body is HMAC-signed under a shared secret and stamped with a
+    timestamp — an unsigned POST to that endpoint could otherwise mark any
+    customer paid.
+
+    Failure here must never fail the webhook. If the relay is down we have
+    still taken the money and Stripe still has the record; what is lost is a
+    row in somebody's funnel report, and that is not worth a 500 that makes
+    Stripe retry a payment we already processed.
+
+    Unconfigured (no URL or no secret) means "nobody is listening", which is
+    the normal state for a checkout that did not come from a bot.
+    """
+    url = os.environ.get("ATTRIBUTION_WEBHOOK_URL", "").strip()
+    secret = os.environ.get("ATTRIBUTION_WEBHOOK_SECRET", "").strip()
+    if not (ref and url and secret):
+        return
+    try:
+        import hmac as _hmac, hashlib as _hl, json as _json, time as _time
+        import urllib.request as _rq
+        body = _json.dumps({"ref": ref, "event": event, "product": product,
+                            "amount": amount, "currency": currency,
+                            "session_id": session_id},
+                           separators=(",", ":")).encode()
+        ts = str(int(_time.time()))
+        mac = _hmac.new(secret.encode(), (ts + ".").encode() + body, _hl.sha256).hexdigest()
+        req = _rq.Request(url, data=body, method="POST", headers={
+            "content-type": "application/json",
+            "x-sklz-signature": f"t={ts},v1={mac}"})
+        with _rq.urlopen(req, timeout=6) as r:
+            r.read(1)
+    except Exception as exc:  # noqa: BLE001
+        import sys as _s
+        print(f"[attr-relay] {event} ref={ref} failed: {exc}", file=_s.stderr, flush=True)
+
+
 def _d(v):
     """Stripe objects are dict-like but lack .get(); normalise them."""
     if isinstance(v, dict):
@@ -412,6 +471,13 @@ async def _handle_event(etype: str, obj: dict, sb: Client) -> dict:
                            "active": True, "current_period_end": None})
         upsert(uid, fields)
         _credit_referrer(uid)
+        meta = _d(obj.get("metadata"))
+        _attr_relay(meta.get("ref", "") or (obj.get("client_reference_id") or ""),
+                    "checkout.session.completed",
+                    meta.get("product", ""),
+                    (obj.get("amount_total") or 0) / 100.0,
+                    (obj.get("currency") or "usd").upper(),
+                    obj.get("id") or "")
 
     elif etype in ("customer.subscription.created", "customer.subscription.updated"):
         meta = _d(obj.get("metadata"))
@@ -429,6 +495,10 @@ async def _handle_event(etype: str, obj: dict, sb: Client) -> dict:
                      "current_period_end": end_iso})
         if active:
             _credit_referrer(uid)
+            # Renewals attribute too — a subscription that came from a campaign
+            # is worth its lifetime to that campaign, not just its first month.
+            _attr_relay(meta.get("ref", ""), etype, product, None,
+                        (obj.get("currency") or "usd").upper(), obj.get("id") or "")
 
     elif etype == "invoice.paid":
         # recurring monthly payment cleared -> partner commission (if referred)
@@ -448,9 +518,12 @@ async def _handle_event(etype: str, obj: dict, sb: Client) -> dict:
             _partner_payment(uid, amount if amount in (39.0, 49.0) else 49.0, True)
 
     elif etype == "customer.subscription.deleted":
-        uid = _d(obj.get("metadata")).get("user_id", "")
+        meta = _d(obj.get("metadata"))
+        uid = meta.get("user_id", "")
         upsert(uid, {"active": False})
         _partner_churn(uid)
+        _attr_relay(meta.get("ref", ""), "customer.subscription.deleted",
+                    meta.get("product", ""))
 
     return {"received": True}
 
@@ -544,12 +617,31 @@ async def checkout_public(payload: CheckoutIn,
         "cancel_url": f"{SITE}/pricing.html",
         "metadata": {"product": product, "guest": "true"},
     }
+    # Attribution. A ref is validated as a uuid before it is echoed anywhere:
+    # this value is supplied by a caller and lands in Stripe metadata, so it
+    # is the one field on this endpoint an outsider controls. A uuid shape is
+    # all we ever send, which keeps arbitrary text out of the payment record.
+    ref = (payload.ref or "").strip()
+    if ref:
+        if not _UUID_RE.match(ref):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "ref must be a uuid")
+        params["client_reference_id"] = ref
+        params["metadata"]["ref"] = ref
     if interval:
-        params["subscription_data"] = {"metadata": {
-            "product": product,
-            "founder": "true" if product == "bundle_founder" else "false"}}
+        sub_meta = {"product": product,
+                    "founder": "true" if product == "bundle_founder" else "false"}
+        # The ref has to ride on the SUBSCRIPTION too. checkout.session.completed
+        # fires once; every renewal afterwards arrives as a subscription or
+        # invoice event that has never seen the checkout session, so a ref that
+        # lives only on the session cannot attribute month two.
+        if ref:
+            sub_meta["ref"] = ref
+        params["subscription_data"] = {"metadata": sub_meta}
     else:
-        params["payment_intent_data"] = {"metadata": {"product": product}}
+        pi_meta = {"product": product}
+        if ref:
+            pi_meta["ref"] = ref
+        params["payment_intent_data"] = {"metadata": pi_meta}
     try:
         session = stripe.checkout.Session.create(**params)
     except Exception as exc:  # noqa: BLE001
