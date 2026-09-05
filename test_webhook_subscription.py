@@ -114,7 +114,9 @@ import billing  # noqa: E402
 # These three make outbound HTTP calls of their own; billing.py defines them
 # itself, so they are replaced on the module rather than on an import.
 churned, credited = [], []
-billing._credit_referrer = lambda uid, *a, **k: credited.append(uid)
+# The real one returns at its guard when uid is empty, so the stub must too —
+# otherwise "credited" would mean something different here than in production.
+billing._credit_referrer = lambda uid, *a, **k: credited.append(uid) if uid else None
 billing._partner_payment = lambda *a, **k: None
 billing._partner_churn = lambda uid, *a, **k: churned.append(uid)
 
@@ -303,6 +305,82 @@ if not relayed:
 else:
     bad("   a relay happened with no ref: %r" % relayed)
 
+
+print("\nNO PHANTOM SUBSCRIPTIONS")
+REF2 = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+USER = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+
+# A. A bot checkout has no account behind it. client_reference_id is the
+#    intent uuid, not a person, and must not become one.
+deliver("checkout.session.completed",
+        dict(SESSION, mode="payment", client_reference_id=REF2,
+             metadata={"ref": REF2, "product": "suite_lifetime"}))
+if not upserts:
+    ok("A  bot checkout writes no subscription row")
+else:
+    bad("A  phantom subscription for %r" % upserts[0].get("user_id", upserts[0]))
+if credited:
+    bad("A  affiliate credit ran with %r" % credited)
+else:
+    ok("A  affiliate credit did not run on an intent uuid")
+if relayed and relayed[0]["ref"] == REF2:
+    ok("A  attribution still relays")
+else:
+    bad("A  attribution did not relay: %r" % relayed)
+
+# B. The website path must be untouched.
+deliver("checkout.session.completed",
+        dict(SESSION, mode="payment", client_reference_id=USER,
+             metadata={"product": "suite_lifetime"}))
+if len(upserts) == 1 and upserts[0].get("user_id") == USER:
+    ok("B  website checkout still upserts the real user")
+else:
+    bad("B  website upserts are %r" % upserts)
+if upserts and upserts[0].get("active") is True:
+    ok("B  lifetime purchase still marked active")
+else:
+    bad("B  active flag is %r" % (upserts[0].get("active") if upserts else None))
+if credited == [USER]:
+    ok("B  affiliate credit still runs for a real user")
+else:
+    bad("B  credit saw %r" % credited)
+if relayed:
+    bad("B  a website checkout relayed attribution: %r" % relayed)
+else:
+    ok("B  website checkout relays nothing")
+
+# C. Attributed AND authenticated: relay by ref, upsert by the real user id.
+deliver("checkout.session.completed",
+        dict(SESSION, mode="payment", client_reference_id=REF2,
+             metadata={"ref": REF2, "user_id": USER, "product": "suite_lifetime"}))
+if len(upserts) == 1 and upserts[0].get("user_id") == USER:
+    ok("C  explicit metadata.user_id is used for the subscription")
+else:
+    bad("C  upserts are %r" % upserts)
+if relayed and relayed[0]["ref"] == REF2:
+    ok("C  and the ref — not the user id — is what gets relayed")
+else:
+    bad("C  relay is %r" % relayed)
+
+# D. A malformed user_id is not a user.
+for junk in ("not-a-uuid", "", "   ", "'; drop table subscriptions;--"):
+    deliver("checkout.session.completed",
+            dict(SESSION, mode="payment", client_reference_id=REF2,
+                 metadata={"ref": REF2, "user_id": junk, "product": "suite_lifetime"}))
+    if upserts:
+        bad("D  malformed user_id %r created a row" % junk[:20])
+        break
+else:
+    ok("D  malformed metadata.user_id creates no user state")
+
+# E. A ref the receiver has never heard of still must not mint a user.
+deliver("checkout.session.completed",
+        dict(SESSION, mode="payment", client_reference_id="11111111-2222-3333-4444-555555555555",
+             metadata={"ref": "11111111-2222-3333-4444-555555555555", "product": "suite_lifetime"}))
+if not upserts:
+    ok("E  an unknown ref writes no subscription row")
+else:
+    bad("E  unknown ref created %r" % upserts)
 
 print("\nFALLBACK: RAW BODY UNUSABLE")
 # If the raw payload cannot be parsed, the SDK object is all we have. On a

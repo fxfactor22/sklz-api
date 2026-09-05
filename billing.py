@@ -499,6 +499,36 @@ def _d(v):
     return {}
 
 
+def _uid_for(meta: dict, obj: dict) -> str:
+    """The AUTH USER this checkout belongs to, or "" when there isn't one.
+
+    client_reference_id is not a user id in every case, and treating it as one
+    creates rows for people who do not exist:
+
+      * website checkout -> client_reference_id = the customer's real user id
+      * bot checkout     -> client_reference_id = the opaque intent uuid
+
+    A bot checkout has no account behind it — the buyer is a Telegram chat, and
+    the account is created later at the claim step. Using the intent uuid as a
+    user id wrote a phantom subscriptions row keyed to an attribution record,
+    and (for a one-time product) marked it active. It also handed that uuid to
+    the affiliate credit path as though it were a person.
+
+    So: metadata.ref present means an attributed checkout, and the only
+    acceptable user id is an explicit, well-formed metadata.user_id. Absent
+    that, there is no user yet, and "" is the honest answer — upsert() and
+    _credit_referrer() both no-op on it.
+
+    Without metadata.ref nothing changes: the website path reads
+    client_reference_id exactly as before.
+    """
+    ref = str(meta.get("ref", "") or "")
+    if ref and _UUID_RE.match(ref):
+        uid = str(meta.get("user_id", "") or "")
+        return uid if uid and _UUID_RE.match(uid) else ""
+    return obj.get("client_reference_id") or meta.get("user_id", "")
+
+
 def _ref_of(meta: dict, obj: dict) -> str:
     """The attribution ref for this event, or "" if there isn't one.
 
@@ -537,7 +567,7 @@ async def _handle_event(etype: str, obj: dict, sb: Client) -> dict:
             pass
 
     if etype == "checkout.session.completed":
-        uid = obj.get("client_reference_id") or _d(obj.get("metadata")).get("user_id", "")
+        uid = _uid_for(_d(obj.get("metadata")), obj)
         fields = {"stripe_customer_id": obj.get("customer")}
         if obj.get("mode") == "payment":            # lifetime purchase
             product = _d(obj.get("metadata")).get("product", "suite_lifetime")
