@@ -219,7 +219,12 @@ async def checkout(payload: CheckoutIn, user=Depends(get_current_user),
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             f"Stripe checkout failed: {exc}") from exc
-    return {"url": session.url}
+    # session_id is what lets the caller correlate an intent to the Stripe
+    # session BEFORE any payment — the attribution client reads it and stores
+    # it on the intent. Without it that column stays null until a payment
+    # arrives, which is exactly the case (an abandoned checkout) where it is
+    # the only handle we have. Additive: the website checkout ignores it.
+    return {"url": session.url, "session_id": getattr(session, "id", None)}
 
 
 # ------------------------------------------------------------------- upsell
@@ -494,6 +499,31 @@ def _d(v):
     return {}
 
 
+def _ref_of(meta: dict, obj: dict) -> str:
+    """The attribution ref for this event, or "" if there isn't one.
+
+    ONLY metadata.ref counts. client_reference_id must never be used as a
+    fallback, and the reason is worth stating because it is not obvious:
+
+      * bot checkout     -> client_reference_id = the opaque intent uuid
+      * website checkout -> client_reference_id = the customer's OWN user id
+                            (see the authenticated /checkout above)
+
+    Both are uuids. Supabase user ids are uuids, so no shape test can tell one
+    from the other — an earlier version of this guard checked the format and
+    would still have relayed every website customer's user id. The only thing
+    that actually distinguishes them is which field they arrived in, and
+    checkout_public always writes metadata.ref alongside client_reference_id,
+    so nothing is lost by reading only the field that means what we need.
+
+    A ref that is well-formed but unknown to the receiver is fine: it answers
+    200 "unknown ref" and creates no state. A user id is not fine, because it
+    is a person, and it would be logged there as one.
+    """
+    ref = str(meta.get("ref", "") or "")
+    return ref if ref and _UUID_RE.match(ref) else ""
+
+
 async def _handle_event(etype: str, obj: dict, sb: Client) -> dict:
 
     def upsert(uid: str, fields: dict) -> None:
@@ -516,7 +546,7 @@ async def _handle_event(etype: str, obj: dict, sb: Client) -> dict:
         upsert(uid, fields)
         _credit_referrer(uid)
         meta = _d(obj.get("metadata"))
-        _attr_relay(meta.get("ref", "") or (obj.get("client_reference_id") or ""),
+        _attr_relay(_ref_of(meta, obj),
                     "checkout.session.completed",
                     meta.get("product", ""),
                     (obj.get("amount_total") or 0) / 100.0,
@@ -691,7 +721,12 @@ async def checkout_public(payload: CheckoutIn,
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             f"Stripe checkout failed: {exc}") from exc
-    return {"url": session.url}
+    # session_id is what lets the caller correlate an intent to the Stripe
+    # session BEFORE any payment — the attribution client reads it and stores
+    # it on the intent. Without it that column stays null until a payment
+    # arrives, which is exactly the case (an abandoned checkout) where it is
+    # the only handle we have. Additive: the website checkout ignores it.
+    return {"url": session.url, "session_id": getattr(session, "id", None)}
 
 
 class ClaimIn(BaseModel):

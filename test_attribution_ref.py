@@ -120,6 +120,20 @@ if captured.get("mode") == "payment" and pi.get("ref") == REF:
 else:
     bad("one-time path: mode=%r ref=%r" % (captured.get("mode"), pi.get("ref")))
 
+print("\nTHE CALLER CAN CORRELATE THE SESSION")
+# The attribution client stores this on the intent at checkout time. When it
+# was missing, stripe_checkout_session_id stayed null right up until a payment
+# — no use at all for the abandoned checkouts it exists to track.
+out = call("copy_crypto_monthly", REF)
+if out.get("session_id") == "cs_test_stub":
+    ok("checkout-public returns session_id")
+else:
+    bad("session_id is %r — the intent cannot record its Stripe session" % out.get("session_id"))
+if (out.get("url") or "").startswith("https://"):
+    ok("url still returned alongside it")
+else:
+    bad("url is %r" % out.get("url"))
+
 print("\nREF IS VALIDATED")
 call("copy_basic_monthly")                      # absent
 if "client_reference_id" not in captured and "ref" not in (captured.get("metadata") or {}):

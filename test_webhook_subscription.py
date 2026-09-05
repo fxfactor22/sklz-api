@@ -118,11 +118,21 @@ billing._credit_referrer = lambda uid, *a, **k: credited.append(uid)
 billing._partner_payment = lambda *a, **k: None
 billing._partner_churn = lambda uid, *a, **k: churned.append(uid)
 
-# capture the relay instead of making a network call
+# Capture the relay instead of making a network call. The real one returns at
+# its guard when the ref is empty, so an empty ref must record nothing here
+# either — otherwise "relayed" would mean something different in the test than
+# it does in production.
 relayed = []
-billing._attr_relay = lambda ref, event, product="", amount=None, currency="USD", session_id="": \
+
+
+def _fake_relay(ref, event, product="", amount=None, currency="USD", session_id=""):
+    if not ref:
+        return
     relayed.append({"ref": ref, "event": event, "product": product,
                     "amount": amount, "session_id": session_id})
+
+
+billing._attr_relay = _fake_relay
 
 # a supabase stand-in that records upserts
 upserts = []
@@ -238,6 +248,60 @@ if "error" in res:
     bad("invoice.paid failed: " + str(res["error"])[:100])
 else:
     ok("invoice.paid processed")
+
+
+print("\nTHE REF BOUNDARY")
+REF = SESSION["metadata"]["ref"]
+# A: the bot's opaque intent uuid, in metadata.ref where it belongs.
+deliver("checkout.session.completed",
+        dict(SESSION, client_reference_id=REF, metadata={"ref": REF, "product": "suite_lifetime"}))
+if relayed and relayed[0]["ref"] == REF:
+    ok("A  bot checkout-intent uuid is relayed")
+else:
+    bad("A  bot ref was not relayed: %r" % relayed)
+
+# B: the load-bearing case. A website checkout puts the customer's own user id
+# in client_reference_id, and Supabase user ids are uuids — so a format check
+# alone cannot tell it apart from a ref. It must not be relayed.
+USER_UUID = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+deliver("checkout.session.completed",
+        dict(SESSION, client_reference_id=USER_UUID,
+             metadata={"user_id": USER_UUID, "product": "suite_lifetime"}))
+if not relayed:
+    ok("B  a website customer's user uuid is NOT relayed")
+elif relayed[0]["ref"] == USER_UUID:
+    bad("B  a real user id was sent to the attribution endpoint as a ref")
+else:
+    bad("B  unexpected relay: %r" % relayed)
+
+# C: a well-formed ref the receiver has never heard of. Relaying is harmless —
+# it answers 200 "unknown ref" and writes nothing — so this one is allowed
+# through rather than second-guessed here.
+STRANGER = "11111111-2222-3333-4444-555555555555"
+deliver("checkout.session.completed",
+        dict(SESSION, client_reference_id=None, metadata={"ref": STRANGER}))
+if relayed and relayed[0]["ref"] == STRANGER:
+    ok("C  an unknown-but-well-formed ref is relayed (receiver refuses it)")
+else:
+    bad("C  well-formed ref was dropped: %r" % relayed)
+
+# D: malformed. Refused here as well as at checkout time.
+for junk in ("not-a-uuid", "'; drop table subscriptions;--", "x" * 200):
+    deliver("checkout.session.completed",
+            dict(SESSION, client_reference_id=None, metadata={"ref": junk}))
+    if relayed:
+        bad("D  malformed ref relayed: %r" % junk[:30])
+        break
+else:
+    ok("D  malformed refs are not relayed")
+
+# missing entirely: the ordinary website checkout, unchanged.
+deliver("checkout.session.completed",
+        dict(SESSION, client_reference_id=None, metadata={"product": "suite_lifetime"}))
+if not relayed:
+    ok("   no ref at all -> nothing relayed (website checkouts unaffected)")
+else:
+    bad("   a relay happened with no ref: %r" % relayed)
 
 
 print("\nFALLBACK: RAW BODY UNUSABLE")
