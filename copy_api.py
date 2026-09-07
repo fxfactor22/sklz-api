@@ -120,6 +120,14 @@ async def master_event(body: MasterEvent, request: Request,
                  "sl": body.sl if cfg.get("copy_sl", True) else None,
                  "tp": body.tp if cfg.get("copy_tp", True) else None,
                  "max_spread_pips": float(cfg.get("max_spread_pips") or 0),
+                 # These three were stored in the config, shown on the
+                 # dashboard, and never put in the instruction — so the EA
+                 # read them as zero and every guard disabled itself. A
+                 # limit the owner believes in but that is never sent is
+                 # worse than no limit at all.
+                 "max_lot": float(cfg.get("max_lot") or 0),
+                 "max_open": float(cfg.get("max_open") or 0),
+                 "max_daily_loss_pct": float(cfg.get("max_daily_loss_pct") or 0),
                  "live": _flag("REAL_MONEY_COPYING")}
         sb.table("copy_queue").insert({
             "event_id": event_id, "slave_id": cfg["slave_id"],
