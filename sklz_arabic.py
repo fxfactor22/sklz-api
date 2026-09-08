@@ -90,7 +90,7 @@ def _bot_username(token: str) -> str:
         return "unreachable"
 
 
-def post(text: str) -> bool:
+def post(text: str, buttons: list | None = None) -> bool:
     """Send one message to the Arabic channel."""
     chat, token = _chat(), _token()
     if not chat or not token:
@@ -109,10 +109,82 @@ def post(text: str) -> bool:
             return False
 
     base = {"chat_id": chat, "text": text, "disable_web_page_preview": True}
+    if buttons:
+        base["reply_markup"] = {"inline_keyboard": buttons}
     if _send(dict(base, parse_mode="Markdown")):
         return True
     # Markdown refused: send it plain rather than drop the post entirely.
     return _send(base)
+
+
+WELCOME_AR = """*SKLZ Labs* \u2014 \u0627\u0644\u062a\u062f\u0627\u0648\u0644 \u0628\u0623\u062f\u0648\u0627\u062a \u062d\u0642\u064a\u0642\u064a\u0629
+
+\u0645\u0646\u0635\u0629 \u0628\u0631\u0645\u062c\u064a\u0629 \u0644\u0644\u0645\u062a\u062f\u0627\u0648\u0644\u064a\u0646: \u0646\u0633\u062e \u0627\u0644\u0635\u0641\u0642\u0627\u062a \u0639\u0644\u0649 MT5\u060c \u0645\u0624\u0634\u0631\u0627\u062a TradingView\u060c \u0648\u0645\u062d\u0644\u0644 \u0630\u0643\u0627\u0621 \u0627\u0635\u0637\u0646\u0627\u0639\u064a \u0644\u0642\u0631\u0627\u0621\u0629 \u0627\u0644\u0631\u0633\u0648\u0645 \u0627\u0644\u0628\u064a\u0627\u0646\u064a\u0629.
+
+\u0641\u064a \u0647\u0630\u0647 \u0627\u0644\u0642\u0646\u0627\u0629:
+\u2022 \u0625\u0634\u0627\u0631\u0627\u062a \u0628\u0645\u0633\u062a\u0648\u064a\u0627\u062a \u0648\u0627\u0636\u062d\u0629 \u2014 \u062f\u062e\u0648\u0644 \u0648\u0648\u0642\u0641 \u0648\u0647\u062f\u0641
+\u2022 \u0645\u062a\u0627\u0628\u0639\u0629 \u0643\u0644 \u0635\u0641\u0642\u0629 \u062d\u062a\u0649 \u0625\u063a\u0644\u0627\u0642\u0647\u0627\u060c \u0627\u0644\u0631\u0627\u0628\u062d\u0629 \u0648\u0627\u0644\u062e\u0627\u0633\u0631\u0629
+\u2022 \u0645\u062d\u062a\u0648\u0649 \u064a\u0648\u0645\u064a \u0639\u0646 \u0627\u0644\u0633\u0648\u0642 \u0648\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0645\u062e\u0627\u0637\u0631\u0629
+
+\u0644\u0627 \u0646\u0639\u062f\u0643 \u0628\u0623\u0631\u0628\u0627\u062d\u060c \u0648\u0644\u0627 \u0646\u062e\u0641\u064a \u0627\u0644\u062e\u0633\u0627\u0626\u0631. \u0627\u0644\u0623\u062f\u0648\u0627\u062a \u0644\u0643\u060c \u0648\u0627\u0644\u0642\u0631\u0627\u0631 \u0644\u0643.
+
+\u0627\u0636\u063a\u0637 \u0627\u0644\u0632\u0631 \u0628\u0627\u0644\u0623\u0633\u0641\u0644 \u0648\u0623\u062c\u0628 \u0639\u0646 \u062b\u0644\u0627\u062b\u0629 \u0623\u0633\u0626\u0644\u0629 \u0642\u0635\u064a\u0631\u0629 \u0644\u0646\u062f\u0644\u0651\u0643 \u0639\u0644\u0649 \u0645\u0627 \u064a\u0646\u0627\u0633\u0628\u0643 \u2014 \u0648\u0625\u0646 \u0643\u0627\u0646 \u0627\u0644\u0623\u0646\u0633\u0628 \u0623\u0644\u0627 \u062a\u0634\u062a\u0631\u064a \u0634\u064a\u0626\u0627\u064b \u0627\u0644\u0622\u0646\u060c \u0633\u0646\u0642\u0648\u0644\u0647\u0627 \u0644\u0643.
+
+_SKLZ Labs \u00b7 \u0628\u0631\u0627\u0645\u062c \u0641\u0642\u0637\u060c \u0648\u0644\u064a\u0633\u062a \u0646\u0635\u064a\u062d\u0629 \u0645\u0627\u0644\u064a\u0629 \u00b7 \u0627\u0644\u062a\u062f\u0627\u0648\u0644 \u064a\u0646\u0637\u0648\u064a \u0639\u0644\u0649 \u0645\u062e\u0627\u0637\u0631 \u062e\u0633\u0627\u0631\u0629_"""
+
+
+def _bot_username_for_link() -> str:
+    """The bot the funnel runs on — its @name, without the @."""
+    name = os.environ.get("TG_FUNNEL_BOT", "").strip().lstrip("@")
+    if name:
+        return name
+    got = _bot_username(_token())
+    return got.lstrip("@") if got.startswith("@") else ""
+
+
+def send_welcome(pin: bool = True) -> dict:
+    """Post the Arabic welcome message with a Start button, and pin it.
+
+    The button is a deep link carrying its own source tag, so every lead
+    the Arabic channel produces is attributable rather than guessed at.
+    """
+    bot = _bot_username_for_link()
+    if not bot:
+        return {"ok": False, "error": "cannot resolve the funnel bot username"}
+    url = f"https://t.me/{bot}?start=ar_channel"
+    buttons = [[{"text": "\u0627\u0628\u062f\u0623 \u0627\u0644\u0622\u0646 \u2190", "url": url}]]
+
+    chat, token = _chat(), _token()
+    payload = {"chat_id": chat, "text": WELCOME_AR,
+               "parse_mode": "Markdown",
+               "disable_web_page_preview": True,
+               "reply_markup": {"inline_keyboard": buttons}}
+    try:
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            d = json.loads(r.read().decode())
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    if not d.get("ok"):
+        return {"ok": False, "error": d.get("description", "telegram refused")}
+
+    mid = (d.get("result") or {}).get("message_id")
+    pinned = False
+    if pin and mid:
+        try:
+            req2 = urllib.request.Request(
+                f"https://api.telegram.org/bot{token}/pinChatMessage",
+                data=json.dumps({"chat_id": chat, "message_id": mid,
+                                 "disable_notification": True}).encode(),
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req2, timeout=10) as r:
+                pinned = json.loads(r.read().decode()).get("ok", False)
+        except Exception:  # noqa: BLE001
+            pinned = False
+    return {"ok": True, "message_id": mid, "pinned": pinned, "link": url}
 
 
 # ── signals ─────────────────────────────────────────────────────────
@@ -447,6 +519,16 @@ async def preview(slot: str, request: Request) -> dict:
     text, reason = compose_debug(slot)
     return {"slot": slot, "text": text, "blocked": not text,
             "reason": reason, "chars": len(text)}
+
+
+@router.post("/welcome")
+async def welcome(request: Request, pin: bool = True) -> dict:
+    """Post (and pin) the Arabic welcome message with the Start button."""
+    _admin(request)
+    res = send_welcome(pin=pin)
+    if not res.get("ok"):
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, res.get("error", ""))
+    return res
 
 
 @router.post("/post/{slot}")
