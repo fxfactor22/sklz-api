@@ -54,9 +54,40 @@ def _chat() -> str:
     return os.environ.get("TG_ARABIC_CHAT", "").strip()
 
 
+_TOKEN_VARS = ("TELEGRAM_BOT_TOKEN", "TG_SALES_BOT_TOKEN",
+               "TG_MIRROR_TOKEN", "TG_MIRROR2_TOKEN", "TG_MIRROR3_TOKEN")
+
+
 def _token() -> str:
-    return (os.environ.get("TG_ARABIC_TOKEN", "").strip()
-            or os.environ.get("TELEGRAM_BOT_TOKEN", "").strip())
+    """The bot that posts to the Arabic channel.
+
+    Three ways to say it, in order:
+      TG_ARABIC_TOKEN      the token itself
+      TG_ARABIC_TOKEN_ENV  the NAME of another variable holding it — so a
+                           token already in the environment is not copied
+                           into a second place where the two can drift
+      TELEGRAM_BOT_TOKEN   the default
+    """
+    direct = os.environ.get("TG_ARABIC_TOKEN", "").strip()
+    if direct:
+        return direct
+    named = os.environ.get("TG_ARABIC_TOKEN_ENV", "").strip()
+    if named:
+        return os.environ.get(named, "").strip()
+    return os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+
+
+def _bot_username(token: str) -> str:
+    if not token:
+        return ""
+    try:
+        with urllib.request.urlopen(
+                f"https://api.telegram.org/bot{token}/getMe", timeout=8) as r:
+            d = json.loads(r.read().decode())
+        return "@" + d.get("result", {}).get("username", "") if d.get("ok") \
+            else "invalid token"
+    except Exception:  # noqa: BLE001
+        return "unreachable"
 
 
 def post(text: str) -> bool:
@@ -361,6 +392,24 @@ async def health() -> dict:
             "posted": _state["posted"],
             "skipped": _state["skipped"],
             "last_error": _state["last_error"]}
+
+
+@router.get("/bots")
+async def bots(request: Request) -> dict:
+    """Which Telegram bot does each token variable belong to?
+
+    Returns usernames only — never the tokens. Four similarly-named
+    variables and no way to tell them apart is how the wrong bot ends up
+    posting to the wrong channel.
+    """
+    _admin(request)
+    out = {}
+    for name in _TOKEN_VARS:
+        val = os.environ.get(name, "").strip()
+        out[name] = _bot_username(val) if val else "not set"
+    out["_active_for_arabic"] = _bot_username(_token()) or "none"
+    out["_channel"] = _chat() or "not set"
+    return out
 
 
 @router.post("/preview/{slot}")
