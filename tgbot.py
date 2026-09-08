@@ -402,9 +402,19 @@ async def webhook(secret: str, request: Request,
     lang = lead.get("lang") or "en"
 
     if text.startswith("/start"):
+        payload = text.replace("/start", "").strip()
         _save_lead(sb, chat_id, {"step": "lang",
-                                 "source": text.replace("/start", "").strip() or "direct",
+                                 "source": payload or "direct",
                                  "username": (m.get("from") or {}).get("username", "")})
+        # Someone who arrived from the Arabic channel has already told us
+        # their language by clicking an Arabic button. Asking again is a
+        # pointless step at the exact moment attention is highest, so deep
+        # links starting with 'ar' skip straight to the first real question.
+        if payload.startswith("ar"):
+            _save_lead(sb, chat_id, {"lang": "ar", "step": "trade"})
+            send(chat_id, t("ar", "welcome") + "\n\n*" + t("ar", "q_trade") + "*",
+                 _trade_buttons("ar"))
+            return {"ok": True}
         send(chat_id, "*SKLZ Labs*\n\nChoose your language \u00b7 "
                       "\u0627\u062e\u062a\u0631 \u0644\u063a\u062a\u0643 \u00b7 "
                       "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u044f\u0437\u044b\u043a",
