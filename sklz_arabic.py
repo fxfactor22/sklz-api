@@ -37,12 +37,15 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import urllib.request
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, status
 
 router = APIRouter(prefix="/api/arabic", tags=["arabic"])
+
+_state: dict = {"last": {}, "posted": 0, "skipped": 0, "last_error": ""}
 
 MODEL = "claude-sonnet-4-5"
 
@@ -62,16 +65,23 @@ def post(text: str) -> bool:
     if not chat or not token:
         return False
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    body = json.dumps({"chat_id": chat, "text": text,
-                       "parse_mode": "Markdown",
-                       "disable_web_page_preview": True}).encode()
-    try:
-        req = urllib.request.Request(
-            url, data=body, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read().decode()).get("ok", False)
-    except Exception:  # noqa: BLE001
-        return False
+
+    def _send(payload: dict) -> bool:
+        try:
+            req = urllib.request.Request(
+                url, data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return json.loads(r.read().decode()).get("ok", False)
+        except Exception as exc:  # noqa: BLE001
+            _state["last_error"] = f"{type(exc).__name__}: {exc}"[:200]
+            return False
+
+    base = {"chat_id": chat, "text": text, "disable_web_page_preview": True}
+    if _send(dict(base, parse_mode="Markdown")):
+        return True
+    # Markdown refused: send it plain rather than drop the post entirely.
+    return _send(base)
 
 
 # ── signals ─────────────────────────────────────────────────────────
@@ -165,8 +175,19 @@ TradingView، ومحلل ذكاء اصطناعي. الجمهور متداولو�
 - اذكر المخاطرة بصدق عندما يكون ذلك مناسباً.
 - اكتب كإنسان يفهم السوق، لا كإعلان.
 
+- لا تذكر نسبة نجاح ولا نسبة صفقات رابحة إلى خاسرة بأي صيغة
+  (مثل "ثلاث من عشر" أو "٧٠٪ من الصفقات"). لا يوجد رقم نستطيع إثباته.
+- لا تصف حالة السوق اليوم كأنك تراها: لا تقل إن الذهب صاعد أو أن
+  الدولار يتحرك بشكل معيّن. تحدث عن ما يستحق الانتباه وكيف يُدار،
+  لا عن اتجاه تدّعي معرفته.
+
+التنسيق (مهم، وإلا رُفض المنشور):
+- ممنوع تماماً استخدام # للعناوين.
+- ممنوع استخدام ** للتغميق. استخدم نجمة واحدة *هكذا* فقط.
+- بدون قوائم مرقّمة أو رموز تنسيق أخرى.
+
 الأسلوب: عربي فصيح واضح، جُمل قصيرة، نبرة هادئة واثقة بلا مبالغة.
-اكتب منشوراً واحداً فقط، من ٤٠ إلى ٩٠ كلمة، بدون عناوين إنجليزية،
+اكتب منشوراً واحداً فقط، من ٤٠ إلى ٩٠ كلمة،
 ويمكن استخدام رمز تعبيري واحد أو اثنين على الأكثر."""
 
 PROMPTS = {
@@ -215,15 +236,56 @@ def _claude(prompt: str) -> str:
         return ""
 
 
+_NUM = r"(?:[0-9٠-٩]+|واحدة|اثنتين|اثنتان|ثلاث|أربع|خمس|ست|سبع|ثمان|تسع|عشر)"
+# "three trades out of ten lose" is a 70% win-rate claim in disguise.
+_RATIO = re.compile(
+    _NUM + r"\s*(?:صفقات|صفقة|مرات|مرة)?\s*من\s*(?:كل\s*)?"
+    + _NUM + r"|" + _NUM + r"\s*من\s*أصل\s*" + _NUM)
+_CLAIM_WORD = r"(?:نجاح|رابح|ربح|دقة|إصابة|خسار)"
+# a percentage anywhere near a performance word, in either order
+_PCT_CLAIM = re.compile(
+    r"[0-9٠-٩]+\s*[%٪].{0,30}" + _CLAIM_WORD
+    + r"|" + _CLAIM_WORD + r".{0,30}[0-9٠-٩]+\s*[%٪]")
+
+
+def sanitize(text: str) -> str:
+    """Make the text safe for Telegram's Markdown parser.
+
+    Claude writes clean Markdown; Telegram speaks a much smaller dialect.
+    A `# heading` renders literally and `**bold**` makes Telegram reject the
+    whole message with "can't parse entities" — so the post never appears
+    and nothing says why. Convert rather than trust.
+    """
+    out = []
+    for line in text.split("\n"):
+        s = line.strip()
+        if s.startswith("#"):
+            s = s.lstrip("#").strip()
+            s = f"*{s}*" if s else ""
+        out.append(s)
+    t = "\n".join(out)
+    t = t.replace("**", "*")
+    # an odd number of * or _ breaks the parser just as thoroughly
+    for ch in ("*", "_"):
+        if t.count(ch) % 2:
+            t = t.replace(ch, "")
+    return t.strip()
+
+
 def compose(slot: str) -> str:
     """Write one post for a slot, or return '' if it fails the rules."""
     text = _claude(PROMPTS.get(slot, PROMPTS["market"]))
     if not text:
         return ""
+    text = sanitize(text)
     low = text.lower()
     if any(b.lower() in low for b in BANNED):
         return ""
-    if len(text) > 900:
+    # "three trades in ten lose" is a 70% win rate claim wearing a disguise.
+    # No number we cannot evidence goes on a channel selling a trading tool.
+    if _RATIO.search(text) or _PCT_CLAIM.search(text):
+        return ""
+    if len(text) > 900 or len(text) < 40:
         return ""
     tail = ("\n\n_SKLZ Labs · برامج فقط، وليست نصيحة مالية_"
             if slot in ("promo", "market") else "")
@@ -241,9 +303,6 @@ def _hours() -> list[int]:
         if 0 <= h <= 23:
             out.append(h)
     return out or [6, 11, 15, 19]
-
-
-_state: dict = {"last": {}, "posted": 0, "skipped": 0, "last_error": ""}
 
 
 async def content_loop(log=print) -> None:
