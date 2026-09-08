@@ -187,6 +187,40 @@ def send_welcome(pin: bool = True) -> dict:
     return {"ok": True, "message_id": mid, "pinned": pinned, "link": url}
 
 
+def post_photo(text: str, image_url: str) -> bool:
+    """Send an image with the post as its caption.
+
+    Telegram fetches and re-hosts the image at send time, so a temporary
+    generator URL is fine here — the post keeps working long after the
+    source link expires. Caption limit is 1024 characters; longer text is
+    sent as a separate message under the photo rather than truncated,
+    because a post cut mid-sentence reads worse than two messages.
+    """
+    chat, token = _chat(), _token()
+    if not chat or not token or not image_url:
+        return False
+    caption, spill = text, ""
+    if len(text) > 1000:
+        cut = text.rfind("\n\n", 0, 1000)
+        cut = cut if cut > 200 else 1000
+        caption, spill = text[:cut], text[cut:].strip()
+    payload = {"chat_id": chat, "photo": image_url,
+               "caption": caption, "parse_mode": "Markdown"}
+    try:
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/sendPhoto",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            ok = json.loads(r.read().decode()).get("ok", False)
+    except Exception as exc:  # noqa: BLE001
+        _state["last_error"] = f"photo: {type(exc).__name__}: {exc}"[:200]
+        return False
+    if ok and spill:
+        post(spill)
+    return ok
+
+
 # ── signals ─────────────────────────────────────────────────────────
 _CATEGORY_AR = {
     "forex": "العملات",
@@ -532,8 +566,9 @@ async def welcome(request: Request, pin: bool = True) -> dict:
 
 
 @router.post("/post/{slot}")
-async def post_now(slot: str, request: Request) -> dict:
-    """Write and send one post immediately."""
+async def post_now(slot: str, request: Request,
+                   image_url: str = "") -> dict:
+    """Write and send one post immediately, optionally with an image."""
     _admin(request)
     if slot not in dict(SLOTS):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown slot")
@@ -541,6 +576,15 @@ async def post_now(slot: str, request: Request) -> dict:
     if not text:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             f"post not written — {reason}")
+    if image_url:
+        if not post_photo(text, image_url):
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                "Telegram refused the photo — check the URL is publicly "
+                "reachable and the bot can post media. "
+                + _state.get("last_error", ""))
+        _state["posted"] += 1
+        return {"ok": True, "slot": slot, "text": text, "with_image": True}
     if not post(text):
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             "Telegram refused the message — is the bot an "
