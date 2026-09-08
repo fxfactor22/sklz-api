@@ -274,6 +274,13 @@ async def summary_loop(app=None) -> None:
                 m2_tok = os.environ.get("TG_MIRROR2_TOKEN", "") or token
                 if _tg(m2_chat, m2_tok, text):
                     sent += 1
+                try:
+                    import sklz_arabic
+                    if sklz_arabic.post(
+                            sklz_arabic.format_summary_ar(day, week)):
+                        sent += 1
+                except Exception:  # noqa: BLE001
+                    pass
                 sent_on = today
                 print(f"[signal-summary] posted to {sent} channel(s)")
             except Exception as exc:  # noqa: BLE001

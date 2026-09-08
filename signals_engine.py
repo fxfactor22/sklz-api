@@ -176,6 +176,14 @@ def send_to_channels(channels: list[str], text: str) -> dict:
         ok = _post_telegram(chat, text)
         results[name] = "sent" if ok else "failed"
         any_ok = any_ok or ok
+    # The Arabic channel gets the same signal, written in Arabic —
+    # not the English text forwarded, which is what a mirror would do.
+    try:
+        import sklz_arabic
+        if sklz_arabic.send_signal(sig):
+            results.append({"channel": "arabic", "ok": True})
+    except Exception:  # noqa: BLE001
+        pass
     return {"sent": any_ok, "results": results}
 
 

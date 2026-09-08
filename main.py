@@ -35,6 +35,7 @@ from video_api import router as video_router
 import signal_lifecycle
 import copy_api
 import copy_scheduler
+import sklz_arabic
 import sklz_tiers
 from copy_scheduler import router as poll_router
 from tgbot import router as tgbot_router
@@ -94,7 +95,9 @@ app.include_router(copy_api.router)
 alerts_api.start(app)
 signal_lifecycle.start(app)
 app.include_router(poll_router)
+app.include_router(sklz_arabic.router)
 copy_scheduler.start(app)
+sklz_arabic.start(app)
 app.include_router(tgbot_router)
 app.include_router(codes_router)
 app.include_router(signals_router)
