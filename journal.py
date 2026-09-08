@@ -394,16 +394,17 @@ async def bot_ingest(payload: BotTradeIn,
         pid_rows = (sb.table("journal_trades").select("position_id")
                     .eq("user_id", payload.user_id)
                     .neq("position_id", "").limit(2000).execute()).data or []
-        existing_pids = {r.get("position_id") for r in pid_rows if r.get("position_id")}
+        existing_pids = {str(r.get("position_id")) for r in pid_rows
+                         if r.get("position_id") not in (None, "")}
     except Exception:
         pass
     rows = []
     for t in payload.trades:
         pid = getattr(t, "position_id", "") or ""
-        if pid and pid in existing_pids:
+        if pid and str(pid) in existing_pids:
             continue                       # already journaled — skip duplicate
         if pid:
-            existing_pids.add(pid)         # guard against dupes within this batch too
+            existing_pids.add(str(pid))         # guard against dupes within this batch too
         rows.append({
             "user_id": payload.user_id, "symbol": t.symbol.upper(),
             "side": t.side.lower(), "entry_price": t.entry_price,
@@ -415,13 +416,29 @@ async def bot_ingest(payload: BotTradeIn,
             "account_id": acct_id or None,
             "position_id": getattr(t, "position_id", "") or "",
             "outcome": _outcome(t.pnl), "created_at": _now()})
+    # The dedup fetch above reads at most 2000 rows, so it is a courtesy,
+    # not a guarantee. The DATABASE holds the real constraint — let it
+    # decide, and never let one already-journaled trade reject the rest.
+    written, dupes = 0, 0
     if rows:
         try:
-            sb.table("journal_trades").insert(rows).execute()
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                f"ingest failed: {exc}") from exc
-    return {"ok": True, "ingested": len(rows)}
+            sb.table("journal_trades").upsert(
+                rows, on_conflict="user_id,position_id",
+                ignore_duplicates=True).execute()
+            written = len(rows)
+        except Exception:
+            for r in rows:
+                try:
+                    sb.table("journal_trades").insert(r).execute()
+                    written += 1
+                except Exception as exc:  # noqa: BLE001
+                    if "23505" in str(exc) or "duplicate key" in str(exc):
+                        dupes += 1
+                        continue
+                    raise HTTPException(
+                        status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        f"ingest failed: {exc}") from exc
+    return {"ok": True, "ingested": written, "duplicates": dupes}
 
 
 # ────────────────────────── accounts (multi-account) ──────────────────────────
