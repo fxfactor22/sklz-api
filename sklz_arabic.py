@@ -303,20 +303,45 @@ def sanitize(text: str) -> str:
     return t.strip()
 
 
+def compose_debug(slot: str) -> tuple[str, str]:
+    """Write one post and say precisely why it was rejected, if it was.
+
+    "The writer returned nothing usable" covers six different failures —
+    an empty model reply, a banned word, a disguised win-rate claim, a
+    length limit — and telling them apart by guesswork wastes an evening.
+    """
+    raw = _claude(PROMPTS.get(slot, PROMPTS["market"]))
+    if not raw:
+        return "", "writer returned nothing (API key, model name, or timeout)"
+    text = sanitize(raw)
+    low = text.lower()
+    for b in BANNED:
+        if b.lower() in low:
+            return "", f"banned phrase: {b}"
+    m = _RATIO.search(text)
+    if m:
+        return "", f"win-rate claim in disguise: '{m.group(0)}'"
+    m = _PCT_CLAIM.search(text)
+    if m:
+        return "", f"performance percentage: '{m.group(0)}'"
+    if len(text) < 40:
+        return "", f"too short after sanitising ({len(text)} chars)"
+    if len(text) > 900:
+        return "", f"too long ({len(text)} chars)"
+    tail = ("\n\n_SKLZ Labs · برامج فقط، وليست نصيحة مالية_"
+            if slot in ("promo", "market") else "")
+    return text + tail, ""
+
+
 def compose(slot: str) -> str:
     """Write one post for a slot, or return '' if it fails the rules."""
+    text, _ = compose_debug(slot)
+    return text
+
+
+def _compose_old(slot: str) -> str:
     text = _claude(PROMPTS.get(slot, PROMPTS["market"]))
     if not text:
-        return ""
-    text = sanitize(text)
-    low = text.lower()
-    if any(b.lower() in low for b in BANNED):
-        return ""
-    # "three trades in ten lose" is a 70% win rate claim wearing a disguise.
-    # No number we cannot evidence goes on a channel selling a trading tool.
-    if _RATIO.search(text) or _PCT_CLAIM.search(text):
-        return ""
-    if len(text) > 900 or len(text) < 40:
         return ""
     tail = ("\n\n_SKLZ Labs · برامج فقط، وليست نصيحة مالية_"
             if slot in ("promo", "market") else "")
@@ -419,11 +444,9 @@ async def preview(slot: str, request: Request) -> dict:
     if slot not in dict(SLOTS):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             f"slot must be one of {[s for s, _ in SLOTS]}")
-    text = compose(slot)
-    return {"slot": slot, "text": text,
-            "blocked": not text,
-            "note": ("empty means the writer failed or the content rules "
-                     "rejected it" if not text else "")}
+    text, reason = compose_debug(slot)
+    return {"slot": slot, "text": text, "blocked": not text,
+            "reason": reason, "chars": len(text)}
 
 
 @router.post("/post/{slot}")
@@ -432,10 +455,10 @@ async def post_now(slot: str, request: Request) -> dict:
     _admin(request)
     if slot not in dict(SLOTS):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown slot")
-    text = compose(slot)
+    text, reason = compose_debug(slot)
     if not text:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
-                            "the writer returned nothing usable")
+                            f"post not written — {reason}")
     if not post(text):
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             "Telegram refused the message — is the bot an "
