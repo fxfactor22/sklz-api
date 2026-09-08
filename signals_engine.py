@@ -176,14 +176,6 @@ def send_to_channels(channels: list[str], text: str) -> dict:
         ok = _post_telegram(chat, text)
         results[name] = "sent" if ok else "failed"
         any_ok = any_ok or ok
-    # The Arabic channel gets the same signal, written in Arabic —
-    # not the English text forwarded, which is what a mirror would do.
-    try:
-        import sklz_arabic
-        if sklz_arabic.send_signal(sig):
-            results.append({"channel": "arabic", "ok": True})
-    except Exception:  # noqa: BLE001
-        pass
     return {"sent": any_ok, "results": results}
 
 
@@ -284,6 +276,16 @@ async def signal_webhook(key: str, payload: dict,
         print(f"[signals] db insert failed: {exc}")
 
     tg = send_to_telegram(category, format_signal(sig))
+    # The Arabic channel gets the same signal WRITTEN in Arabic, not the
+    # English text forwarded like a mirror would. This belongs here, in
+    # the webhook, because this is where the structured signal exists —
+    # send_to_telegram only ever sees the finished English string.
+    try:
+        import sklz_arabic
+        tg["arabic"] = sklz_arabic.send_signal(sig)
+    except Exception as exc:  # noqa: BLE001
+        tg["arabic"] = False
+        print(f"[signals] arabic send failed: {type(exc).__name__}: {exc}")
     return {"ok": True, "category": category, "levels": lv, "telegram": tg}
 
 
