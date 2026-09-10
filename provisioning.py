@@ -29,6 +29,13 @@ from db import get_supabase
 router = APIRouter(prefix="/api/providers", tags=["provisioning"])
 
 LIFECYCLE_STATES = ("active", "past_due", "suspended", "offboarded")
+# The one business this bridge may adopt. A constant, not a parameter:
+# adoption is a one-off reconciliation of records that predate the
+# provider model, and a tenant id that can be passed in is a tenant id
+# that can be passed in wrongly.
+ADOPTION_TENANT_ID = iskra.ADOPTION_TENANT_ID
+ADOPTION_EXPECT = {"slug": "sklz", "name": "SKLZ Labs",
+                   "is_test": True, "lifecycle_state": "active"}
 INVITE_ROLES = ("owner", "manager", "staff", "viewer")
 
 

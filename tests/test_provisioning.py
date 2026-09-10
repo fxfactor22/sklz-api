@@ -347,3 +347,131 @@ def test_every_configuration_verdict_exists():
     for verdict in ("match", "fingerprint_mismatch", "sklz_secret_missing",
                     "iskra_secret_missing", "iskra_unreachable"):
         assert f'"{verdict}"' in src, verdict
+
+
+# ── P1.2: existing-tenant adoption ───────────────────────────────────
+ADOPT_TENANT = "99a1705a-b374-4725-8381-5b150b43bfa9"
+
+
+def test_adoption_uses_the_existing_signer_not_a_second_one():
+    src = open("./iskra_client.py").read()
+    assert src.count("def sign(") == 1
+    assert "hmac.new" in src and src.count("hmac.new") <= 2
+    fn = src[src.index("def adopt_existing("):]
+    fn = fn[:fn.index("\ndef owner_invite")]
+    assert "_request(" in fn          # the shared signed transport
+    assert "hmac" not in fn           # no second implementation
+
+
+def test_adoption_targets_its_own_endpoint():
+    src = open("./iskra_client.py").read()
+    fn = src[src.index("def adopt_existing("):]
+    fn = fn[:fn.index("\ndef owner_invite")]
+    assert "/api/provisioning/adopt-existing" in fn
+    assert "/api/provisioning/tenant" not in fn
+
+
+def test_the_harness_never_calls_create_or_invite():
+    """`/tenant` is create-or-return; pointed at an existing business it
+    makes a SECOND one."""
+    src = open("tools/iskra_adopt_existing.py").read()
+    assert "adopt_existing" in src
+    assert "create_tenant" not in src
+    assert "owner_invite" not in src
+    assert "/api/provisioning/tenant" not in src
+
+
+def test_the_tenant_id_is_a_constant_not_an_argument():
+    src = open("tools/iskra_adopt_existing.py").read()
+    assert f'TENANT_ID = "{ADOPT_TENANT}"' in src
+    # never derived from a name, slug or email
+    for bad in ("business_name", "owner_email", 'tenant_id": "sklz"'):
+        assert bad not in src
+
+
+def test_expect_block_matches_the_contract_and_keeps_is_test_true():
+    src = open("tools/iskra_adopt_existing.py").read()
+    assert '"slug": "sklz"' in src and '"name": "SKLZ Labs"' in src
+    assert '"is_test": True' in src
+    assert '"lifecycle_state": "active"' in src
+    assert '"is_test": False' not in src        # never asserts a flip
+
+
+def test_intent_is_written_before_the_signed_call():
+    src = open("tools/iskra_adopt_existing.py").read()
+    body = src[src.index("def main("):]
+    assert body.index('_sb("POST", "provisioning_intents"') < \
+        body.index("iskra.adopt_existing(payload)")
+
+
+def test_a_retry_reuses_the_stored_key():
+    src = open("tools/iskra_adopt_existing.py").read()
+    assert 'payload["idempotency_key"] = intent["idempotency_key"]' in src
+    assert 'kind=eq.adopt&state=in.(in_flight,succeeded)' in src
+
+
+def test_a_changed_body_under_the_same_key_stops():
+    src = open("tools/iskra_adopt_existing.py").read()
+    assert 'intent["request_hash"] != want_hash' in src
+    assert "Reusing its key with a changed" in src
+
+
+def test_returned_tenant_must_equal_the_target_before_any_write():
+    src = open("tools/iskra_adopt_existing.py").read()
+    body = src[src.index("def main("):]
+    assert body.index("returned.lower() != TENANT_ID.lower()") < \
+        body.index('_sb("PATCH", f"providers?id=eq.')
+
+
+def test_an_existing_different_mapping_fails_closed():
+    src = open("tools/iskra_adopt_existing.py").read()
+    assert 'existing.lower() != TENANT_ID.lower()' in src
+    assert "Not overwriting" in src
+    guard = src[src.index("existing.lower() != TENANT_ID.lower()"):]
+    guard = guard[:guard.index("# ── 4 ·")]
+    assert '_sb("PATCH"' not in guard
+
+
+def test_dry_run_writes_nothing():
+    src = open("tools/iskra_adopt_existing.py").read()
+    body = src[src.index("if not COMMIT:"):]
+    body = body[:body.index("# ── 5 ·")]
+    assert "return 0" in body
+    assert '_sb("POST"' not in body and '_sb("PATCH"' not in body
+
+
+def test_412_and_403_are_preserved_distinctly():
+    import iskra_client as k
+    assert k.classify(412, {"error": "expectation_failed"}).code == \
+        "expectation_failed"
+    assert k.classify(412, {}).retryable is False
+    assert k.classify(403, {"error": "adoption_disabled"}).code == \
+        "adoption_disabled"
+    src = open("tools/iskra_adopt_existing.py").read()
+    assert "adoption_disabled" in src and "expectation_failed" in src
+
+
+def test_every_named_409_conflict_survives_classification():
+    import iskra_client as k
+    for conflict in ("provider_linked_elsewhere", "tenant_linked_elsewhere",
+                     "link_ended", "tenant_offboarded", "raced"):
+        exc = k.classify(409, {"conflict": conflict})
+        assert exc.code == conflict, conflict
+        assert exc.retryable is False
+
+
+def test_the_harness_prints_no_secret():
+    src = open("tools/iskra_adopt_existing.py").read()
+    assert "secret_fingerprint()" in src
+    for bad in ("ISKRA_PROVISIONING_SECRET\")", "SUPABASE_SERVICE_KEY)",
+                "print(key", "line(key"):
+        assert bad not in src
+
+
+def test_adoption_kind_is_allowed_by_the_ledger():
+    sql = open("migrations/P12-migration.sql").read()
+    assert "'tenant', 'owner_invite', 'lifecycle', 'adopt'" in sql
+    assert "provisioning_intents_one_adopt" in sql
+    assert "where kind = 'adopt' and state in ('in_flight', 'succeeded')" in sql
+    # reuses the ledger rather than creating a parallel one
+    assert "create table" not in sql.lower()

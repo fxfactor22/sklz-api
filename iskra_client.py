@@ -130,8 +130,20 @@ def classify(status: int, body: dict) -> IskraError:
                           retryable=False)
     if status == 409:
         retry = bool(body.get("retryable"))
-        return IskraError(status, "conflict", detail, retryable=retry,
-                          same_key=True, body=body)
+        # Adoption names WHICH side is already spoken for. Preserving that
+        # matters: "409" alone sends whoever reads it to the wrong database.
+        named = str(body.get("conflict") or "").strip()
+        return IskraError(status, named or "conflict", detail,
+                          retryable=retry, same_key=True, body=body)
+    if status == 412:
+        # An expectation about the tenant did not hold. Never retry — the
+        # request is aimed at the wrong company, or the world changed.
+        return IskraError(status, "expectation_failed", detail,
+                          retryable=False, body=body)
+    if status == 403:
+        return IskraError(status, str(body.get("error") or "forbidden"),
+                          detail or "adoption is disabled on ISKRA",
+                          retryable=False, body=body)
     if status == 413:
         return IskraError(status, "body_too_large", detail, retryable=False)
     if status == 500:
@@ -264,6 +276,22 @@ def diag() -> dict:
 
 def create_tenant(payload: dict) -> dict:
     _, data = _request("POST", "/api/provisioning/tenant", payload)
+    return data
+
+
+ADOPTION_TENANT_ID = "99a1705a-b374-4725-8381-5b150b43bfa9"
+
+
+def adopt_existing(payload: dict) -> dict:
+    """Link a provider to a business that ALREADY exists.
+
+    Separate from create_tenant on purpose. `/provisioning/tenant` is
+    "create or return", and pointed at an existing business with no
+    provider link it does not find it — it creates a second one with the
+    same name and none of the history. Adoption establishes a link and
+    creates nothing.
+    """
+    _, data = _request("POST", "/api/provisioning/adopt-existing", payload)
     return data
 
 
