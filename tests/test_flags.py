@@ -93,9 +93,9 @@ def test_demo_api_refuses_any_non_demo_destination():
     """A second lock, independent of routing."""
     src = open("./demo_api.py").read()
     fn = src[src.index("async def signal_send("):]
-    fn = fn[:fn.index("\ndef _deliver")]
+    fn = fn[:fn.index("\nDELIVER_TIMEOUT")]
     assert 'if dest.key != "demo_signals"' in fn
-    assert fn.index('dest.key != "demo_signals"') < fn.index("_deliver(dest")
+    assert fn.index('dest.key != "demo_signals"') < fn.index("to_thread(_deliver")
 
 
 def test_diagnostic_is_off_for_every_off_value():

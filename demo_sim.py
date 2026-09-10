@@ -112,3 +112,20 @@ def compose_signal(pos: dict, lang: str = "en", brand: str = "") -> str:
                   "Trading leveraged products carries risk. "
                   "Not financial advice."]
     return "\n".join(lines)
+
+
+def _config_problem(dest) -> str:
+    """Why this destination cannot deliver, or "" if it looks usable.
+
+    Shape only — a token that cannot possibly be a bot token is worth
+    catching before a network call, and no check here can prove a token
+    is valid without asking Telegram.
+    """
+    token = dest.token.reveal() if dest.token else ""
+    if not token:
+        return "telegram_token_missing"
+    if ":" not in token or len(token) < 20:
+        return "telegram_token_malformed"
+    if not dest.chat_id:
+        return "telegram_chat_missing"
+    return ""

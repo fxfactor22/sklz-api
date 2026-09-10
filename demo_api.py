@@ -19,6 +19,7 @@ broker command protocol however convenient that would have been.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -49,7 +50,8 @@ LIMITS = {"trade": (40, 3600), "signal": (20, 3600)}
 
 
 from demo_sim import (SYMBOLS, _price, _now_iso,
-                      _result, _reject, compose_signal)
+                      _result, _reject, compose_signal,
+                      _config_problem)
 
 
 # ── signature ───────────────────────────────────────────────────────
@@ -626,6 +628,19 @@ async def signal_send(request: Request) -> dict:
     # the demo destination. Routing already guarantees that — and it
     # guaranteed it before too, right up until a branch order let an
     # Arabic demo signal resolve to a production channel. Two locks.
+    # Fail closed on configuration BEFORE reaching for the network. A
+    # malformed token cannot succeed, so attempting it only spends a
+    # timeout and teaches the prospect nothing.
+    cfg_problem = _config_problem(dest)
+    if cfg_problem:
+        rec = {"signal_id": sig_id, "state": "failed",
+               "reason": cfg_problem, "text": text,
+               "destination_label": label, "delivered_at": None,
+               "message_id": None}
+        _store_signal(sb, session, sig_id, pos, lang, text, "failed",
+                      cfg_problem)
+        return {"ok": True, "signal": _settle(sb, session, key, rec)}
+
     if dest.key != "demo_signals":
         rec = {"signal_id": sig_id, "state": "disabled",
                "reason": "wrong_destination", "text": text,
@@ -637,7 +652,19 @@ async def signal_send(request: Request) -> dict:
                       "wrong_destination")
         return {"ok": True, "signal": _settle(sb, session, key, rec)}
 
-    state, reason, msg_id = _deliver(dest, text)
+    # OFF THE EVENT LOOP. _deliver is synchronous urllib, and calling it
+    # directly from an async handler blocks the single worker for the
+    # whole Telegram round trip — TLS handshake included. Enabling demo
+    # delivery did exactly that: requests queued behind each other until
+    # the proxy returned 502 for every endpoint, including ones that
+    # would have refused instantly. The service was never down; it was
+    # never free to answer.
+    try:
+        state, reason, msg_id = await asyncio.wait_for(
+            asyncio.to_thread(_deliver, dest, text), timeout=DELIVER_TIMEOUT)
+    except (asyncio.TimeoutError, Exception) as exc:  # noqa: BLE001
+        state, reason, msg_id = (
+            "failed", f"telegram_unavailable:{type(exc).__name__}", None)
     delivered = _now_iso() if state == "sent" else None
     _store_signal(sb, session, sig_id, pos, lang, text, state, reason,
                   msg_id, label, delivered)
@@ -645,6 +672,9 @@ async def signal_send(request: Request) -> dict:
            "text": text, "destination_label": label,
            "delivered_at": delivered, "message_id": msg_id}
     return {"ok": True, "signal": _settle(sb, session, key, rec)}
+
+
+DELIVER_TIMEOUT = 6.0
 
 
 def _deliver(dest, text: str) -> tuple[str, str, int | None]:
@@ -657,7 +687,7 @@ def _deliver(dest, text: str) -> tuple[str, str, int | None]:
         req = urllib.request.Request(
             url, data=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=8) as r:
+        with urllib.request.urlopen(req, timeout=DELIVER_TIMEOUT) as r:
             d = json.loads(r.read().decode())
     except Exception as exc:  # noqa: BLE001
         return "failed", f"telegram_unavailable:{type(exc).__name__}", None
