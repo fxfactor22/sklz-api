@@ -165,7 +165,10 @@ def deliver(dest, text: str) -> bool:
     fails rather than reaching for the environment, because a sender that
     can rediscover tokens is a second routing system in disguise.
     """
-    return _post_telegram(dest.chat_id, text, dest.token)
+    # .reveal() is the only accessor — deliberately explicit and greppable,
+    # so a future leak has to be written on purpose rather than by printing
+    # an object.
+    return _post_telegram(dest.chat_id, text, dest.token.reveal())
 
 
 def _post_telegram(chat: str, text: str, token: str = "") -> bool:

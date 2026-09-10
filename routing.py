@@ -66,13 +66,50 @@ class RoutingScope:
     business: str | None = None   # RESERVED — do not build on this yet
 
 
+class Secret:
+    """A credential that refuses to render itself.
+
+    A plain string token on a dataclass leaks through the default repr, an
+    f-string, a log line, or json.dumps of asdict(). Wrapping it means the
+    ONLY way to read the value is to ask for it by name — everything else,
+    including accidental logging, prints a redaction.
+    """
+    __slots__ = ("_value",)
+
+    def __init__(self, value: str = "") -> None:
+        self._value = value or ""
+
+    def reveal(self) -> str:
+        """Explicit, greppable, and the only accessor."""
+        return self._value
+
+    def __bool__(self) -> bool:
+        return bool(self._value)
+
+    def __len__(self) -> int:
+        return len(self._value)
+
+    def __repr__(self) -> str:
+        return "Secret(set)" if self._value else "Secret(empty)"
+
+    __str__ = __repr__
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Secret):
+            return self._value == other._value
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(("Secret", self._value))
+
+
 @dataclass
 class Destination:
     """One resolved place to deliver to."""
     key: str                      # stable id for logging: "metals", "mirror2"
     kind: str = "telegram"
     chat_id: str = ""
-    token: str = ""               # resolved credential, never logged
+    token: Secret = field(default_factory=Secret, repr=False)
     language: str = "en"
     audience: str = "all"
     primary: bool = True          # False for mirrors
@@ -130,8 +167,8 @@ class EnvTelegramDestinationResolver(DestinationResolver):
             out.append(Destination(
                 key=prefix.lower(),
                 chat_id=chat,
-                token=(os.environ.get(f"{prefix}_TOKEN", "").strip()
-                       or self._default_token()),
+                token=Secret(os.environ.get(f"{prefix}_TOKEN", "").strip()
+                             or self._default_token()),
                 primary=False,
                 meta={"env_prefix": prefix}))
         return out
@@ -153,7 +190,7 @@ class EnvTelegramDestinationResolver(DestinationResolver):
                 chat = (self._general_chat() if name == "general"
                         else self._category_chat(name))
                 out.append(Destination(
-                    key=name, chat_id=chat, token=token,
+                    key=name, chat_id=chat, token=Secret(token),
                     enabled=bool(chat),
                     meta={"reason": "" if chat else "not configured"}))
             return out
@@ -163,14 +200,14 @@ class EnvTelegramDestinationResolver(DestinationResolver):
         cat_chat = self._category_chat(scope.category) if scope.category else ""
         if scope.category:
             out.append(Destination(
-                key=scope.category, chat_id=cat_chat, token=token,
+                key=scope.category, chat_id=cat_chat, token=Secret(token),
                 enabled=bool(cat_chat),
                 meta={"reason": "" if cat_chat
                       else f"no channel configured for {scope.category}"}))
         gen_chat = self._general_chat()
         if gen_chat:
             out.append(Destination(key="general", chat_id=gen_chat,
-                                   token=token))
+                                   token=Secret(token)))
         out.extend(self._mirrors())
         return out
 

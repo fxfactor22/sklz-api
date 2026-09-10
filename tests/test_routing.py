@@ -24,15 +24,15 @@ def test_each_category_resolves_as_before():
     for cat, chat in (("metals", "-100metals"), ("forex", "-100forex"),
                       ("crypto", "-100crypto"), ("stocks", "-100stocks")):
         d = {x.key: x for x in resolve_destinations(RoutingScope(category=cat))}
-        assert d[cat].chat_id == chat and d[cat].token == "MAIN", cat
+        assert d[cat].chat_id == chat and d[cat].token.reveal() == "MAIN", cat
         assert d["general"].chat_id == "-100general"
 
 def test_mirrors_keep_their_own_tokens():
     setup()
     d = {x.key: x for x in resolve_destinations(RoutingScope(category="metals"))}
     assert d["tg_mirror"].chat_id == "-100ali"
-    assert d["tg_mirror"].token == "ALITOK"        # own bot preserved
-    assert d["tg_mirror2"].token == "MAIN"         # falls back, as before
+    assert d["tg_mirror"].token.reveal() == "ALITOK"   # own bot preserved
+    assert d["tg_mirror2"].token.reveal() == "MAIN"    # falls back, as before
     assert d["tg_mirror"].primary is False
     assert d["tg_mirror3"] if False else "tg_mirror3" not in d
 
@@ -96,3 +96,56 @@ def test_business_scope_is_reserved_and_unused():
     b = resolve_destinations(RoutingScope(category="metals",
                                           business="anything"))
     assert [x.chat_id for x in a] == [x.chat_id for x in b]
+
+
+# ── credential safety ────────────────────────────────────────────────
+def test_a_token_cannot_leak_through_any_ordinary_rendering():
+    """The token must survive nothing but an explicit .reveal().
+
+    A plain string field leaked through repr(), f-strings, log lines and
+    json.dumps(asdict(...)). Each of those is a one-character mistake away
+    in normal code, so the guarantee has to be structural.
+    """
+    import dataclasses, json, logging, io
+    from routing import Destination, Secret
+    TOKEN = "8123456:AAH-SUPER-SECRET-BOT-TOKEN"
+    d = Destination(key="metals", chat_id="-100x", token=Secret(TOKEN))
+
+    for rendered in (repr(d), str(d), f"{d}", "%s" % (d,),
+                     repr(dataclasses.asdict(d)), repr(d.redacted()),
+                     repr(d.token), str(d.token)):
+        assert TOKEN not in rendered, rendered
+
+    # a log call must not leak it either
+    buf = io.StringIO()
+    h = logging.StreamHandler(buf)
+    log = logging.getLogger("routing-secret-test")
+    log.addHandler(h); log.setLevel(logging.INFO)
+    log.info("sending to %s", d)
+    log.info("dest=%r token=%s", d, d.token)
+    assert TOKEN not in buf.getvalue()
+
+    # serialisation must refuse rather than silently succeed
+    try:
+        json.dumps(dataclasses.asdict(d))
+        raise AssertionError("asdict serialised a credential")
+    except TypeError:
+        pass
+
+    # and the resolver's describe() never carries one
+    from routing import EnvTelegramDestinationResolver
+    import os
+    os.environ["TELEGRAM_BOT_TOKEN"] = TOKEN
+    os.environ["TG_MIRROR_CHAT"] = "-100m"
+    assert TOKEN not in repr(EnvTelegramDestinationResolver().describe())
+
+    # the value is still reachable when asked for by name
+    assert d.token.reveal() == TOKEN
+
+
+def test_resolved_destinations_carry_secrets_not_strings():
+    setup()
+    from routing import Secret
+    for d in resolve_destinations(RoutingScope(category="metals")):
+        assert isinstance(d.token, Secret), d.key
+        assert "MAIN" not in repr(d) and "ALITOK" not in repr(d)
