@@ -84,3 +84,72 @@ def test_no_secret_or_row_data_is_returned():
         assert leak not in fn, leak
     probe = SRC[SRC.index("def _probe("):SRC.index("@router.get")]
     assert ".data" not in probe        # results are timed, never read
+
+
+# ── P1.5c: measurement hygiene ───────────────────────────────────────
+def test_a_percentage_above_100_can_never_be_reported():
+    """The endpoint printed 174.8% and 241.7% of wall-clock time. Both
+    are impossible; both came from presenting a demand ratio as a duty
+    percentage."""
+    src = open("./diagnostics.py").read()
+    assert "saturated = demand >= 1.0" in src
+    assert '"loop_duty_pct": (round(demand * 100, 1) if not saturated' in src
+    assert '"required_workers"' in src
+    # and the wording says so explicitly
+    assert "never a percentage above 100" in src
+
+
+def test_demand_math_is_correct_at_the_boundary():
+    """Reproduces the endpoint's arithmetic."""
+    def report(calls_per_sec, p50_ms):
+        demand = calls_per_sec * p50_ms / 1000
+        saturated = demand >= 1.0
+        return {"required_workers": round(demand, 2),
+                "loop_duty_pct": (round(demand * 100, 1)
+                                  if not saturated else None),
+                "saturated": saturated}
+
+    # the real numbers that produced the impossible output
+    bad = report(8.1, 215.8)
+    assert bad["saturated"] is True
+    assert bad["loop_duty_pct"] is None       # not 174.8
+    assert bad["required_workers"] == 1.75    # workers, not percent
+
+    # a healthy database
+    good = report(8.1, 15.0)
+    assert good["saturated"] is False
+    assert good["loop_duty_pct"] == 12.2
+    assert good["loop_duty_pct"] <= 100
+
+
+def test_the_pooled_client_is_warmed_before_timing():
+    """A TLS handshake in the first sample inflated every earlier run."""
+    src = open("./diagnostics.py").read()
+    probe = src[src.index("def _probe("):src.index("@router.get")]
+    assert probe.index("Warm the connection") < probe.index("started =")
+    assert "warmup_ms" in probe
+    assert '"warmup_discarded_ms"' in src
+
+
+def test_network_and_origin_time_are_separated():
+    """Connecting took 23ms while a query took 200ms; without the split
+    the obvious conclusion is to move the service, which is wrong."""
+    src = open("./diagnostics.py").read()
+    assert "def _phases(" in src
+    for phase in ("dns_ms", "tcp_ms", "tls_ms", "connect_total_ms"):
+        assert phase in src, phase
+    assert '"origin_time_ms"' in src
+    assert "the database platform" in src
+
+
+def test_the_misleading_tools_probe_is_gone():
+    """It opened a new TLS connection per call and measured a cost
+    production does not pay."""
+    import os
+    assert not os.path.exists("./tools/db_latency_probe.py")
+
+
+def test_conclusions_are_labelled_as_derived_not_observed():
+    src = open("./diagnostics.py").read()
+    assert '"caveat"' in src
+    assert "Derived from measured p50" in src

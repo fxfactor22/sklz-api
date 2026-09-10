@@ -78,8 +78,58 @@ def _pct(values: list[float], q: float) -> float:
     return s[min(int(len(s) * q), len(s) - 1)]
 
 
+def _phases() -> dict:
+    """Split a request into network and origin time.
+
+    A full query took 200ms while connecting took 23ms. Without this
+    split the 200ms looks like distance, and the obvious-but-wrong
+    conclusion is to move the service. The remainder is time spent
+    INSIDE the database platform, which is a different fix entirely.
+    """
+    import socket
+    import ssl
+    import urllib.parse
+
+    url = os.environ.get("SUPABASE_URL", "")
+    if not url:
+        return {}
+    host = urllib.parse.urlparse(url).hostname or ""
+    if not host:
+        return {}
+    out: dict = {"host": host}
+    try:
+        t0 = time.perf_counter()
+        socket.gethostbyname(host)
+        out["dns_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+        t0 = time.perf_counter()
+        sock = socket.create_connection((host, 443), timeout=10)
+        out["tcp_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+        t0 = time.perf_counter()
+        ctx = ssl.create_default_context()
+        ctx.wrap_socket(sock, server_hostname=host).close()
+        out["tls_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+        out["connect_total_ms"] = round(
+            out["dns_ms"] + out["tcp_ms"] + out["tls_ms"], 1)
+    except Exception as exc:  # noqa: BLE001
+        out["error"] = type(exc).__name__
+    return out
+
+
 def _probe(sb: Client, samples: int) -> dict:
     """Blocking. Runs on a worker thread, never on the loop."""
+    # Warm the connection first and DISCARD it. supabase-py pools
+    # connections; the first call pays a TLS handshake that no production
+    # request pays. Including it inflated an earlier probe by ~100ms per
+    # call and produced impossible conclusions.
+    warmup_ms = None
+    try:
+        t0 = time.perf_counter()
+        sb.table(PROBE_TABLES[0][0]).select(PROBE_TABLES[0][1]) \
+            .limit(1).execute()
+        warmup_ms = round((time.perf_counter() - t0) * 1000, 2)
+    except Exception:  # noqa: BLE001
+        pass
+
     started = time.perf_counter()
     per_table: dict[str, dict] = {}
     everything: list[float] = []
@@ -114,7 +164,8 @@ def _probe(sb: Client, samples: int) -> dict:
         }
 
     return {"per_table": per_table, "all": everything,
-            "truncated": truncated,
+            "truncated": truncated, "warmup_ms": warmup_ms,
+            "phases": _phases(),
             "elapsed_s": round(time.perf_counter() - started, 2)}
 
 
@@ -143,7 +194,14 @@ async def db_latency(samples: int = DEFAULT_SAMPLES,
                 "per_table": raw["per_table"]}
 
     p50, p95 = _pct(allv, 0.5), _pct(allv, 0.95)
-    duty = BACKGROUND_CALLS_PER_SEC * p50 / 1000
+    # DEMAND, not duty. calls/sec x seconds-per-call is a REQUIRED
+    # CAPACITY ratio: at 1.0 one worker is exactly saturated. Above 1.0
+    # it is not "175% of the time" — that is impossible and this endpoint
+    # printed it twice. It means demand exceeds what one worker can serve,
+    # so work queues and latency grows without bound until something
+    # gives. Below 1.0 it is the share of wall-clock time spent waiting.
+    demand = BACKGROUND_CALLS_PER_SEC * p50 / 1000
+    saturated = demand >= 1.0
 
     if p95 < 20:
         verdict = "small"
@@ -158,9 +216,22 @@ async def db_latency(samples: int = DEFAULT_SAMPLES,
         note = ("The loop spends real time blocked. Adding concurrency "
                 "will not help until this work moves off it.")
 
+    phases = raw.get("phases") or {}
+    connect = phases.get("connect_total_ms")
+    origin_ms = round(p50 - connect, 1) if connect is not None else None
+    if origin_ms is not None and origin_ms > 50:
+        note = (f"{note} Connecting takes {connect}ms but a query takes "
+                f"{round(p50,1)}ms, so about {origin_ms}ms is spent inside "
+                f"the database platform, not on the network or in this "
+                f"code. Making calls concurrent cannot remove that; only "
+                f"reducing per-call cost can.")
+
     return {
         "ok": True,
         "measured": "in_process",
+        "warmup_discarded_ms": raw.get("warmup_ms"),
+        "connection_phases": phases,
+        "origin_time_ms": origin_ms,
         "note_on_method": (
             "Measured inside the API container. A `railway run` probe "
             "measures the operator's laptop instead and is not comparable."),
@@ -180,10 +251,22 @@ async def db_latency(samples: int = DEFAULT_SAMPLES,
             for name, calls, freq in HOT_PATHS],
         "background": {
             "calls_per_second": round(BACKGROUND_CALLS_PER_SEC, 1),
-            "loop_duty_pct": round(duty * 100, 1),
-            "meaning": ("share of wall-clock time the single worker spends "
-                        "waiting on the database, from copy-network traffic "
-                        "alone, before any user request")},
+            "required_workers": round(demand, 2),
+            "loop_duty_pct": (round(demand * 100, 1) if not saturated
+                              else None),
+            "saturated": saturated,
+            "meaning": (
+                "Below 1.0 this is the share of wall-clock time one worker "
+                "spends waiting on the database. At or above 1.0 a single "
+                "worker cannot keep up: requests queue and latency grows "
+                "until traffic drops. It is never a percentage above 100."
+                if saturated else
+                "share of wall-clock time one worker spends waiting on the "
+                "database, from background traffic alone"),
+            "caveat": (
+                "Derived from measured p50 and counted call frequencies. "
+                "Real duty differs: uvicorn may run several workers, and "
+                "not every poll does maximum work.")},
         "serialisation_poll_path": {
             f"{n}_concurrent": round(n * 5 * p50) for n in (1, 3, 5, 10, 20)},
         "verdict": verdict,
