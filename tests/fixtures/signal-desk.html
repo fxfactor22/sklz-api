@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SKLZ Signal Desk — Trade once. Distribute everywhere.</title>
+<meta name="description" content="Connect your master trading account to automated
+Telegram signals, copy trading and professional trading operations.">
+<style>
+:root{--bg:#07090E;--panel:#0D1119;--panel2:#111722;--line:#1B2431;
+ --ink:#EEF2F8;--dim:#8A94A6;--dim2:#5B6675;--gold:#F5A623;--gold2:#FFC65C;
+ --green:#12C48B;--red:#F0525B}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);
+ font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+ -webkit-font-smoothing:antialiased}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1140px;margin:0 auto;padding:0 22px}
+.btn{display:inline-block;border:0;border-radius:11px;padding:14px 24px;font-weight:700;
+ font-size:15px;cursor:pointer;font-family:inherit;transition:.15s}
+.btn-gold{background:linear-gradient(180deg,var(--gold2),var(--gold));color:#12100A}
+.btn-gold:hover{filter:brightness(1.08)}
+.btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn-ghost:hover{border-color:var(--dim2)}
+
+.top{position:sticky;top:0;z-index:60;background:rgba(7,9,14,.9);
+ backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:14px;height:64px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:800}
+.brand .dot{width:9px;height:9px;border-radius:50%;background:var(--gold);
+ box-shadow:0 0 12px var(--gold)}
+.nav{display:flex;gap:22px;margin-left:20px;font-size:14px;color:var(--dim)}
+.nav a:hover{color:var(--ink)}
+@media(max-width:840px){.nav{display:none}}
+.sp{flex:1}
+.top .btn{padding:10px 16px;font-size:14px}
+
+/* hero */
+.hero{padding:84px 0 60px;text-align:center;position:relative;overflow:hidden}
+.hero:before{content:"";position:absolute;inset:-40% 20% auto;height:420px;
+ background:radial-gradient(ellipse at center,rgba(245,166,35,.14),transparent 68%);
+ pointer-events:none}
+.hero h1{font-size:clamp(38px,7vw,72px);line-height:1;letter-spacing:-2.2px;
+ font-weight:800;position:relative}
+.hero h1 em{font-style:normal;background:linear-gradient(90deg,var(--gold),var(--gold2));
+ -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.hero .sub{color:var(--dim);max-width:660px;margin:20px auto 0;font-size:18px;position:relative}
+.cta{display:flex;gap:12px;justify-content:center;margin-top:30px;flex-wrap:wrap;position:relative}
+.eyebrow{display:inline-block;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;
+ color:var(--gold2);border:1px solid rgba(245,166,35,.3);border-radius:100px;
+ padding:6px 14px;margin-bottom:22px;position:relative}
+
+section{padding:60px 0;border-top:1px solid var(--line)}
+.sh{text-align:center;max-width:680px;margin:0 auto 38px}
+.sh h2{font-size:clamp(26px,4vw,38px);letter-spacing:-1px;line-height:1.15}
+.sh p{color:var(--dim);margin-top:12px;font-size:16.5px}
+.grid{display:grid;gap:16px}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g2{grid-template-columns:1fr 1fr}
+@media(max-width:880px){.g3,.g2{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px}
+
+/* the pain */
+.pain{background:var(--panel);border:1px solid var(--line);border-radius:18px;
+ padding:26px;display:grid;grid-template-columns:1fr auto 1fr;gap:22px;align-items:center}
+@media(max-width:880px){.pain{grid-template-columns:1fr}}
+.lane h4{font-size:12px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:14px}
+.lane.old h4{color:var(--red)} .lane.new h4{color:var(--green)}
+.tick{display:flex;gap:11px;align-items:flex-start;padding:9px 0;font-size:14px;
+ color:#C6D0DC;border-bottom:1px solid var(--line)}
+.tick:last-child{border-bottom:0}
+.tick .t{font-size:11px;color:var(--dim2);flex:0 0 44px;padding-top:2px}
+.vs{font-size:12px;color:var(--dim2);text-align:center;letter-spacing:.14em}
+
+/* flow */
+.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:8px}
+@media(max-width:880px){.flow{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.flow{grid-template-columns:1fr}}
+.node{background:var(--panel2);border:1px solid var(--line);border-radius:13px;
+ padding:16px 14px;text-align:center;position:relative}
+.node .i{font-size:20px}
+.node .n{font-weight:700;font-size:13.5px;margin-top:7px}
+.node .d{font-size:11.5px;color:var(--dim2);margin-top:3px}
+.node:not(:last-child):after{content:"→";position:absolute;right:-9px;top:50%;
+ transform:translateY(-50%);color:var(--gold);font-size:15px;z-index:2}
+@media(max-width:880px){.node:after{display:none !important}}
+
+/* pillars */
+.pil{padding:26px}
+.pil .ic{width:42px;height:42px;border-radius:11px;background:rgba(245,166,35,.12);
+ display:grid;place-items:center;font-size:19px;margin-bottom:14px}
+.pil h3{font-size:19px;letter-spacing:-.3px}
+.pil p{color:var(--dim);font-size:14.5px;margin-top:8px}
+.pil ul{list-style:none;margin-top:14px;display:grid;gap:7px}
+.pil li{font-size:13.5px;color:#C6D0DC;padding-left:19px;position:relative}
+.pil li:before{content:"✓";position:absolute;left:0;color:var(--green);font-size:12px}
+
+/* setup */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media(max-width:880px){.steps{grid-template-columns:1fr}}
+.stp{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:16px;
+ display:flex;gap:12px;align-items:flex-start}
+.stp .num{width:26px;height:26px;border-radius:50%;background:rgba(245,166,35,.14);
+ color:var(--gold2);display:grid;place-items:center;font-size:12px;font-weight:800;flex:0 0 auto}
+.stp b{font-size:14px} .stp p{font-size:12.5px;color:var(--dim2);margin-top:2px}
+
+/* packages */
+.pk{position:relative}
+.pk.pro{border-color:rgba(245,166,35,.4)}
+.pk h3{font-size:22px}
+.pk .who{font-size:13px;color:var(--gold2);margin-top:4px}
+.pk .price{font-size:17px;font-weight:700;margin:16px 0 4px;color:var(--ink)}
+.pk .price small{color:var(--dim);font-weight:500;font-size:13px}
+.pk ul{list-style:none;margin-top:14px;display:grid;gap:7px}
+.pk li{font-size:14px;color:#C6D0DC;padding-left:20px;position:relative}
+.pk li:before{content:"✓";position:absolute;left:0;color:var(--green);font-size:12px}
+.pk .plus{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;
+ color:var(--gold2);margin:16px 0 8px}
+.badge{position:absolute;top:-11px;right:20px;background:var(--gold);color:#12100A;
+ font-size:10px;font-weight:800;letter-spacing:.1em;padding:4px 10px;border-radius:6px}
+
+/* form */
+.lead{max-width:560px;margin:0 auto}
+.field{margin-top:12px}
+.field label{display:block;font-size:12px;color:var(--dim);margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;background:var(--panel2);
+ color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:12px 13px;
+ font-size:15px;font-family:inherit}
+.field input:focus,.field select:focus,.field textarea:focus{outline:0;border-color:var(--gold)}
+.f2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:600px){.f2{grid-template-columns:1fr}}
+.msg{margin-top:12px;font-size:13.5px;text-align:center}
+.foot{border-top:1px solid var(--line);padding:28px 0 50px;text-align:center;
+ color:var(--dim2);font-size:12.5px;line-height:1.9}
+</style></head><body>
+
+<div class="top"><div class="wrap">
+  <a class="brand" href="/"><span class="dot"></span>SKLZ<span style="color:var(--gold)">LABS</span></a>
+  <nav class="nav">
+    <a href="#how">How it works</a><a href="#pillars">What it does</a>
+    <a href="#setup">Setup</a><a href="#packages">Packages</a>
+  </nav>
+  <div class="sp"></div>
+  <a class="btn btn-gold" href="#demo">Request private demo</a>
+</div></div>
+
+<div class="wrap">
+
+  <div class="hero">
+    <span class="eyebrow">SKLZ Signal Desk</span>
+    <h1>Trade once.<br><em>Distribute everywhere.</em></h1>
+    <p class="sub">Connect your master trading account to automated Telegram signals,
+      copy trading and professional trading operations — from one place.</p>
+    <div class="cta">
+      <a class="btn btn-gold" href="#demo">Request private demo</a>
+      <a class="btn btn-ghost" href="#pillars">Explore Signal Desk</a>
+    </div>
+  </div>
+
+  <!-- ===== THE PAIN ===== -->
+  <section id="how">
+    <div class="sh">
+      <h2>Your trade happens now.<br>Your Telegram signal shouldn't arrive later.</h2>
+      <p>Posting signals by hand puts minutes between your entry and your followers'.
+         The trade was right; the delay is what generates the complaints.</p>
+    </div>
+
+    <div class="pain">
+      <div class="lane old"><h4>Posting by hand</h4>
+        <div class="tick"><span class="t">00:00</span><span>You take the entry</span></div>
+        <div class="tick"><span class="t">+30s</span><span>You notice the fill and switch apps</span></div>
+        <div class="tick"><span class="t">+70s</span><span>You type entry, stop and target</span></div>
+        <div class="tick"><span class="t">+95s</span><span>You post to the channel</span></div>
+        <div class="tick"><span class="t">+2m</span><span>Followers read it — price has moved</span></div>
+        <div class="tick"><span class="t">later</span><span>"I got a worse fill" — even though your trade was right</span></div>
+      </div>
+      <div class="vs">VS</div>
+      <div class="lane new"><h4>With SKLZ Signal Desk</h4>
+        <div class="tick"><span class="t">00:00</span><span>You take the entry</span></div>
+        <div class="tick"><span class="t">—</span><span>SKLZ Runner reads the fill from your terminal</span></div>
+        <div class="tick"><span class="t">—</span><span>The signal is written from the actual fill</span></div>
+        <div class="tick"><span class="t">—</span><span>Your channel receives it</span></div>
+        <div class="tick"><span class="t">—</span><span>Connected accounts copy the position</span></div>
+        <div class="tick"><span class="t">then</span><span>Stop moves and closes post themselves</span></div>
+      </div>
+    </div>
+    <p style="text-align:center;color:var(--dim2);font-size:13px;margin-top:16px">
+      SKLZ removes the manual distribution step. It cannot promise identical fill
+      prices — markets move, brokers differ and slippage is real.</p>
+
+    <div class="flow" style="margin-top:34px">
+      <div class="node"><div class="i">📈</div><div class="n">Master MT5</div>
+        <div class="d">your account, your broker</div></div>
+      <div class="node"><div class="i">🛰️</div><div class="n">SKLZ Runner</div>
+        <div class="d">reads the fill</div></div>
+      <div class="node"><div class="i">⚡</div><div class="n">Signal engine</div>
+        <div class="d">writes the signal</div></div>
+      <div class="node"><div class="i">✈️</div><div class="n">Telegram</div>
+        <div class="d">your channel</div></div>
+      <div class="node"><div class="i">🔁</div><div class="n">Copy accounts</div>
+        <div class="d">execute in parallel</div></div>
+    </div>
+  </section>
+
+  <!-- ===== PILLARS ===== -->
+  <section id="pillars">
+    <div class="sh"><h2>Three things, done properly</h2>
+      <p>Everything else in Signal Desk supports these.</p></div>
+    <div class="grid g3">
+      <div class="card pil"><div class="ic">⚡</div>
+        <h3>Automated signals</h3>
+        <p>Your master trade becomes a Telegram post without you typing it.</p>
+        <ul><li>Entry, stop and target from the real fill</li>
+          <li>Stop-loss and take-profit changes posted</li>
+          <li>Breakeven and close updates</li>
+          <li>English and العربية</li>
+          <li>Your channel, your format</li></ul></div>
+      <div class="card pil"><div class="ic">🔁</div>
+        <h3>Copy trading</h3>
+        <p>One master account drives every connected account.</p>
+        <ul><li>Fixed Lot or Auto Scale per account</li>
+          <li>Scale multiplier and maximum lot</li>
+          <li>Symbol permissions</li>
+          <li>Pause or resume any account</li>
+          <li>Emergency stop for all of them</li></ul></div>
+      <div class="card pil"><div class="ic">🎛️</div>
+        <h3>Trading control</h3>
+        <p>Run the operation from one interface instead of five.</p>
+        <ul><li>Open, modify and close from the desk</li>
+          <li>Move a stop to breakeven</li>
+          <li>See every connected account's state</li>
+          <li>Journal and analytics</li>
+          <li>Runner and connection health</li></ul></div>
+    </div>
+  </section>
+
+  <!-- ===== SETUP ===== -->
+  <section id="setup">
+    <div class="sh"><h2>We connect everything for you</h2>
+      <p>Most signal providers are traders, not systems administrators.
+         You don't have to become one.</p></div>
+    <div class="steps">
+      <div class="stp"><div class="num">1</div><div><b>VPS prepared</b>
+        <p>We help you choose and set up a server that stays online.</p></div></div>
+      <div class="stp"><div class="num">2</div><div><b>MT5 installed</b>
+        <p>Your terminal, configured to run unattended.</p></div></div>
+      <div class="stp"><div class="num">3</div><div><b>SKLZ Runner installed</b>
+        <p>The bridge between your master account and Signal Desk.</p></div></div>
+      <div class="stp"><div class="num">4</div><div><b>Master account connected</b>
+        <p>Your trading account linked and reading fills.</p></div></div>
+      <div class="stp"><div class="num">5</div><div><b>Telegram connected</b>
+        <p>Your channel, your signal format, your language.</p></div></div>
+      <div class="stp"><div class="num">6</div><div><b>Copy accounts added</b>
+        <p>Each account with its own sizing and permissions.</p></div></div>
+      <div class="stp"><div class="num">7</div><div><b>Risk and copy mode set</b>
+        <p>Fixed Lot or Auto Scale, limits, allowed symbols.</p></div></div>
+      <div class="stp"><div class="num">8</div><div><b>Tested together</b>
+        <p>We run trades through the whole chain before it matters.</p></div></div>
+      <div class="stp"><div class="num">9</div><div><b>Go live</b>
+        <p>Your next real trade reaches your channel by itself.</p></div></div>
+    </div>
+  </section>
+
+  <!-- ===== PACKAGES ===== -->
+  <section id="packages">
+    <div class="sh"><h2>Two ways to run it</h2>
+      <p>Signal Desk is the trading technology. Pro Trader OS adds the business
+         around it.</p></div>
+    <div class="grid g2">
+      <div class="card pk">
+        <h3>SKLZ Signal Desk</h3>
+        <div class="who">For traders and signal providers</div>
+        <div class="price" id="p_desk">Talk to us about pricing
+          <small id="p_desk_s"></small></div>
+        <ul><li>SKLZ Runner</li><li>Master MT5 connection</li>
+          <li>Automated Telegram signals</li><li>Signal lifecycle updates</li>
+          <li>MT5 master → slave copier</li><li>Fixed Lot and Auto Scale</li>
+          <li>Per-account controls and emergency stop</li>
+          <li>Manual trade controls</li><li>Trading journal and analytics</li>
+          <li>Provider dashboard</li><li>Assisted setup and go-live</li></ul>
+        <a class="btn btn-ghost" style="margin-top:20px;width:100%;text-align:center"
+           href="#demo">Request private demo</a>
+      </div>
+      <div class="card pk pro">
+        <span class="badge">FULL BUSINESS</span>
+        <h3>SKLZ Pro Trader OS</h3>
+        <div class="who">For providers running it as a business</div>
+        <div class="price" id="p_os">Talk to us about pricing
+          <small id="p_os_s"></small></div>
+        <ul><li>Everything in Signal Desk</li></ul>
+        <div class="plus">Plus the business layer</div>
+        <ul><li>Branded professional website</li><li>CRM</li>
+          <li>Unified inbox</li><li>AI response team</li>
+          <li>Lead capture and funnels</li><li>Subscriber and client management</li>
+          <li>Academy</li><li>Marketing automation</li></ul>
+        <a class="btn btn-gold" style="margin-top:20px;width:100%;text-align:center"
+           href="#demo">Request private demo</a>
+      </div>
+    </div>
+    <p style="text-align:center;color:var(--dim2);font-size:12.5px;margin-top:18px">
+      Setup, subscription and support options are quoted per provider —
+      audience size and account count differ.</p>
+  </section>
+
+  <!-- ===== LEAD ===== -->
+  <section id="demo">
+    <div class="sh"><h2>See it with your own brand on it</h2>
+      <p>We'll build a private Signal Desk showing your channel, your name and your
+         markets — then send you the link. It stays open for 48 hours.</p></div>
+    <div class="card lead" id="leadCard">
+      <div class="f2">
+        <div class="field"><label>Your name</label><input id="l_name" placeholder="Ahmed Al-Farsi"></div>
+        <div class="field"><label>Email</label><input id="l_email" type="email" placeholder="you@yourbrand.com"></div>
+        <div class="field"><label>Telegram username</label><input id="l_tg" placeholder="@yourchannel"></div>
+        <div class="field"><label>Channel members</label>
+          <select id="l_size"><option>Under 500</option><option>500 – 2,000</option>
+            <option>2,000 – 10,000</option><option>Over 10,000</option>
+            <option>I trade for clients, not a channel</option></select></div>
+      </div>
+      <div class="field"><label>What do you trade?</label>
+        <input id="l_markets" placeholder="Gold, indices, majors…"></div>
+      <div class="field"><label>Anything we should know</label>
+        <textarea id="l_note" rows="3" placeholder="Optional"></textarea></div>
+      <div style="text-align:center;margin-top:18px">
+        <button class="btn btn-gold" id="l_btn" onclick="sendLead()">
+          Request my private demo →</button></div>
+      <div class="msg" id="l_msg"></div>
+    </div>
+  </section>
+
+  <div class="foot">
+    SKLZ Labs · Software tools only — not financial advice · Trading involves risk of loss<br>
+    SKLZ reduces manual signal distribution delay. It does not promise identical
+    execution prices, guaranteed results or protection from slippage.
+  </div>
+</div>
+
+<script>
+const API = location.hostname==="localhost" ? "http://localhost:8000"
+                                            : "https://api.sklzlabs.com";
+/* Pricing is deliberately NOT hard-coded here. When admin pricing is
+   finalised the API returns it and the page fills itself in; until then
+   the page says "talk to us", which is true. */
+(async function(){
+  try{
+    const r = await fetch(API+"/api/orders/packages");
+    if(!r.ok) return;
+    const d = await r.json();
+    if(!d || !d.packages) return;
+    const set=(id,p)=>{ if(!p) return;
+      const el=document.getElementById(id); if(!el) return;
+      el.firstChild.nodeValue = p.display || "Talk to us about pricing";
+      const s=document.getElementById(id+"_s");
+      if(s && p.note) s.textContent = " "+p.note; };
+    set("p_desk", d.packages.signal_desk);
+    set("p_os",   d.packages.pro_trader_os);
+  }catch(e){/* the page reads correctly without it */}
+})();
+
+async function sendLead(){
+  const b=document.getElementById("l_btn"), m=document.getElementById("l_msg");
+  const v=id=>(document.getElementById(id).value||"").trim();
+  if(!v("l_name")||!v("l_email")){
+    m.style.color="var(--red)";
+    m.textContent="Name and email, and we'll do the rest."; return; }
+  b.disabled=true; b.textContent="Sending…"; m.textContent="";
+  try{
+    const r=await fetch(API+"/api/leads/demo-request",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({name:v("l_name"),email:v("l_email"),
+        telegram:v("l_tg"),audience:v("l_size"),markets:v("l_markets"),
+        note:v("l_note"),source:"signal_desk_page"})});
+    const d=await r.json();
+    if(!r.ok||!d.ok) throw new Error();
+    document.getElementById("leadCard").innerHTML =
+      '<div style="text-align:center;padding:22px">'+
+      '<div style="font-size:40px">✅</div>'+
+      '<h3 style="margin-top:10px;font-size:20px">Request received</h3>'+
+      '<p style="color:var(--dim);margin-top:8px">We\\'ll build your private '+
+      'Signal Desk and send the link to '+v("l_email")+'. '+
+      'Usually within a working day.</p></div>';
+  }catch(e){
+    m.style.color="var(--red)";
+    m.textContent="That didn't send — message @sklzlabs on Telegram and we'll "+
+      "set your demo up directly.";
+    b.disabled=false; b.textContent="Request my private demo →";
+  }
+}
+</script></body></html>

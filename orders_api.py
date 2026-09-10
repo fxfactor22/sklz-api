@@ -159,3 +159,93 @@ async def set_status(reference: str, body: StatusIn,
     if not rows:
         raise HTTPException(http.HTTP_404_NOT_FOUND, "unknown reference")
     return {"ok": True, "reference": reference, "status": body.status}
+
+
+# ── packages: pricing lives in config, never in the page ────────────
+# §18: no hard-coded pricing until admin pricing is finalised. Unset
+# means the page says "talk to us", which is true, rather than showing a
+# number somebody would have to honour.
+def _package_config() -> dict:
+    import os
+    out = {}
+    for key, env in (("signal_desk", "SKLZ_PRICE_SIGNAL_DESK"),
+                     ("pro_trader_os", "SKLZ_PRICE_PRO_TRADER_OS")):
+        display = os.environ.get(env, "").strip()
+        note = os.environ.get(env + "_NOTE", "").strip()
+        out[key] = {"display": display or "Talk to us about pricing",
+                    "note": note,
+                    "configured": bool(display)}
+    return out
+
+
+@router.get("/packages")
+async def packages() -> dict:
+    """Public. What the product pages should display for each package."""
+    return {"ok": True, "packages": _package_config()}
+
+
+class LeadIn(BaseModel):
+    name: str
+    email: str
+    telegram: str = ""
+    audience: str = ""
+    markets: str = ""
+    note: str = ""
+    source: str = ""
+
+
+
+leads_router = APIRouter(prefix="/api/leads", tags=["leads"])
+
+
+@leads_router.post("/demo-request")
+async def demo_request(body: LeadIn, request: Request,
+                       sb: Client = Depends(get_supabase)) -> dict:
+    """A signal provider asking for a personalised private demo.
+
+    The front of the funnel: this is how a cold prospect becomes a demo
+    we build for them. Stored, not emailed, so nothing is lost if a
+    mailbox rule eats it.
+    """
+    ip = (request.client.host if request.client else "") or "unknown"
+    if not _rate_ok("lead:" + ip):
+        raise HTTPException(http.HTTP_429_TOO_MANY_REQUESTS,
+                            "too many requests — message us on Telegram")
+    name = _clean(body.name, 120)
+    email = _clean(body.email, 160).lower()
+    if not name or not _EMAIL.match(email):
+        raise HTTPException(http.HTTP_400_BAD_REQUEST,
+                            "a name and a valid email are required")
+
+    row = {"name": name, "email": email,
+           "telegram": _clean(body.telegram, 80),
+           "audience": _clean(body.audience, 60),
+           "markets": _clean(body.markets, 160),
+           "note": _clean(body.note, 800),
+           "source": _clean(body.source, 60) or "unknown",
+           "status": "new"}
+
+    def _insert():
+        return sb.table("demo_leads").insert(row).execute()
+
+    try:
+        await offload(_insert)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(http.HTTP_503_SERVICE_UNAVAILABLE,
+                            "could not record the request") from exc
+    print(f"[lead] demo request from {email} ({body.audience}) "
+          f"via {row['source']}")
+    return {"ok": True, "note": "We'll build your demo and send the link."}
+
+
+@leads_router.get("")
+async def list_leads(user=Depends(get_current_user),
+                     sb: Client = Depends(get_supabase)) -> dict:
+    if not rules.is_platform_admin(user):
+        raise HTTPException(http.HTTP_403_FORBIDDEN, "platform admin only")
+
+    def _q():
+        return (sb.table("demo_leads").select("*")
+                .order("created_at", desc=True).limit(200).execute()).data or []
+
+    return {"ok": True, "leads": await offload(_q)}

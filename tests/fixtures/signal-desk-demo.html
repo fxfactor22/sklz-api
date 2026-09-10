@@ -324,7 +324,7 @@ section{padding:34px 0}
     <div class="grid pkgs">
       <div class="card pkg sel" data-pkg="signal_desk" onclick="pickPkg(this)">
         <h3>SKLZ Signal Desk</h3>
-        <div class="price">$149<small> / month</small></div>
+        <div class="price" id="pr_signal_desk">—</div>
         <div style="font-size:12.5px;color:var(--dim)">The engine room.</div>
         <ul>
           <li>SKLZ Runner on your VPS</li>
@@ -341,7 +341,7 @@ section{padding:34px 0}
       <div class="card pkg" data-pkg="pro_trader_os" onclick="pickPkg(this)">
         <span class="badge">FULL BUSINESS</span>
         <h3>SKLZ Pro Trader OS</h3>
-        <div class="price">$399<small> / month</small></div>
+        <div class="price" id="pr_pro_trader_os">—</div>
         <div style="font-size:12.5px;color:var(--dim)">Everything above, plus the business around it.</div>
         <ul>
           <li>Everything in Signal Desk</li>
@@ -358,7 +358,7 @@ section{padding:34px 0}
     </div>
 
     <div class="sec-h" style="margin-top:26px"><h2>Payment</h2>
-      <span id="paySum">SKLZ Signal Desk · $149</span></div>
+      <span id="paySum">SKLZ Signal Desk</span></div>
 
     <div class="grid pays">
       <div class="card pay sel" data-pay="stripe" onclick="pickPay(this)">
@@ -392,12 +392,12 @@ section{padding:34px 0}
           <div>
             <div style="font-size:12px;color:var(--dim2)">AMOUNT</div>
             <div style="font-size:26px;font-weight:800" class="mono">
-              <span id="amtUsdt">149</span> USDT</div>
+              <span id="amtUsdt">—</span> USDT</div>
             <div style="font-size:12px;color:var(--dim2);margin-top:10px">NETWORK</div>
             <div style="font-weight:700">TRON (TRC20)</div>
             <div class="addr"><span class="a mono" id="addrUsdt"></span>
               <button class="cp" onclick="copy('addrUsdt',this)">Copy address</button></div>
-            <div class="addr"><span class="a mono"><span id="amtUsdt2">149</span> USDT</span>
+            <div class="addr"><span class="a mono"><span id="amtUsdt2">—</span> USDT</span>
               <button class="cp" onclick="copy('amtUsdt2',this)">Copy amount</button></div>
           </div>
         </div>
@@ -414,12 +414,12 @@ section{padding:34px 0}
           <div>
             <div style="font-size:12px;color:var(--dim2)">AMOUNT</div>
             <div style="font-size:26px;font-weight:800" class="mono">
-              <span id="amtSol">0.85</span> SOL</div>
+              <span id="amtSol">—</span> SOL</div>
             <div style="font-size:12px;color:var(--dim2);margin-top:10px">NETWORK</div>
             <div style="font-weight:700">Solana</div>
             <div class="addr"><span class="a mono" id="addrSol"></span>
               <button class="cp" onclick="copy('addrSol',this)">Copy address</button></div>
-            <div class="addr"><span class="a mono"><span id="amtSol2">0.85</span> SOL</span>
+            <div class="addr"><span class="a mono"><span id="amtSol2">—</span> SOL</span>
               <button class="cp" onclick="copy('amtSol2',this)">Copy amount</button></div>
           </div>
         </div>
@@ -439,8 +439,8 @@ section{padding:34px 0}
         <div class="field"><label>Email</label><input id="f_email" type="email" placeholder="you@company.com"></div>
         <div class="field"><label>Telegram username</label><input id="f_tg" placeholder="@falconfx"></div>
         <div class="field"><label>Package</label>
-          <select id="f_pkg"><option value="signal_desk">SKLZ Signal Desk — $149/mo</option>
-          <option value="pro_trader_os">SKLZ Pro Trader OS — $399/mo</option></select></div>
+          <select id="f_pkg"><option value="signal_desk">SKLZ Signal Desk</option>
+          <option value="pro_trader_os">SKLZ Pro Trader OS</option></select></div>
         <div class="field"><label>Asset</label>
           <select id="f_asset"><option>USDT</option><option>SOL</option></select></div>
         <div class="field"><label>Network</label>
@@ -487,8 +487,11 @@ const API = location.hostname==="localhost" ? "http://localhost:8000"
 const CFG = {
   usdt_address: "TQmZ4sK9vLbN7xR2wYcJ8dFgH3pStUvWxA",
   sol_address:  "7xKXtg2CW3dQbHmVsFyPnRj4eLcZaU9BsNqMdVpTgH1r",
-  price: { signal_desk:{usd:149, usdt:149, sol:0.85, label:"SKLZ Signal Desk"},
-           pro_trader_os:{usd:399, usdt:399, sol:2.27, label:"SKLZ Pro Trader OS"} },
+  // Filled from /api/orders/packages so pricing lives in one place and
+  // the page never shows a number nobody agreed to. Until it is
+  // configured the buttons say "talk to us" rather than inventing one.
+  price: { signal_desk:{usd:null, usdt:null, sol:null, label:"SKLZ Signal Desk"},
+           pro_trader_os:{usd:null, usdt:null, sol:null, label:"SKLZ Pro Trader OS"} },
   stripe_product: { signal_desk:"copy_basic_monthly",
                     pro_trader_os:"copy_pro_monthly" },
   demo_ends: null
@@ -544,11 +547,15 @@ function pickPay(el){
 }
 function refresh(){
   const p=CFG.price[pkg];
-  document.getElementById("paySum").textContent=`${p.label} · $${p.usd}`;
-  document.getElementById("amtUsdt").textContent=p.usdt;
-  document.getElementById("amtUsdt2").textContent=p.usdt;
-  document.getElementById("amtSol").textContent=p.sol;
-  document.getElementById("amtSol2").textContent=p.sol;
+  document.getElementById("paySum").textContent =
+    p.usd ? `${p.label} · ${p.usd}` : p.label;
+  // "—" until the API supplies a figure: an amount nobody configured is
+  // an amount nobody agreed to accept.
+  const u = p.usdt ?? "—", s = p.sol ?? "—";
+  document.getElementById("amtUsdt").textContent=u;
+  document.getElementById("amtUsdt2").textContent=u;
+  document.getElementById("amtSol").textContent=s;
+  document.getElementById("amtSol2").textContent=s;
   document.getElementById("f_pkg").value=pkg;
 }
 function qr(el,data){
@@ -567,6 +574,24 @@ function qr(el,data){
   img.src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=0&data="+
     encodeURIComponent(data);
 }
+/* pricing from the API — one source, no page-local numbers */
+(async function(){
+  try{
+    const r=await fetch(API+"/api/orders/packages");
+    const d=await r.json();
+    if(!d||!d.packages) return;
+    for(const k of ["signal_desk","pro_trader_os"]){
+      const p=d.packages[k]; if(!p) continue;
+      CFG.price[k].usd  = p.configured ? p.display : null;
+      CFG.price[k].usdt = p.usdt || null;
+      CFG.price[k].sol  = p.sol  || null;
+      const el=document.getElementById("pr_"+k);
+      if(el) el.textContent = p.configured ? p.display
+                                           : "Talk to us about pricing";
+    }
+    refresh();
+  }catch(e){}
+})();
 document.getElementById("addrUsdt").textContent=CFG.usdt_address;
 document.getElementById("addrSol").textContent=CFG.sol_address;
 qr("qrUsdt",CFG.usdt_address); qr("qrSol",CFG.sol_address);

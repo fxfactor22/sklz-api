@@ -35,3 +35,21 @@ revoke all on public.crypto_orders from anon, authenticated;
 
 select column_name, data_type from information_schema.columns
  where table_name='crypto_orders' order by ordinal_position;
+
+-- ---- demo leads: the front of the acquisition funnel ----
+create table if not exists public.demo_leads (
+    id         uuid primary key default gen_random_uuid(),
+    name       text not null,
+    email      text not null,
+    telegram   text,
+    audience   text,
+    markets    text,
+    note       text,
+    source     text,
+    status     text not null default 'new',
+    demo_url   text,
+    created_at timestamptz not null default now()
+);
+create index if not exists demo_leads_status on public.demo_leads (status, created_at desc);
+alter table public.demo_leads enable row level security;
+revoke all on public.demo_leads from anon, authenticated;

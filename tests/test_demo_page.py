@@ -134,3 +134,88 @@ def test_orders_table_is_not_publicly_readable():
     sql = open("migrations/D2-migration.sql").read()
     assert "enable row level security" in sql
     assert "revoke all on public.crypto_orders from anon, authenticated" in sql
+
+
+# ── permanent product page ───────────────────────────────────────────
+PAGE = open("tests/fixtures/signal-desk.html").read()
+
+
+def test_permanent_page_leads_with_the_promise():
+    assert "Trade once." in PAGE and "Distribute everywhere." in PAGE
+    assert "Request private demo" in PAGE
+    assert "Explore Signal Desk" in PAGE
+
+
+def test_it_states_the_pain_before_the_product():
+    assert PAGE.index("Your trade happens now") < PAGE.index("Three things")
+    assert "Posting by hand" in PAGE
+    assert "even though your trade was right" in PAGE
+
+
+def test_no_execution_promises_are_made():
+    low = PAGE.lower()
+    # the words may appear ONLY inside a denial
+    import re
+    for claim in ("guaranteed", "zero slippage", "identical fill",
+                  "risk-free", "win rate"):
+        for m in re.finditer(re.escape(claim), low):
+            ctx = low[max(0, m.start()-70):m.start()]
+            assert ("not promise" in ctx or "cannot promise" in ctx
+                    or "does not" in ctx), f"{claim}: {ctx[-60:]}"
+    assert "does not promise identical" in low
+    assert "slippage is real" in low
+
+
+def test_all_three_pillars_present():
+    for p in ("Automated signals", "Copy trading", "Trading control"):
+        assert p in PAGE, p
+
+
+def test_setup_service_is_sold_not_assumed():
+    assert "We connect everything for you" in PAGE
+    for s in ("VPS prepared", "MT5 installed", "SKLZ Runner installed",
+              "Master account connected", "Telegram connected",
+              "Copy accounts added", "Go live"):
+        assert s in PAGE, s
+
+
+def test_no_unsupported_capability_claimed():
+    low = PAGE.lower()
+    for fake in ("pending order", "partial close", "tp1", "tp2", "tp ladder",
+                 "trailing stop"):
+        assert fake not in low, fake
+
+
+def test_pricing_is_not_hard_coded_on_either_page():
+    """§18: no invented numbers until admin pricing is finalised."""
+    import re
+    # PRICING must not be hard-coded. Simulated account figures on the
+    # demo desk are different — they are labelled demo data, not an offer.
+    for label, src, ids in (
+            ("product page", PAGE, ("p_desk", "p_os")),
+            ("demo page", HTML, ("pr_signal_desk", "pr_pro_trader_os",
+                                 "paySum", "amtUsdt", "amtSol"))):
+        for i in ids:
+            m = re.search(r'id="%s"[^>]*>([^<]*)' % i, src)
+            if m:
+                assert not re.search(r"\d", m.group(1)), f"{label}:{i}"
+    assert "Talk to us about pricing" in PAGE
+    assert "/api/orders/packages" in PAGE
+    assert "/api/orders/packages" in HTML
+
+
+def test_lead_capture_posts_to_the_api():
+    assert "/api/leads/demo-request" in PAGE
+    assert 'id="l_email"' in PAGE and 'id="l_tg"' in PAGE
+
+
+def test_lead_endpoint_is_validated_and_rate_limited():
+    assert "leads_router" in API
+    assert '_rate_ok("lead:" + ip)' in API
+    assert "_EMAIL.match(email)" in API
+
+
+def test_packages_endpoint_defaults_to_talk_to_us():
+    assert 'display or "Talk to us about pricing"' in API
+    assert "SKLZ_PRICE_SIGNAL_DESK" in API
+    assert "SKLZ_PRICE_PRO_TRADER_OS" in API
