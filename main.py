@@ -35,6 +35,7 @@ from video_api import router as video_router
 import signal_lifecycle
 import copy_api
 import copy_scheduler
+import providers
 import demo_api
 import sklz_arabic
 import sklz_tiers
@@ -98,6 +99,7 @@ signal_lifecycle.start(app)
 app.include_router(poll_router)
 app.include_router(sklz_arabic.router)
 app.include_router(demo_api.router)
+app.include_router(providers.router)
 copy_scheduler.start(app)
 sklz_arabic.start(app)
 app.include_router(tgbot_router)
