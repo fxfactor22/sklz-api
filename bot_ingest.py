@@ -190,6 +190,7 @@ LEASE_SECONDS = 45
 
 @router.get("/command")
 async def get_command(bot_name: str, account: str = "", server: str = "",
+                      runner_id: str = "",
                       _=Depends(require_bot_key),
                       sb: Client = Depends(get_supabase)) -> dict:
     """Runner polls: dashboard state + any commands leased to it.
@@ -237,6 +238,7 @@ async def get_command(bot_name: str, account: str = "", server: str = "",
             claimed = (sb.table("bot_orders").update({
                 "status": "dispatched",
                 "dispatched_at": now.isoformat(),
+                "lease_owner": runner_id or f"anon:{bot_name}",
                 "lease_expires_at": (now + timedelta(
                     seconds=LEASE_SECONDS)).isoformat(),
                 "attempts": int(r.get("attempts") or 0) + 1,
@@ -258,21 +260,72 @@ async def get_command(bot_name: str, account: str = "", server: str = "",
             "expected_account": r.get("expected_account") or "",
         })
 
-    # release leases that nobody reported on, so a Runner that died mid-poll
-    # does not strand a command forever. Expiry still governs whether it can
-    # ever execute.
-    try:
-        sb.table("bot_orders").update({"status": "pending"}) \
-            .eq("bot_name", bot_name).eq("status", "dispatched") \
-            .lt("lease_expires_at", now.isoformat()).execute()
-    except Exception:
-        pass
+    _settle_expired_leases(sb, bot_name, runner_id, now)
 
     if account:
         _note_account(sb, bot_name, account, server)
 
     return {"ok": True, "command": _bot_command(sb, bot_name),
             "orders": orders}
+
+
+def _settle_expired_leases(sb: Client, bot_name: str, runner_id: str,
+                           now) -> None:
+    """Decide what happens to a lease nobody reported on.
+
+    The A3 version returned the row to `pending`, where ANY Runner sharing
+    the bot_name could claim it. That is the cross-Runner duplicate: Runner
+    A executes, its result is lost, the lease lapses, Runner B — which has
+    no local record of the command — executes it again. Real money, twice.
+
+    So an expired lease is never re-offered to a different installation:
+
+      * the SAME Runner may reclaim it. Its local store already knows
+        whether it executed, so it cannot double-execute.
+      * a DIFFERENT Runner may not have it at all.
+      * once the TTL has also passed, an unclaimed lease becomes `unknown`
+        rather than `expired`, because the Runner that held it may have
+        executed before going quiet. Claiming it expired would assert a
+        fact we do not have.
+    """
+    try:
+        rows = (sb.table("bot_orders").select(
+            "id,command_id,lease_owner,expires_at,lease_expires_at")
+            .eq("bot_name", bot_name).eq("status", "dispatched")
+            .lt("lease_expires_at", now.isoformat()).execute()).data or []
+    except Exception:
+        return
+
+    for r in rows:
+        owner = r.get("lease_owner") or ""
+        same_runner = bool(runner_id) and owner == runner_id
+        ttl_gone = False
+        try:
+            exp = r.get("expires_at")
+            if exp:
+                ttl_gone = datetime.fromisoformat(
+                    str(exp).replace("Z", "+00:00")) < now
+        except (TypeError, ValueError):
+            pass
+
+        if same_runner and not ttl_gone:
+            # safe: this installation's durable store guards re-execution
+            sb.table("bot_orders").update({"status": "pending"}) \
+                .eq("id", r["id"]).eq("status", "dispatched").execute()
+            continue
+
+        if ttl_gone:
+            sb.table("bot_orders").update({
+                "status": "unknown",
+                "uncertainty_reason": (
+                    "lease expired without a result and the TTL passed; the "
+                    "Runner holding it may or may not have executed"),
+                "result_recorded_at": now.isoformat(),
+            }).eq("id", r["id"]).eq("status", "dispatched").execute()
+            print(f"[bot] RECONCILIATION REQUIRED command="
+                  f"{r.get('command_id')} — lease lapsed, outcome unproven")
+        # otherwise: leave it dispatched. Only its owner may come back for
+        # it, and the TTL will settle it if the owner never does.
 
 
 def _note_account(sb: Client, bot_name: str, account: str,
@@ -305,6 +358,7 @@ class ResultIn(_BM_RESULT):
     broker_comment: str = ""
     account: str = ""
     server: str = ""
+    runner_id: str = ""
     runner_received_at: str = ""
     mt5_requested_at: str = ""
     broker_confirmed_at: str = ""
@@ -333,7 +387,7 @@ async def post_result(body: ResultIn,
 
     # Already settled: return what we recorded, do not overwrite it. The
     # first result is the truth; a retry is a retry.
-    if row.get("status") in ("succeeded", "failed", "expired"):
+    if row.get("status") in ("succeeded", "failed", "expired", "unknown"):
         return {"ok": True, "duplicate": True, "status": row["status"],
                 "ticket": row.get("ticket"),
                 "broker_comment": row.get("broker_comment") or ""}
@@ -341,9 +395,12 @@ async def post_result(body: ResultIn,
     state = body.state or ("succeeded" if body.ok else "failed")
     if state not in ("succeeded", "failed", "expired", "unknown"):
         state = "failed"
-    # 'unknown' means the Runner executed something and could not confirm
-    # it. That is not success and must never be shown as a filled trade.
-    stored = "failed" if state == "unknown" else state
+    # 'unknown' is NOT 'failed'. Failed means we know the broker did not
+    # execute. Unknown means we cannot prove either way — the Runner
+    # persisted its intent and then lost the ability to confirm. Telling
+    # an owner a trade failed when a position may be open is the worst
+    # available answer, so the uncertainty is preserved and surfaced.
+    stored = state
 
     expected = (row.get("expected_account") or "").strip()
     actual = (body.account or "").strip()
@@ -358,6 +415,9 @@ async def post_result(body: ResultIn,
         "fill_price": body.fill_price, "filled_volume": body.filled_volume,
         "retcode": body.retcode,
         "broker_comment": (body.broker_comment or "")[:400] or None,
+        "uncertainty_reason": (body.broker_comment or
+                               "runner could not confirm the outcome"
+                               )[:300] if state == "unknown" else None,
         "actual_account": actual[:64] or None,
         "account_server": (body.server or "")[:96] or None,
         "account_mismatch": mismatch,
@@ -375,8 +435,16 @@ async def post_result(body: ResultIn,
     if mismatch:
         print(f"[bot] ACCOUNT_MISMATCH command={body.command_id} "
               f"expected={expected} actual={actual}")
+    if stored == "unknown":
+        print(f"[bot] RECONCILIATION REQUIRED command={body.command_id} "
+              f"account={actual or '?'} — outcome could not be confirmed")
     return {"ok": True, "duplicate": False, "status": stored,
-            "account_mismatch": mismatch}
+            "account_mismatch": mismatch,
+            "reconciliation_required": stored == "unknown",
+            "note": ("Execution outcome unknown — verify the trading "
+                     "account before retrying. This command will not be "
+                     "executed again automatically."
+                     if stored == "unknown" else "")}
 
 
 # ── admin manual orders from dashboard ──────────────────────────────
