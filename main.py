@@ -37,6 +37,7 @@ import copy_api
 import copy_scheduler
 import providers
 import diagnostics
+import orders_api
 import provisioning
 import demo_api
 import sklz_arabic
@@ -104,6 +105,7 @@ app.include_router(demo_api.router)
 app.include_router(providers.router)
 app.include_router(provisioning.router)
 app.include_router(diagnostics.router)
+app.include_router(orders_api.router)
 copy_scheduler.start(app)
 sklz_arabic.start(app)
 app.include_router(tgbot_router)
