@@ -15,7 +15,8 @@ Multi-user licensing (per-customer keys) rides on the license server later.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from pydantic import BaseModel as _BM_RESULT
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -184,24 +185,198 @@ async def control(bot_name: str, command: str,
             "note": "applies within a few seconds"}
 
 
+LEASE_SECONDS = 45
+
+
 @router.get("/command")
-async def get_command(bot_name: str, _=Depends(require_bot_key),
+async def get_command(bot_name: str, account: str = "", server: str = "",
+                      _=Depends(require_bot_key),
                       sb: Client = Depends(get_supabase)) -> dict:
-    """Runner polls: dashboard command (run|pause) + any queued manual orders."""
+    """Runner polls: dashboard state + any commands leased to it.
+
+    Two changes from the original, both load-bearing:
+
+    1. A row is CLAIMED, not merely read. The update carries its own
+       `status = pending` condition, so two polls arriving together cannot
+       both win the same row — the second update matches nothing.
+
+    2. Claiming means `dispatched`, never `delivered`-as-success. The
+       command is not a trade until the Runner says the broker filled it.
+
+    Expired commands are settled here rather than handed out: a market
+    order that waited through a VPS outage must never reach a broker at a
+    price nobody agreed to.
+    """
     orders = []
+    now = datetime.now(timezone.utc)
     try:
         rows = (sb.table("bot_orders").select("*")
                 .eq("bot_name", bot_name).eq("status", "pending")
-                .limit(5).execute()).data or []
-        for r in rows:
-            sb.table("bot_orders").update({"status": "delivered"}) \
-                .eq("id", r["id"]).execute()
-            orders.append({"symbol": r["symbol"], "side": r["side"],
-                           "note": r.get("note", ""), "lots": r.get("lots", 0),
-                           "sl": r.get("sl", 0), "tp": r.get("tp", 0)})
+                .order("created_at").limit(5).execute()).data or []
+    except Exception:
+        rows = []
+
+    for r in rows:
+        # expiry first — an old market order is settled, not delivered
+        exp = r.get("expires_at")
+        if exp:
+            try:
+                if datetime.fromisoformat(str(exp).replace("Z", "+00:00")) < now:
+                    sb.table("bot_orders").update({
+                        "status": "expired",
+                        "broker_comment": "expired before a Runner collected it",
+                        "result_recorded_at": now.isoformat(),
+                    }).eq("id", r["id"]).eq("status", "pending").execute()
+                    continue
+            except (TypeError, ValueError):
+                pass
+
+        # atomic claim: the WHERE carries status=pending, so a second
+        # concurrent poll updates zero rows and gets nothing back
+        try:
+            claimed = (sb.table("bot_orders").update({
+                "status": "dispatched",
+                "dispatched_at": now.isoformat(),
+                "lease_expires_at": (now + timedelta(
+                    seconds=LEASE_SECONDS)).isoformat(),
+                "attempts": int(r.get("attempts") or 0) + 1,
+            }).eq("id", r["id"]).eq("status", "pending").execute()).data or []
+        except Exception:
+            continue
+        if not claimed:
+            continue                      # someone else won the race
+
+        orders.append({
+            "command_id": str(r.get("command_id") or r["id"]),
+            "type": r.get("command_type") or "market",
+            "mode": r.get("mode") or "execute_signal_copy",
+            "symbol": r.get("symbol", ""), "side": r.get("side", ""),
+            "note": r.get("note", ""), "lots": r.get("lots", 0),
+            "sl": r.get("sl", 0), "tp": r.get("tp", 0),
+            "ticket": r.get("ticket"),
+            "expires_at": r.get("expires_at"),
+            "expected_account": r.get("expected_account") or "",
+        })
+
+    # release leases that nobody reported on, so a Runner that died mid-poll
+    # does not strand a command forever. Expiry still governs whether it can
+    # ever execute.
+    try:
+        sb.table("bot_orders").update({"status": "pending"}) \
+            .eq("bot_name", bot_name).eq("status", "dispatched") \
+            .lt("lease_expires_at", now.isoformat()).execute()
     except Exception:
         pass
-    return {"ok": True, "command": _bot_command(sb, bot_name), "orders": orders}
+
+    if account:
+        _note_account(sb, bot_name, account, server)
+
+    return {"ok": True, "command": _bot_command(sb, bot_name),
+            "orders": orders}
+
+
+def _note_account(sb: Client, bot_name: str, account: str,
+                  server: str = "") -> None:
+    """Record the account the Runner reports it is actually logged into.
+
+    Observed by the terminal, never supplied by a browser. This phase only
+    makes it visible; it authorises nothing.
+    """
+    try:
+        sb.table("bot_state").upsert(
+            {"bot_name": bot_name, "last_account": str(account)[:64],
+             "last_server": str(server)[:96],
+             "account_seen_at": datetime.now(timezone.utc).isoformat()},
+            on_conflict="bot_name").execute()
+    except Exception:
+        pass
+
+
+class ResultIn(_BM_RESULT):
+    command_id: str
+    ok: bool = False
+    state: str = ""                 # succeeded | failed | expired | unknown
+    ticket: int | None = None
+    order_id: int | None = None
+    resolved_symbol: str = ""
+    fill_price: float | None = None
+    filled_volume: float | None = None
+    retcode: int | None = None
+    broker_comment: str = ""
+    account: str = ""
+    server: str = ""
+    runner_received_at: str = ""
+    mt5_requested_at: str = ""
+    broker_confirmed_at: str = ""
+
+
+@router.post("/result", dependencies=[Depends(require_bot_key)])
+async def post_result(body: ResultIn,
+                      sb: Client = Depends(get_supabase)) -> dict:
+    """Runner reports what the broker actually did.
+
+    Idempotent by command_id: posting the same result twice records it
+    once and returns the same outcome, so a Runner re-sending after a lost
+    acknowledgement cannot create a second execution state, a second
+    journal association, or a second anything.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        rows = (sb.table("bot_orders").select("*")
+                .eq("command_id", body.command_id).limit(1).execute()).data
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            f"result store unavailable: {exc}") from exc
+    if not rows:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown command_id")
+    row = rows[0]
+
+    # Already settled: return what we recorded, do not overwrite it. The
+    # first result is the truth; a retry is a retry.
+    if row.get("status") in ("succeeded", "failed", "expired"):
+        return {"ok": True, "duplicate": True, "status": row["status"],
+                "ticket": row.get("ticket"),
+                "broker_comment": row.get("broker_comment") or ""}
+
+    state = body.state or ("succeeded" if body.ok else "failed")
+    if state not in ("succeeded", "failed", "expired", "unknown"):
+        state = "failed"
+    # 'unknown' means the Runner executed something and could not confirm
+    # it. That is not success and must never be shown as a filled trade.
+    stored = "failed" if state == "unknown" else state
+
+    expected = (row.get("expected_account") or "").strip()
+    actual = (body.account or "").strip()
+    mismatch = bool(expected and actual and expected != actual)
+
+    patch = {
+        "status": stored,
+        "executed_at": body.broker_confirmed_at or now,
+        "result_recorded_at": now,
+        "ticket": body.ticket, "order_id": body.order_id,
+        "resolved_symbol": body.resolved_symbol[:64] or None,
+        "fill_price": body.fill_price, "filled_volume": body.filled_volume,
+        "retcode": body.retcode,
+        "broker_comment": (body.broker_comment or "")[:400] or None,
+        "actual_account": actual[:64] or None,
+        "account_server": (body.server or "")[:96] or None,
+        "account_mismatch": mismatch,
+        "runner_received_at": body.runner_received_at or None,
+        "mt5_requested_at": body.mt5_requested_at or None,
+        "broker_confirmed_at": body.broker_confirmed_at or None,
+    }
+    try:
+        sb.table("bot_orders").update(patch) \
+            .eq("command_id", body.command_id).execute()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            f"could not record result: {exc}") from exc
+
+    if mismatch:
+        print(f"[bot] ACCOUNT_MISMATCH command={body.command_id} "
+              f"expected={expected} actual={actual}")
+    return {"ok": True, "duplicate": False, "status": stored,
+            "account_mismatch": mismatch}
 
 
 # ── admin manual orders from dashboard ──────────────────────────────
