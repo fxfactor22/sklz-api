@@ -1,0 +1,144 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SKLZ — Private demo generator</title><meta name="robots" content="noindex">
+<style>
+:root{--bg:#07090E;--panel:#0D1119;--panel2:#111722;--line:#1B2431;--ink:#EEF2F8;
+ --dim:#8A94A6;--dim2:#5B6675;--gold:#F5A623;--gold2:#FFC65C;--green:#12C48B;--red:#F0525B}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,BlinkMacSystemFont,
+ "Segoe UI",Inter,sans-serif;-webkit-font-smoothing:antialiased}
+.mono{font-family:ui-monospace,Menlo,monospace}
+.wrap{max-width:760px;margin:0 auto;padding:34px 20px 70px}
+h1{font-size:26px;letter-spacing:-.7px}
+.sub{color:var(--dim);margin-top:6px;font-size:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+ padding:20px;margin-top:20px}
+.f2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:620px){.f2{grid-template-columns:1fr}}
+label{display:block;font-size:12px;color:var(--dim);margin:12px 0 5px}
+input,select{width:100%;background:var(--panel2);color:var(--ink);
+ border:1px solid var(--line);border-radius:9px;padding:11px 12px;font:inherit}
+input:focus,select:focus{outline:0;border-color:var(--gold)}
+.btn{border:0;border-radius:10px;padding:12px 20px;font-weight:700;cursor:pointer;
+ font:inherit;background:linear-gradient(180deg,var(--gold2),var(--gold));color:#12100A}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.out{display:none;margin-top:18px}.out.on{display:block}
+.url{background:var(--panel2);border:1px solid rgba(245,166,35,.4);border-radius:10px;
+ padding:14px;word-break:break-all;font-size:13px}
+.row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.msg{margin-top:10px;font-size:13px}
+table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+th{color:var(--dim2);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+a{color:var(--gold2)}
+</style></head><body><div class="wrap">
+
+<h1>Private demo generator</h1>
+<div class="sub">One prospect, one link, 48 hours. Sign in as an admin on
+  sklzlabs.com first — this page uses that session.</div>
+
+<div class="card">
+  <div class="f2">
+    <div><label>Provider / business name *</label>
+      <input id="p_name" placeholder="Falcon FX"></div>
+    <div><label>Telegram channel *</label>
+      <input id="p_chan" placeholder="Falcon FX Signals"></div>
+  </div>
+  <div class="f2">
+    <div><label>Language</label><select id="p_lang">
+      <option value="en">English</option><option value="ar">العربية</option>
+      <option value="ru">Русский</option></select></div>
+    <div><label>Hours open</label><input id="p_hours" type="number" value="48"></div>
+  </div>
+  <div class="f2">
+    <div><label>Contact name</label><input id="p_contact" placeholder="optional"></div>
+    <div><label>Contact email</label><input id="p_email" placeholder="optional"></div>
+  </div>
+  <label>Logo URL</label><input id="p_logo" placeholder="optional">
+  <label>Private note (not shown to the prospect)</label>
+  <input id="p_note" placeholder="optional">
+  <div class="row" style="margin-top:16px">
+    <button class="btn" id="go" onclick="make()">Generate private link</button>
+    <button class="btn ghost" onclick="load()">Refresh list</button>
+  </div>
+  <div class="msg" id="msg"></div>
+
+  <div class="out" id="out">
+    <label>Send this link to the prospect</label>
+    <div class="url mono" id="url"></div>
+    <div class="row">
+      <button class="btn" onclick="cp()">Copy link</button>
+      <button class="btn ghost" onclick="window.open(document.getElementById('url').textContent,'_blank')">Open it</button>
+    </div>
+    <div class="msg" id="exp" style="color:var(--dim)"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div style="font-size:13px;color:var(--dim2);text-transform:uppercase;
+    letter-spacing:.09em">Recent demos</div>
+  <div id="list"><div class="msg" style="color:var(--dim2)">Refresh to load.</div></div>
+</div>
+
+<script>
+const API="https://api.sklzlabs.com";
+function tok(){
+  try{
+    const k=Object.keys(localStorage).find(k=>k.includes("auth-token"));
+    return JSON.parse(localStorage.getItem(k)).access_token;
+  }catch(e){ return null; }
+}
+function v(id){return (document.getElementById(id).value||"").trim();}
+async function make(){
+  const b=document.getElementById("go"), m=document.getElementById("msg");
+  const t=tok();
+  if(!t){ m.style.color="var(--red)";
+    m.textContent="No admin session found. Sign in at sklzlabs.com in this browser, then reload.";
+    return; }
+  if(!v("p_name")||!v("p_chan")){ m.style.color="var(--red)";
+    m.textContent="Provider name and Telegram channel are required."; return; }
+  b.disabled=true; b.textContent="Generating…"; m.textContent="";
+  try{
+    const r=await fetch(API+"/api/demo-links",{method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},
+      body:JSON.stringify({provider_name:v("p_name"),telegram_channel:v("p_chan"),
+        language:v("p_lang"),hours:Number(v("p_hours"))||48,
+        contact_name:v("p_contact"),contact_email:v("p_email"),
+        logo_url:v("p_logo"),note:v("p_note")})});
+    const d=await r.json();
+    if(!r.ok||!d.ok) throw new Error(d.detail||"could not create");
+    document.getElementById("url").textContent=d.url;
+    document.getElementById("exp").textContent =
+      "Open until "+new Date(d.expires_at).toLocaleString()+" ("+d.hours+"h).";
+    document.getElementById("out").classList.add("on");
+    m.style.color="var(--green)"; m.textContent="Link ready.";
+    load();
+  }catch(e){ m.style.color="var(--red)"; m.textContent="Failed: "+e.message; }
+  b.disabled=false; b.textContent="Generate private link";
+}
+function cp(){
+  navigator.clipboard.writeText(document.getElementById("url").textContent);
+  document.getElementById("msg").style.color="var(--green)";
+  document.getElementById("msg").textContent="Copied.";
+}
+async function load(){
+  const t=tok(); if(!t) return;
+  try{
+    const r=await fetch(API+"/api/demo-links",{headers:{"Authorization":"Bearer "+t}});
+    const d=await r.json(); const rows=(d.links||[]);
+    document.getElementById("list").innerHTML = rows.length ? (
+      '<table><tr><th>Provider</th><th>Channel</th><th>Expires</th><th>Opens</th><th></th></tr>'+
+      rows.map(x=>{
+        const left=(new Date(x.expires_at)-Date.now())/3600000;
+        const st = x.revoked ? "closed" : left<=0 ? "expired"
+                 : left.toFixed(0)+"h left";
+        return `<tr><td>${x.provider_name}</td><td>${x.telegram_channel}</td>`+
+          `<td>${st}</td><td>${x.opened_count||0}</td>`+
+          `<td><a href="${x.url}" target="_blank">open</a></td></tr>`;
+      }).join("")+"</table>"
+    ) : '<div class="msg" style="color:var(--dim2)">No demos yet.</div>';
+  }catch(e){}
+}
+load();
+</script></div></body></html>

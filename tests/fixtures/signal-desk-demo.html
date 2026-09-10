@@ -191,6 +191,7 @@ section{padding:34px 0}
 
 <div class="top"><div class="wrap">
   <div class="brand"><span class="dot"></span>SKLZ<span style="color:var(--gold)">LABS</span></div>
+  <span class="tag" id="brandTag" style="display:none"></span>
   <span class="tag">Signal Desk</span>
   <div class="spacer"></div>
   <div class="timer mono" id="timer">Private demo</div>
@@ -204,7 +205,7 @@ section{padding:34px 0}
     <p>One trade on your master account becomes a signal to your channel, a copied
        position on every subscriber's MT5, and a line in your track record —
        automatically, in seconds.</p>
-    <div class="who">Private demo prepared for <b>Falcon FX</b></div>
+    <div class="who">Private demo prepared for <b id="brandName">…</b></div>
     <div class="timer mono" id="timer2" style="display:inline-block;
       margin-top:12px"></div>
   </div>
@@ -225,7 +226,7 @@ section{padding:34px 0}
       <div class="flowbox">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <div>
-            <div style="font-size:12px;color:var(--dim2)">MASTER · IC Markets · Live</div>
+            <div style="font-size:12px;color:var(--dim2)" id="masterLbl">MASTER · IC Markets · Live</div>
             <div style="font-size:17px;font-weight:700">EURUSD <span class="mono"
               id="px">1.08522</span></div>
           </div>
@@ -250,7 +251,7 @@ section{padding:34px 0}
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="4"><div class="ic">✈️</div>
             <div><div class="t">Telegram message sent</div>
-              <div class="d">@falconfx_signals · 1,240 members</div></div>
+              <div class="d" id="tgDest">your Telegram channel</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="5"><div class="ic">🅰️</div>
             <div><div class="t">Slave account A copied</div>
@@ -271,7 +272,7 @@ section{padding:34px 0}
         </div>
 
         <div class="tg" id="tg">
-          <div class="h"><b>Falcon FX Signals</b><span>via SKLZ · just now</span></div>
+          <div class="h"><b id="tgTitle">Your Signals</b><span>via SKLZ · just now</span></div>
           <pre id="tgtext"></pre>
         </div>
         <div class="simnote">Demonstration data. Simulated execution — no live
@@ -488,18 +489,50 @@ const CFG = {
 };
 let pkg="signal_desk", pay="stripe";
 
-/* ---- 48h expiry: real, from ?ends= or 48h after first visit ---- */
-(function(){
-  const q=new URLSearchParams(location.search).get("ends");
-  let end = q ? Date.parse(q) : null;
-  if(!end){
-    let s = null;
-    try{ s = window.name && window.name.startsWith("sklzdemo:")
-              ? +window.name.split(":")[1] : null; }catch(e){}
-    if(!s){ s = Date.now(); try{ window.name = "sklzdemo:"+s; }catch(e){} }
-    end = s + 48*3600*1000;
+/* ---- branding + expiry: the SERVER decides both ---- */
+const BRAND = {name:"Your Brand", channel:"Your Signals"};
+const TOKEN = new URLSearchParams(location.search).get("t") || "";
+
+function expired(msg){
+  document.body.innerHTML =
+    '<div style="max-width:520px;margin:16vh auto;text-align:center;'+
+    'padding:0 22px;font-family:inherit">'+
+    '<div style="font-size:40px">⏳</div>'+
+    '<h1 style="font-size:26px;margin-top:12px;letter-spacing:-.6px">'+
+    'This private demo has ended</h1>'+
+    '<p style="color:#8A94A6;margin-top:10px;line-height:1.6">'+(msg||
+    'Private demos stay open for 48 hours. Message us and we will open a '+
+    'fresh one for you.')+'</p>'+
+    '<a href="/signal-desk.html" style="display:inline-block;margin-top:22px;'+
+    'background:linear-gradient(180deg,#FFC65C,#F5A623);color:#12100A;'+
+    'font-weight:700;padding:13px 22px;border-radius:11px;'+
+    'text-decoration:none">See SKLZ Signal Desk →</a></div>';
+}
+
+(async function(){
+  if(!TOKEN){ expired("This link is missing its demo code. Ask us for a "+
+    "fresh private link."); return; }
+  let d=null;
+  try{
+    const r=await fetch(API+"/api/demo-links/"+encodeURIComponent(TOKEN));
+    if(r.status===410){ expired(); return; }
+    if(!r.ok){ expired("We could not find this demo. Ask us for a fresh "+
+      "private link."); return; }
+    d=await r.json();
+  }catch(e){
+    expired("We could not load this demo just now. Please try again shortly.");
+    return;
   }
-  CFG.demo_ends = end;
+  BRAND.name=d.provider_name; BRAND.channel=d.telegram_channel;
+  document.title=`${d.provider_name} · SKLZ Signal Desk — Private Demo`;
+  const set=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
+  set("brandName", d.provider_name);
+  set("tgTitle", d.telegram_channel);
+  set("tgDest", d.telegram_channel);
+  set("masterLbl", `MASTER · ${d.provider_name} · simulated`);
+  const tag=document.getElementById("brandTag");
+  if(tag){ tag.textContent=d.provider_name; tag.style.display=""; }
+  CFG.demo_ends = Date.now() + (d.seconds_remaining*1000);
   function tick(){
     const ms = CFG.demo_ends - Date.now();
     const el = document.getElementById("timer");
@@ -512,6 +545,9 @@ let pkg="signal_desk", pay="stripe";
     const el2=document.getElementById("timer2"); if(el2) el2.textContent=txt;
   }
   tick(); setInterval(tick,30000);
+  // The countdown is a display. When it reaches zero the page closes
+  // itself, and the server refuses the link regardless.
+  setInterval(()=>{ if(CFG.demo_ends - Date.now() <= 0) expired(); }, 30000);
 })();
 
 function go(id){document.getElementById(id).scrollIntoView({behavior:"smooth",block:"start"});}
@@ -631,6 +667,13 @@ let PKG={};
       document.getElementById("addrSol").textContent=CFG.sol_address;
       qr("qrSol",CFG.sol_address);
     } else hidePay("sol");
+    // Stripe hides itself until its products are live
+    if(!(d.stripe && d.stripe.available)){
+      hidePay("stripe");
+      const w=document.getElementById("w_stripe"); if(w) w.style.display="none";
+      const first=document.querySelector('.pay:not([style*="none"])');
+      if(first) pickPay(first);
+    }
     refresh();
   }catch(e){
     document.getElementById("pkgs").innerHTML=
@@ -691,7 +734,7 @@ function val(id){return (document.getElementById(id).value||"").trim();}
 
 /* ---- the flow ---- */
 const TG_TEXT=(side,px)=>
-`📊 Falcon FX — EURUSD
+`📊 ${BRAND.name} — EURUSD
 
 ${side==="buy"?"🟢 BUY":"🔴 SELL"}  EURUSD
 Entry:  ${px}

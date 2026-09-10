@@ -68,10 +68,14 @@ def test_no_stripe_connect_or_payouts():
 
 
 def test_expiry_is_real_not_fake_scarcity():
-    assert "48*3600*1000" in HTML
+    """The 48h window is now issued and enforced by the server, so the
+    page no longer computes it from a browser clock."""
+    assert "DEMO_HOURS = 48" in API
+    assert "seconds_remaining" in API and "seconds_remaining" in HTML
     assert "remaining" in HTML
-    # it must be able to expire
-    assert 'Private demo — expired' in HTML
+    # the browser cannot extend it
+    assert "48*3600*1000" not in HTML
+    assert "This private demo has ended" in HTML
 
 
 def test_simulation_is_declared():
@@ -463,5 +467,87 @@ def test_catalog_map_never_returns_a_credential():
     assert '[:8]' in fn                        # never the whole key
     # check the CODE, not the docstring that names what it must not return
     code = fn.split('"""', 2)[2]
-    for secret in ("webhook", "secret_key", "sk_live", "whsec"):
+    for secret in ("webhook", "sk_live", "whsec"):
         assert secret not in code.lower(), secret
+    # the key is read ONLY as an 8-char prefix, and only to label the mode
+    assert 'STRIPE_SECRET_KEY", "")[:8]' in code
+    assert code.count("prefix") == 2      # the assignment and the mode line
+    assert '"mode": "TEST" if "test" in prefix else "LIVE"' in code
+
+
+# ── D4: private prospect links ───────────────────────────────────────
+GEN = open("tests/fixtures/demo-generator.html").read()
+
+
+def test_the_link_is_the_credential_so_it_is_unguessable():
+    assert "secrets.token_hex(16)" in API      # 128 bits
+    fn = API[API.index("async def read_demo_link("):]
+    assert "len(tok) != 32" in fn              # shape checked before lookup
+
+
+def test_expiry_is_decided_by_the_server_not_the_browser():
+    fn = API[API.index("async def read_demo_link("):]
+    assert "if exp <= now:" in fn
+    assert "HTTP_410_GONE" in fn
+    # the page treats its countdown as a display only
+    assert "The countdown is a display" in HTML
+    assert "expired()" in HTML
+
+
+def test_an_expired_or_missing_link_shows_a_closed_page():
+    assert "This private demo has ended" in HTML
+    assert "r.status===410" in HTML
+    assert 'if(!TOKEN)' in HTML                # no token, no demo
+
+
+def test_branding_comes_from_the_token_not_the_markup():
+    """Falcon FX must not be hard-coded — every prospect sees their own."""
+    for hard in ("Falcon FX Signals</b>", "@falconfx_signals",
+                 "prepared for <b>Falcon FX"):
+        assert hard not in HTML, hard
+    assert 'id="brandName"' in HTML
+    assert "BRAND.name" in HTML
+    assert "d.provider_name" in HTML
+
+
+def test_one_prospect_cannot_read_another():
+    """The public path returns one row by token and offers no listing."""
+    fn = API[API.index("async def read_demo_link("):]
+    fn = fn[:fn.index("@demo_router.get(\"\")")]
+    assert '.eq("token", tok)' in fn and ".limit(1)" in fn
+    # the listing endpoint is admin-only
+    lst = API[API.index('@demo_router.get("")'):]
+    assert "rules.is_platform_admin(user)" in lst
+
+
+def test_creating_a_link_is_admin_only():
+    fn = API[API.index("async def create_demo_link("):]
+    assert "rules.is_platform_admin(user)" in fn
+
+
+def test_stripe_hides_itself_when_not_configured():
+    """A card button that 503s in front of a prospect is worse than none."""
+    assert "SKLZ_STRIPE_SIGNAL_DESK_READY" in API
+    assert '"available": stripe_ready' in API
+    assert "if(!(d.stripe && d.stripe.available))" in HTML
+    assert 'hidePay("stripe")' in HTML
+    # and crypto still works, so outreach is never blocked
+    assert "usdt_trc20" in API and "sol" in API
+
+
+def test_the_generator_page_needs_no_new_admin_system():
+    assert "auth-token" in GEN                 # reuses the sklzlabs session
+    assert "/api/demo-links" in GEN
+    assert "Generate private link" in GEN
+
+
+def test_opens_are_recorded_for_the_operator():
+    assert "opened_count" in API and "last_opened_at" in API
+    sql = open("migrations/D4-migration.sql").read()
+    assert "opened_count" in sql and "first_opened_at" in sql
+
+
+def test_demo_links_table_is_not_publicly_readable():
+    sql = open("migrations/D4-migration.sql").read()
+    assert "enable row level security" in sql
+    assert "revoke all on public.demo_links from anon, authenticated" in sql

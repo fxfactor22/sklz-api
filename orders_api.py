@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status as http
 from pydantic import BaseModel
@@ -275,8 +275,16 @@ async def packages() -> dict:
     exactly those, in separate sessions. No combined "today" total is
     quoted, because no combined charge is made.
     """
+    # Stripe appears only when its six Signal Desk products actually
+    # exist. A card button that 503s in front of a prospect is worse than
+    # no card button, and outreach must not wait on Stripe setup.
+    stripe_ready = _os.environ.get("SKLZ_STRIPE_SIGNAL_DESK_READY", "0") == "1"
     return {"ok": True, "packages": _package_config(),
             "wallets": _wallets(),
+            "stripe": {"available": stripe_ready,
+                       "note": ("" if stripe_ready else
+                                "card payment is being finalised; crypto is "
+                                "available now")},
             "crypto_note": ("Crypto transfers are irreversible. Confirm the "
                             "wallet address and network before sending.")}
 
@@ -346,3 +354,143 @@ async def list_leads(user=Depends(get_current_user),
                 .order("created_at", desc=True).limit(200).execute()).data or []
 
     return {"ok": True, "leads": await offload(_q)}
+
+
+# ── private 48-hour prospect demo links ─────────────────────────────
+demo_router = APIRouter(prefix="/api/demo-links", tags=["demo-links"])
+
+DEMO_HOURS = 48
+LANGS = {"en", "ar", "ru"}
+
+
+class DemoLinkIn(BaseModel):
+    provider_name: str
+    telegram_channel: str
+    language: str = "en"
+    contact_name: str = ""
+    contact_email: str = ""
+    logo_url: str = ""
+    note: str = ""
+    hours: int = DEMO_HOURS
+
+
+@demo_router.post("")
+async def create_demo_link(body: DemoLinkIn,
+                           user=Depends(get_current_user),
+                           sb: Client = Depends(get_supabase)) -> dict:
+    """Mint one private, prospect-specific demo link."""
+    if not rules.is_platform_admin(user):
+        raise HTTPException(http.HTTP_403_FORBIDDEN, "platform admin only")
+    name = _clean(body.provider_name, 80)
+    chan = _clean(body.telegram_channel, 80)
+    if not name or not chan:
+        raise HTTPException(http.HTTP_400_BAD_REQUEST,
+                            "provider name and Telegram channel are required")
+    lang = (body.language or "en").lower()[:2]
+    if lang not in LANGS:
+        lang = "en"
+    hours = max(1, min(int(body.hours or DEMO_HOURS), 168))
+
+    # 32 hex chars of CSPRNG. The link IS the credential, so it has to be
+    # unguessable rather than merely unlisted.
+    token = secrets.token_hex(16)
+    expires = datetime.now(timezone.utc) + timedelta(hours=hours)
+    row = {"token": token, "provider_name": name, "telegram_channel": chan,
+           "language": lang, "contact_name": _clean(body.contact_name, 80),
+           "contact_email": _clean(body.contact_email, 160).lower(),
+           "logo_url": _clean(body.logo_url, 400),
+           "note": _clean(body.note, 500),
+           "expires_at": expires.isoformat(),
+           "created_by": str(getattr(user, "id", "")) or None}
+
+    def _insert():
+        return sb.table("demo_links").insert(row).execute()
+
+    try:
+        await offload(_insert)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(http.HTTP_503_SERVICE_UNAVAILABLE,
+                            f"could not create the link: {str(exc)[:120]}") from exc
+
+    site = _os.environ.get("SITE_URL", "https://www.sklzlabs.com").rstrip("/")
+    return {"ok": True, "token": token,
+            "url": f"{site}/demo/signal-desk.html?t={token}",
+            "provider_name": name, "telegram_channel": chan,
+            "language": lang, "expires_at": expires.isoformat(),
+            "hours": hours}
+
+
+@demo_router.get("/{token}")
+async def read_demo_link(token: str,
+                         sb: Client = Depends(get_supabase)) -> dict:
+    """Public. One link's branding, by token.
+
+    Returns only that prospect's own fields — there is no listing path
+    here, so a token cannot be used to discover another prospect.
+    """
+    tok = (token or "").strip().lower()
+    if len(tok) != 32 or any(ch not in "0123456789abcdef" for ch in tok):
+        raise HTTPException(http.HTTP_404_NOT_FOUND, "unknown link")
+
+    def _get():
+        return (sb.table("demo_links").select("*")
+                .eq("token", tok).limit(1).execute()).data or []
+
+    try:
+        rows = await offload(_get)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(http.HTTP_503_SERVICE_UNAVAILABLE,
+                            "demo store unavailable") from exc
+    if not rows:
+        raise HTTPException(http.HTTP_404_NOT_FOUND, "unknown link")
+    row = rows[0]
+
+    if row.get("revoked"):
+        raise HTTPException(http.HTTP_410_GONE, "this demo has been closed")
+    try:
+        exp = datetime.fromisoformat(
+            str(row["expires_at"]).replace("Z", "+00:00"))
+    except (TypeError, ValueError, KeyError):
+        raise HTTPException(http.HTTP_410_GONE, "this demo has expired") from None
+    now = datetime.now(timezone.utc)
+    if exp <= now:
+        # The server decides expiry. A countdown in the browser is a
+        # display, not a lock.
+        raise HTTPException(http.HTTP_410_GONE, "this demo has expired")
+
+    def _touch():
+        patch = {"opened_count": int(row.get("opened_count") or 0) + 1,
+                 "last_opened_at": now.isoformat()}
+        if not row.get("first_opened_at"):
+            patch["first_opened_at"] = now.isoformat()
+        return sb.table("demo_links").update(patch).eq("token", tok).execute()
+
+    try:
+        await offload(_touch)
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {"ok": True, "provider_name": row["provider_name"],
+            "telegram_channel": row["telegram_channel"],
+            "language": row.get("language") or "en",
+            "logo_url": row.get("logo_url") or "",
+            "contact_name": row.get("contact_name") or "",
+            "expires_at": row["expires_at"],
+            "seconds_remaining": int((exp - now).total_seconds())}
+
+
+@demo_router.get("")
+async def list_demo_links(user=Depends(get_current_user),
+                          sb: Client = Depends(get_supabase)) -> dict:
+    if not rules.is_platform_admin(user):
+        raise HTTPException(http.HTTP_403_FORBIDDEN, "platform admin only")
+
+    def _q():
+        return (sb.table("demo_links").select("*")
+                .order("created_at", desc=True).limit(100).execute()).data or []
+
+    rows = await offload(_q)
+    site = _os.environ.get("SITE_URL", "https://www.sklzlabs.com").rstrip("/")
+    for r in rows:
+        r["url"] = f"{site}/demo/signal-desk.html?t={r['token']}"
+    return {"ok": True, "links": rows}
