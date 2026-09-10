@@ -43,6 +43,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, status
 
+import policy
 from routing import RoutingScope, resolve_destinations
 
 router = APIRouter(prefix="/api/arabic", tags=["arabic"])
@@ -344,10 +345,11 @@ PROMPTS = {
               "اختم بدعوة لزيارة sklzlabs.com"),
 }
 
-# Any of these in generated text means the post does not go out. A prompt
-# is guidance; this is the guarantee.
-BANNED = ["مضمون", "بدون مخاطر", "بلا مخاطر", "ربح مؤكد", "أرباح مضمونة",
-          "لا خسارة", "استثمر معنا", "تضاعف", "guaranteed", "risk-free"]
+# The rules live in policy.py — one canonical ruleset for every channel,
+# so Telegram, the website, the demo and any future surface cannot drift
+# to different standards. A prompt is guidance; policy.validate is the
+# guarantee. BANNED remains as a name for anything still referencing it.
+BANNED = policy.BANNED_AR + policy.BANNED_LATIN_EXTRA
 
 
 def _claude(prompt: str) -> str:
@@ -372,18 +374,6 @@ def _claude(prompt: str) -> str:
                        if b.get("type") == "text").strip()
     except Exception:  # noqa: BLE001
         return ""
-
-
-_NUM = r"(?:[0-9٠-٩]+|واحدة|اثنتين|اثنتان|ثلاث|أربع|خمس|ست|سبع|ثمان|تسع|عشر)"
-# "three trades out of ten lose" is a 70% win-rate claim in disguise.
-_RATIO = re.compile(
-    _NUM + r"\s*(?:صفقات|صفقة|مرات|مرة)?\s*من\s*(?:كل\s*)?"
-    + _NUM + r"|" + _NUM + r"\s*من\s*أصل\s*" + _NUM)
-_CLAIM_WORD = r"(?:نجاح|رابح|ربح|دقة|إصابة|خسار)"
-# a percentage anywhere near a performance word, in either order
-_PCT_CLAIM = re.compile(
-    r"[0-9٠-٩]+\s*[%٪].{0,30}" + _CLAIM_WORD
-    + r"|" + _CLAIM_WORD + r".{0,30}[0-9٠-٩]+\s*[%٪]")
 
 
 def sanitize(text: str) -> str:
@@ -421,16 +411,13 @@ def compose_debug(slot: str) -> tuple[str, str]:
     if not raw:
         return "", "writer returned nothing (API key, model name, or timeout)"
     text = sanitize(raw)
-    low = text.lower()
-    for b in BANNED:
-        if b.lower() in low:
-            return "", f"banned phrase: {b}"
-    m = _RATIO.search(text)
-    if m:
-        return "", f"win-rate claim in disguise: '{m.group(0)}'"
-    m = _PCT_CLAIM.search(text)
-    if m:
-        return "", f"performance percentage: '{m.group(0)}'"
+    # strict=False: this is long-form education, where "risk 1-2% of your
+    # capital" is a sentence the channel exists to say. Every other rule
+    # — banned phrases, disguised ratios, percentages next to a
+    # performance word — still applies.
+    allowed, reason = policy.validate(text, strict=False)
+    if not allowed:
+        return "", f"policy: {reason}"
     if len(text) < 40:
         return "", f"too short after sanitising ({len(text)} chars)"
     if len(text) > 900:

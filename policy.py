@@ -28,7 +28,15 @@ BANNED_EN = [
 BANNED_AR = [
     "مضمون", "بدون مخاطر", "بلا مخاطر", "ربح مؤكد", "أرباح مضمونة",
     "لا خسارة", "نسبة نجاح", "نسبة الربح", "معدل النجاح",
+    # merged in from the Arabic channel's own list so consolidating the
+    # two rule sets cannot quietly drop a rule that was already enforced
+    "استثمر معنا", "تضاعف",
 ]
+
+# The Arabic channel blocked a bare "guaranteed"/"risk-free" in Latin
+# script too. Kept, because removing it during a consolidation would be
+# a weakening disguised as tidying.
+BANNED_LATIN_EXTRA = ["guaranteed", "risk-free", "risk free"]
 
 _NUM_AR = (r"(?:[0-9٠-٩]+|واحدة|اثنتين|اثنتان|ثلاث|أربع|خمس|ست|سبع|ثمان"
            r"|تسع|عشر)")
@@ -55,7 +63,10 @@ _PCT_EN = re.compile(r"\d+\s*%.{0,30}" + _CLAIM_EN
 # matched. The negative lookbehind is the whole difference between a
 # policy that protects the product and one that blocks it.
 _RESULT = re.compile(
-    r"[+\-]\s*\d+(?:\.\d+)?\s*(?:pips?|points?|r\b|%)"
+    # "(?<![\d\-])" so a RANGE is not read as a signed result: "risk
+    # 1-2% of capital" is advice, "-2%" standing alone is a result. The
+    # hyphen between two digits is the whole difference.
+    r"(?<![\d\-])[+\-]\s*\d+(?:\.\d+)?\s*(?:pips?|points?|r\b|%|٪)"
     r"|\bclosed\s*[+\-]?\s*\d+"
     r"|(?<!take\s)(?<!take_)\b(?:net\s+profit|pnl|p/l|balance|equity|"
     r"realized|realised)\s*[:=]\s*[+\-]?\s*[\d$]",
@@ -69,12 +80,30 @@ _BARE_PCT = re.compile(r"\d+(?:\.\d+)?\s*[%٪]")
 
 
 def validate(text: str, strict: bool = True) -> tuple[bool, str]:
-    """Return (allowed, reason). Reason is a machine code when blocked."""
+    """Return (allowed, reason). Reason is a machine code when blocked.
+
+    `strict` governs ONE rule: whether a bare percentage is refused.
+
+      strict=True  — short mechanical fields and signal templates. An
+                     order field never contains a percent sign, so a bare
+                     "%" there is a claim ("running at 82% today") with no
+                     claim word nearby for a proximity rule to catch.
+
+      strict=False — long-form educational prose. "risk no more than 1-2%
+                     of your capital" is the single most useful sentence
+                     in retail trading education, and refusing it would
+                     make the channel worse at exactly the thing it is
+                     for. Every other rule still applies, so a percentage
+                     ATTACHED to a performance word is still blocked.
+
+    Both profiles share one ruleset. The difference is a single flag, not
+    a second copy of the rules.
+    """
     if not text or not text.strip():
         return False, "empty_text"
     low = text.lower()
 
-    for phrase in BANNED_EN:
+    for phrase in BANNED_EN + BANNED_LATIN_EXTRA:
         if phrase in low:
             return False, "banned_phrase"
     for phrase in BANNED_AR:
