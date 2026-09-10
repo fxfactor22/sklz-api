@@ -33,6 +33,7 @@ from supabase import Client
 
 from auth import get_current_user
 from db import get_supabase
+from routing import RoutingScope, resolve_destinations
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
@@ -54,9 +55,15 @@ def _now() -> datetime:
 
 
 def _send_telegram(chat_id: str, text: str, symbol: str = "") -> bool:
-    token = (os.environ.get("TG_SALES_BOT_TOKEN")
-             or os.environ.get("TELEGRAM_BOT_TOKEN", ""))
-    if not token or not chat_id:
+    # The chat is the caller's (a specific user); the credential comes from
+    # the resolver, so this function no longer knows where bots are stored.
+    dests = resolve_destinations(
+        RoutingScope(purpose="alert", chat_id=chat_id))
+    if not dests or not dests[0].enabled:
+        return False
+    dest = dests[0]
+    token = dest.token.reveal()
+    if not token:
         return False
 
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown",
@@ -146,7 +153,8 @@ def alert_channel() -> str:
     cannot message someone who has never contacted it — a channel just needs
     the bot as an admin.
     """
-    return os.environ.get("ALERT_CHANNEL_ID", "").strip()
+    d = resolve_destinations(RoutingScope(purpose="scanner_alert"))
+    return d[0].chat_id if d else ""
 
 
 def _channel_recently_alerted(sb: Client, symbol: str) -> bool:

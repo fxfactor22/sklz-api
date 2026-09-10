@@ -43,6 +43,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, status
 
+from routing import RoutingScope, resolve_destinations
+
 router = APIRouter(prefix="/api/arabic", tags=["arabic"])
 
 _state: dict = {"last": {}, "posted": 0, "skipped": 0, "last_error": ""}
@@ -50,8 +52,15 @@ _state: dict = {"last": {}, "posted": 0, "skipped": 0, "last_error": ""}
 MODEL = "claude-sonnet-4-5"
 
 # ── the channel ─────────────────────────────────────────────────────
+def _destination():
+    """The Arabic channel, resolved. One lookup, one place."""
+    dests = resolve_destinations(RoutingScope(language="ar"))
+    return dests[0] if dests else None
+
+
 def _chat() -> str:
-    return os.environ.get("TG_ARABIC_CHAT", "").strip()
+    d = _destination()
+    return d.chat_id if d else ""
 
 
 _TOKEN_VARS = ("TELEGRAM_BOT_TOKEN", "TG_SALES_BOT_TOKEN",
@@ -61,20 +70,12 @@ _TOKEN_VARS = ("TELEGRAM_BOT_TOKEN", "TG_SALES_BOT_TOKEN",
 def _token() -> str:
     """The bot that posts to the Arabic channel.
 
-    Three ways to say it, in order:
-      TG_ARABIC_TOKEN      the token itself
-      TG_ARABIC_TOKEN_ENV  the NAME of another variable holding it — so a
-                           token already in the environment is not copied
-                           into a second place where the two can drift
-      TELEGRAM_BOT_TOKEN   the default
+    The three-way fallback (TG_ARABIC_TOKEN, TG_ARABIC_TOKEN_ENV naming
+    another variable, then TELEGRAM_BOT_TOKEN) now lives in the resolver
+    with every other destination lookup. Unchanged behaviour, one home.
     """
-    direct = os.environ.get("TG_ARABIC_TOKEN", "").strip()
-    if direct:
-        return direct
-    named = os.environ.get("TG_ARABIC_TOKEN_ENV", "").strip()
-    if named:
-        return os.environ.get(named, "").strip()
-    return os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    d = _destination()
+    return d.token.reveal() if d else ""
 
 
 def _bot_username(token: str) -> str:

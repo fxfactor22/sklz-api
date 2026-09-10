@@ -149,3 +149,85 @@ def test_resolved_destinations_carry_secrets_not_strings():
     for d in resolve_destinations(RoutingScope(category="metals")):
         assert isinstance(d.token, Secret), d.key
         assert "MAIN" not in repr(d) and "ALITOK" not in repr(d)
+
+
+# ── consolidated destinations ────────────────────────────────────────
+def _setup_all():
+    import os
+    for k in list(os.environ):
+        if k.startswith(("TG_", "TELEGRAM_", "SIGNAL_CHANNEL", "ALERT_CHANNEL")):
+            os.environ.pop(k)
+    os.environ.update({
+        "TELEGRAM_BOT_TOKEN": "MAIN", "TG_SALES_BOT_TOKEN": "SALES",
+        "SIGNAL_CHANNEL_ID": "-100summary", "TG_MIRROR2_CHAT": "-100m2",
+        "TG_ARABIC_CHAT": "@ar", "TG_ARABIC_TOKEN": "ARTOK",
+    })
+
+
+def test_summary_uses_the_sales_bot_and_its_own_channel():
+    """Not the signal channel set — that difference is load-bearing."""
+    _setup_all()
+    d = {x.key: x for x in resolve_destinations(RoutingScope(purpose="summary"))}
+    assert d["summary_main"].chat_id == "-100summary"
+    assert d["summary_main"].token.reveal() == "SALES"
+    assert d["tg_mirror2"].chat_id == "-100m2"
+    assert d["tg_mirror2"].token.reveal() == "SALES"   # falls back to sales
+    assert d["tg_mirror2"].primary is False
+
+
+def test_summary_falls_back_to_alert_channel_id():
+    _setup_all()
+    import os
+    os.environ.pop("SIGNAL_CHANNEL_ID")
+    os.environ["ALERT_CHANNEL_ID"] = "-100alt"
+    d = resolve_destinations(RoutingScope(purpose="summary"))[0]
+    assert d.chat_id == "-100alt"
+
+
+def test_alert_dm_takes_the_chat_from_the_caller():
+    _setup_all()
+    d = resolve_destinations(
+        RoutingScope(purpose="alert", chat_id="99887"))[0]
+    assert d.chat_id == "99887" and d.token.reveal() == "SALES"
+    assert d.enabled is True
+    # no chat -> disabled, exactly like the old `not chat_id` guard
+    assert resolve_destinations(
+        RoutingScope(purpose="alert", chat_id=""))[0].enabled is False
+
+
+def test_arabic_token_indirection_order_preserved():
+    _setup_all()
+    import os
+    d = resolve_destinations(RoutingScope(language="ar"))[0]
+    assert d.chat_id == "@ar" and d.token.reveal() == "ARTOK"
+    # TG_ARABIC_TOKEN_ENV names ANOTHER variable
+    os.environ.pop("TG_ARABIC_TOKEN")
+    os.environ["TG_ARABIC_TOKEN_ENV"] = "TG_SALES_BOT_TOKEN"
+    assert resolve_destinations(
+        RoutingScope(language="ar"))[0].token.reveal() == "SALES"
+    # and with neither, the default bot
+    os.environ.pop("TG_ARABIC_TOKEN_ENV")
+    assert resolve_destinations(
+        RoutingScope(language="ar"))[0].token.reveal() == "MAIN"
+
+
+def test_arabic_wins_over_purpose():
+    """Arabic summaries and Arabic content share one destination."""
+    _setup_all()
+    for purpose in ("signal", "summary", "content"):
+        d = resolve_destinations(
+            RoutingScope(language="ar", purpose=purpose))[0]
+        assert d.key == "arabic" and d.chat_id == "@ar"
+
+
+def test_migrated_modules_hold_no_routing_lookups():
+    for path in ("signal_lifecycle.py", "alerts_api.py"):
+        src = open(path).read()
+        for needle in ('os.environ.get("TG_', 'os.environ.get("TELEGRAM_',
+                       'os.environ.get("SIGNAL_CHANNEL_ID',
+                       'os.environ.get("ALERT_CHANNEL_ID'):
+            assert needle not in src, f"{path}: {needle}"
+    ar = open("sklz_arabic.py").read()
+    for needle in ('os.environ.get("TG_ARABIC_CHAT',
+                   'os.environ.get("TG_ARABIC_TOKEN'):
+        assert needle not in ar, needle

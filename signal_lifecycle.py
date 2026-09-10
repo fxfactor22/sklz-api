@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from supabase import Client
 
 from db import get_supabase
+from routing import RoutingScope, resolve_destinations
 
 router = APIRouter(prefix="/api/signals", tags=["signal-lifecycle"])
 
@@ -263,17 +264,13 @@ async def summary_loop(app=None) -> None:
                 day = _summarise(sb, 1)
                 week = _summarise(sb, 7)
                 text = format_summary(day, week)
-                token = (os.environ.get("TG_SALES_BOT_TOKEN")
-                         or os.environ.get("TELEGRAM_BOT_TOKEN", ""))
+                # Destinations come from the resolver; this loop no longer
+                # knows that they happen to live in environment variables.
                 sent = 0
-                main_chat = (os.environ.get("SIGNAL_CHANNEL_ID")
-                             or os.environ.get("ALERT_CHANNEL_ID", ""))
-                if _tg(main_chat, token, text):
-                    sent += 1
-                m2_chat = os.environ.get("TG_MIRROR2_CHAT", "")
-                m2_tok = os.environ.get("TG_MIRROR2_TOKEN", "") or token
-                if _tg(m2_chat, m2_tok, text):
-                    sent += 1
+                for d in resolve_destinations(
+                        RoutingScope(purpose="summary")):
+                    if d.enabled and _tg(d.chat_id, d.token.reveal(), text):
+                        sent += 1
                 try:
                     import sklz_arabic
                     if sklz_arabic.post(

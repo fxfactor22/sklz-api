@@ -63,6 +63,7 @@ class RoutingScope:
     purpose: str = "signal"       # signal | update | summary | content
     source: str = ""              # runner | manual | scanner
     channels: tuple = ()          # explicit channel names, when asked for
+    chat_id: str = ""             # direct message target, e.g. a user's DM
     business: str | None = None   # RESERVED — do not build on this yet
 
 
@@ -147,6 +148,36 @@ class EnvTelegramDestinationResolver(DestinationResolver):
         return os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
     @staticmethod
+    def _sales_token() -> str:
+        """The bot that posts summaries and user alerts.
+
+        Different from the signal bot today, and the fallback order is
+        load-bearing: TG_SALES_BOT_TOKEN first, TELEGRAM_BOT_TOKEN second.
+        """
+        return (os.environ.get("TG_SALES_BOT_TOKEN")
+                or os.environ.get("TELEGRAM_BOT_TOKEN", ""))
+
+    @staticmethod
+    def _summary_chat() -> str:
+        return (os.environ.get("SIGNAL_CHANNEL_ID")
+                or os.environ.get("ALERT_CHANNEL_ID", ""))
+
+    @staticmethod
+    def _arabic_chat() -> str:
+        return os.environ.get("TG_ARABIC_CHAT", "").strip()
+
+    @staticmethod
+    def _arabic_token() -> str:
+        """Three ways to name the Arabic bot, in the established order."""
+        direct = os.environ.get("TG_ARABIC_TOKEN", "").strip()
+        if direct:
+            return direct
+        named = os.environ.get("TG_ARABIC_TOKEN_ENV", "").strip()
+        if named:
+            return os.environ.get(named, "").strip()
+        return os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+
+    @staticmethod
     def _category_chat(category: str) -> str:
         return os.environ.get(f"TG_CHANNEL_{category.upper()}", "")
 
@@ -175,6 +206,46 @@ class EnvTelegramDestinationResolver(DestinationResolver):
 
     # ---- the one entry point ----
     def resolve(self, scope: RoutingScope) -> list[Destination]:
+        # Arabic is its own destination with its own bot, whatever the
+        # purpose — signal, summary, generated content or welcome post.
+        if scope.language == "ar":
+            chat = self._arabic_chat()
+            return [Destination(key="arabic", chat_id=chat,
+                                token=Secret(self._arabic_token()),
+                                language="ar", enabled=bool(chat))]
+
+        # The scanner's own channel. Separate from the summary channel even
+        # though the summary falls back to the same variable — they are two
+        # purposes that happen to share a default, not one destination.
+        if scope.purpose == "scanner_alert":
+            chat = os.environ.get("ALERT_CHANNEL_ID", "").strip()
+            return [Destination(key="scanner_channel", chat_id=chat,
+                                token=Secret(self._sales_token()),
+                                enabled=bool(chat))]
+
+        # A user's direct message. The credential is ours; the chat is the
+        # caller's, so it is routing context rather than configuration.
+        if scope.purpose == "alert":
+            return [Destination(key="alert_dm", chat_id=scope.chat_id,
+                                token=Secret(self._sales_token()),
+                                enabled=bool(scope.chat_id))]
+
+        # The daily summary goes to its own channel via the sales bot, plus
+        # mirror2. Deliberately NOT the signal channel set.
+        if scope.purpose == "summary":
+            tok = self._sales_token()
+            out = [Destination(key="summary_main",
+                               chat_id=self._summary_chat(),
+                               token=Secret(tok),
+                               enabled=bool(self._summary_chat()))]
+            m2 = os.environ.get("TG_MIRROR2_CHAT", "")
+            if m2:
+                out.append(Destination(
+                    key="tg_mirror2", chat_id=m2,
+                    token=Secret(os.environ.get("TG_MIRROR2_TOKEN", "") or tok),
+                    primary=False))
+            return out
+
         token = self._default_token()
 
         # Explicit channel list (the send_to_channels path).
@@ -220,6 +291,10 @@ class EnvTelegramDestinationResolver(DestinationResolver):
                            for c in CHANNEL_KEYS},
             "general": bool(self._general_chat()),
             "mirrors": [d.redacted() for d in self._mirrors()],
+            "summary_channel": bool(self._summary_chat()),
+            "sales_bot_configured": bool(self._sales_token()),
+            "arabic": {"chat": bool(self._arabic_chat()),
+                       "bot_configured": bool(self._arabic_token())},
         }
 
 
