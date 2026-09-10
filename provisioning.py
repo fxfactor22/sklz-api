@@ -23,6 +23,7 @@ from supabase import Client
 
 import iskra_client as iskra
 import provider_rules as rules
+from aio import offload
 from auth import get_current_user
 from db import get_supabase
 
@@ -155,7 +156,7 @@ async def iskra_diag(user=Depends(get_current_user)) -> dict:
     out = {"sklz": {"configured": bool(mine), "fingerprint": mine},
            "base_url": iskra.base_url()}
     try:
-        theirs = iskra.diag()
+        theirs = await offload(iskra.diag)
     except iskra.IskraError as exc:
         out["iskra"] = {"reachable": False, "error": exc.code,
                         "detail": exc.detail}
@@ -248,7 +249,7 @@ async def provision(provider_id: str, body: ProvisionIn,
             "has_owner_email": bool(payload.get("owner_email"))})
 
     try:
-        result = iskra.create_tenant(payload)
+        result = await offload(iskra.create_tenant, payload)
     except iskra.IskraError as exc:
         if not (exc.status == 409 and exc.retryable):
             _settle(sb, intent_id, "failed", None, exc.code, exc.detail)
@@ -369,7 +370,7 @@ async def owner_invite(provider_id: str, body: InviteIn,
            {"role": role, "rotate": bool(body.rotate)})
 
     try:
-        result = iskra.owner_invite(payload)
+        result = await offload(iskra.owner_invite, payload)
     except iskra.IskraError as exc:
         _settle(sb, intent_id, "failed", None, exc.code, exc.detail)
         raise _iskra_http(exc) from exc
@@ -426,7 +427,7 @@ async def set_lifecycle(provider_id: str, body: LifecycleIn,
            {"state": state, "reason": payload.get("reason")})
 
     try:
-        result = iskra.lifecycle(payload)
+        result = await offload(iskra.lifecycle, payload)
     except iskra.IskraError as exc:
         _settle(sb, intent_id, "failed", None, exc.code, exc.detail)
         _audit(sb, str(prov["id"]), "lifecycle_result", user,
@@ -462,7 +463,7 @@ async def iskra_status(provider_id: str,
                 "provider_status": prov["status"], "tenant": None}
 
     try:
-        result = iskra.status(str(prov["id"]))
+        result = await offload(iskra.status, str(prov["id"]))
     except iskra.IskraError as exc:
         if exc.status == 404:
             return {"ok": True, "state": "mapping_conflict",
@@ -526,7 +527,7 @@ async def interop_proof(user=Depends(get_current_user),
                 "sklz_fingerprint": "", "side_effects": before}
 
     try:
-        theirs_raw = iskra.diag()
+        theirs_raw = await offload(iskra.diag)
     except iskra.IskraError as exc:
         return {"ok": False, "verdict": "iskra_unreachable",
                 "error": exc.code, "detail": exc.detail,
@@ -553,8 +554,8 @@ async def interop_proof(user=Depends(get_current_user),
         out["side_effects"] = before
         return out
 
-    negative = iskra.probe_bad_signature()
-    positive = iskra.probe_signed_invalid_body()
+    negative = await offload(iskra.probe_bad_signature)
+    positive = await offload(iskra.probe_signed_invalid_body)
     after = _side_effect_snapshot(sb)
 
     neg_ok = negative.get("status") == 401

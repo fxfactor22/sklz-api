@@ -178,3 +178,90 @@ def test_routing_and_arabic_behaviour_unchanged():
     env = rt[rt.index("class EnvTelegramDestinationResolver"):]
     assert env.index('purpose == "demo_signal"') < \
         env.index('scope.language == "ar"')             # D1.3 order intact
+
+
+# ── P1.4: the remaining async paths ──────────────────────────────────
+P14_MODULES = ("tgbot.py", "alerts_api.py", "provisioning.py")
+P14_SENDERS = {"send", "_api", "_send_telegram", "diag", "create_tenant",
+               "owner_invite", "lifecycle", "status",
+               "probe_bad_signature", "probe_signed_invalid_body"}
+
+
+def _offenders(modules, senders):
+    out = []
+    for name in modules:
+        tree = ast.parse(open(f"./{name}").read())
+        for fn in ast.walk(tree):
+            if not isinstance(fn, ast.AsyncFunctionDef):
+                continue
+            offloaded = set()
+            for n in ast.walk(fn):
+                if isinstance(n, ast.Call):
+                    f = n.func
+                    nm = (f.id if isinstance(f, ast.Name)
+                          else getattr(f, "attr", ""))
+                    if nm == "offload":
+                        for a in n.args:
+                            offloaded.add(getattr(a, "id",
+                                                  getattr(a, "attr", "")))
+            for n in ast.walk(fn):
+                if isinstance(n, ast.Call):
+                    f = n.func
+                    if isinstance(f, ast.Attribute) and \
+                       isinstance(f.value, ast.Name) and \
+                       f.value.id in ("router", "app", "sb", "self"):
+                        continue
+                    nm = (f.id if isinstance(f, ast.Name)
+                          else getattr(f, "attr", ""))
+                    if nm in senders and nm not in offloaded:
+                        out.append(f"{name}:{fn.name}:{nm}")
+    return out
+
+
+def test_no_remaining_async_path_blocks_the_loop():
+    assert _offenders(P14_MODULES, P14_SENDERS) == []
+
+
+def test_funnel_reply_order_is_preserved():
+    """Each send is awaited in place, so a conversation cannot reorder."""
+    src = open("./tgbot.py").read()
+    assert "async def _asend(" in src and "async def _aapi(" in src
+    fn = src[src.index("async def webhook("):]
+    # every send in the handler is awaited, none fired concurrently
+    assert "await _asend(" in fn
+    assert "gather(" not in fn and "create_task(" not in fn
+
+
+def test_webhook_still_returns_the_same_shape():
+    src = open("./tgbot.py").read()
+    fn = src[src.index("async def webhook("):]
+    assert '{"ok": True}' in fn
+
+
+def test_provisioning_pure_helpers_are_not_offloaded():
+    """Hashing and redaction are CPU-only; a thread hop would be waste."""
+    src = open("./provisioning.py").read()
+    for pure in ("canonical_request_hash", "redact", "secret_fingerprint"):
+        assert f"offload(iskra.{pure}" not in src, pure
+
+
+def test_idempotency_order_is_unchanged_by_offloading():
+    """Intent still lands before the network call."""
+    src = open("./provisioning.py").read()
+    fn = src[src.index("async def provision("):]
+    fn = fn[:fn.index("\n# ── owner invite")]
+    assert fn.index('table("provisioning_intents").insert') < \
+        fn.index("offload(iskra.create_tenant")
+
+
+def test_three_concurrent_webhook_updates_overlap():
+    async def scenario():
+        def slow_send(_):
+            time.sleep(0.4)
+            return {"ok": True}
+
+        t0 = time.monotonic()
+        await asyncio.gather(*[offload(slow_send, i) for i in range(3)])
+        return time.monotonic() - t0
+
+    assert asyncio.run(scenario()) < 0.9

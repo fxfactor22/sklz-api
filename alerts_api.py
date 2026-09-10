@@ -33,6 +33,7 @@ from supabase import Client
 
 from auth import get_current_user
 from db import get_supabase
+from aio import offload
 from routing import RoutingScope, resolve_destinations
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
@@ -335,7 +336,7 @@ async def test_alert(user=Depends(get_current_user),
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "No Telegram chat id saved yet.")
 
-    ok = _send_telegram(chat, format_alert(
+    ok = await offload(_send_telegram, chat, format_alert(
         {"symbol": "BTC", "score": 0.42, "h1": 1.2, "h24": 4.8},
         {"bias": "long", "confidence": "medium",
          "headline": "This is a test alert.",

@@ -78,7 +78,7 @@ def test_the_intent_row_is_written_before_the_call():
     fn = src[src.index("async def provision("):]
     fn = fn[:fn.index("\n# ── owner invite")]
     assert fn.index('table("provisioning_intents").insert') < \
-        fn.index("iskra.create_tenant(payload)")
+        fn.index("offload(iskra.create_tenant, payload)")
 
 
 def test_a_retry_reuses_the_stored_key_and_never_mints_a_new_one():
@@ -330,7 +330,7 @@ def test_the_proof_records_a_side_effect_snapshot_either_side():
     src = open("./provisioning.py").read()
     fn = src[src.index("async def interop_proof("):]
     assert fn.index("before = _side_effect_snapshot(sb)") < \
-        fn.index("probe_bad_signature()")
+        fn.index("offload(iskra.probe_bad_signature)")
     assert "after = _side_effect_snapshot(sb)" in fn
     assert '"unchanged": before == after' in fn
 
@@ -338,7 +338,7 @@ def test_the_proof_records_a_side_effect_snapshot_either_side():
 def test_the_proof_refuses_to_run_without_a_local_secret():
     src = open("./provisioning.py").read()
     fn = src[src.index("async def interop_proof("):]
-    assert fn.index('if not mine:') < fn.index("probe_bad_signature()")
+    assert fn.index('if not mine:') < fn.index("offload(iskra.probe_bad_signature)")
     assert "sklz_secret_missing" in fn
 
 

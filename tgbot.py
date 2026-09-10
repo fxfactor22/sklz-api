@@ -34,6 +34,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Request
 from supabase import Client
 
+from aio import offload
 from db import get_supabase
 
 router = APIRouter(prefix="/api/tgbot", tags=["telegram-bot"])
@@ -314,6 +315,17 @@ def _final_buttons(lang: str) -> list:
 
 
 @router.post("/webhook/{secret}")
+
+async def _asend(*args, **kwargs) -> dict:
+    """`send` on a worker thread. Awaited in place, so the reply order of
+    a funnel conversation is exactly what it was."""
+    return await offload(send, *args, **kwargs)
+
+
+async def _aapi(method: str, payload: dict) -> dict:
+    return await offload(_api, method, payload)
+
+
 async def webhook(secret: str, request: Request,
                   sb: Client = Depends(get_supabase)) -> dict:
     """Telegram posts every update here."""
@@ -339,12 +351,12 @@ async def webhook(secret: str, request: Request,
         # updates too. The qualification flow is a one-to-one conversation and
         # must never run in public — replying there spams the channel.
         if chat.get("type") != "private":
-            _api("answerCallbackQuery", {"callback_query_id": cq["id"]})
+            await _aapi("answerCallbackQuery", {"callback_query_id": cq["id"]})
             return {"ok": True}
         chat_id = chat["id"]
         msg_id = cq["message"]["message_id"]
         data = cq.get("data") or ""
-        _api("answerCallbackQuery", {"callback_query_id": cq["id"]})
+        await _aapi("answerCallbackQuery", {"callback_query_id": cq["id"]})
         lead = _get_lead(sb, chat_id)
         lang = lead.get("lang") or "en"
 
@@ -353,18 +365,18 @@ async def webhook(secret: str, request: Request,
             _save_lead(sb, chat_id, {"lang": lang,
                                      "username": (cq.get("from") or {}).get("username", ""),
                                      "step": "trade"})
-            send(chat_id, t(lang, "welcome") + "\n\n*" + t(lang, "q_trade") + "*",
+            await _asend(chat_id, t(lang, "welcome") + "\n\n*" + t(lang, "q_trade") + "*",
                  _trade_buttons(lang), edit_id=msg_id)
 
         elif data.startswith("trade:"):
             _save_lead(sb, chat_id, {"trades": data.split(":", 1)[1], "step": "exp"})
-            send(chat_id, "*" + t(lang, "q_time") + "*",
+            await _asend(chat_id, "*" + t(lang, "q_time") + "*",
                  _time_buttons(lang), edit_id=msg_id)
 
         elif data.startswith("exp:"):
             _save_lead(sb, chat_id, {"experience": data.split(":", 1)[1],
                                      "step": "problem"})
-            send(chat_id, "*" + t(lang, "q_problem") + "*",
+            await _asend(chat_id, "*" + t(lang, "q_problem") + "*",
                  _problem_buttons(lang), edit_id=msg_id)
 
         elif data.startswith("prob:"):
@@ -372,14 +384,14 @@ async def webhook(secret: str, request: Request,
             lead = _get_lead(sb, chat_id)
             _save_lead(sb, chat_id, {"problem": problem, "step": "done"})
             answer = reco(lang, problem, lead.get("experience") or "")
-            send(chat_id, t(lang, "thanks") + "\n\n" + answer,
+            await _asend(chat_id, t(lang, "thanks") + "\n\n" + answer,
                  _final_buttons(lang), edit_id=msg_id)
-            send(chat_id, t(lang, "email_ask"),
+            await _asend(chat_id, t(lang, "email_ask"),
                  [[{"text": t(lang, "skip"), "callback_data": "skip:email"}]])
 
         elif data == "skip:email":
             _save_lead(sb, chat_id, {"step": "closed"})
-            send(chat_id, "\u2014", edit_id=msg_id)
+            await _asend(chat_id, "\u2014", edit_id=msg_id)
         return {"ok": True}
 
     # ── plain messages ──
@@ -412,10 +424,10 @@ async def webhook(secret: str, request: Request,
         # links starting with 'ar' skip straight to the first real question.
         if payload.startswith("ar"):
             _save_lead(sb, chat_id, {"lang": "ar", "step": "trade"})
-            send(chat_id, t("ar", "welcome") + "\n\n*" + t("ar", "q_trade") + "*",
+            await _asend(chat_id, t("ar", "welcome") + "\n\n*" + t("ar", "q_trade") + "*",
                  _trade_buttons("ar"))
             return {"ok": True}
-        send(chat_id, "*SKLZ Labs*\n\nChoose your language \u00b7 "
+        await _asend(chat_id, "*SKLZ Labs*\n\nChoose your language \u00b7 "
                       "\u0627\u062e\u062a\u0631 \u0644\u063a\u062a\u0643 \u00b7 "
                       "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u044f\u0437\u044b\u043a",
              _lang_buttons())
@@ -426,16 +438,16 @@ async def webhook(secret: str, request: Request,
             sb.table("tg_leads").delete().eq("chat_id", chat_id).execute()
         except Exception:
             pass
-        send(chat_id, t(lang, "forget_ok"))
+        await _asend(chat_id, t(lang, "forget_ok"))
         return {"ok": True}
 
     # an email, offered voluntarily at the end
     if lead.get("step") == "done" and "@" in text and "." in text.split("@")[-1]:
         _save_lead(sb, chat_id, {"email": text[:120], "step": "closed"})
-        send(chat_id, t(lang, "email_ok"), _final_buttons(lang))
+        await _asend(chat_id, t(lang, "email_ok"), _final_buttons(lang))
         return {"ok": True}
 
-    send(chat_id, "/start", _lang_buttons())
+    await _asend(chat_id, "/start", _lang_buttons())
     return {"ok": True}
 
 
