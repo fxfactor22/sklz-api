@@ -22,11 +22,16 @@ from db import get_supabase
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
-PACKAGES = {"signal_desk", "pro_trader_os"}
+PACKAGES = {"signal_desk", "signal_desk_pro", "pro_trader_os"}
+# What a crypto payment BUYS. Direct-wallet crypto cannot charge again
+# next month, so activation and renewal are different events and the
+# order has to say which one it is.
+PAYMENT_TYPES = {"setup", "monthly", "setup_plus_initial_month", "renewal"}
 ASSETS = {"USDT", "SOL"}
 NETWORKS = {"TRC20", "Solana"}
 STATUSES = ("awaiting_payment", "submitted", "verifying", "confirmed",
-            "activation_pending", "activated", "rejected")
+            "activation_pending", "activated", "rejected",
+            "information_required")
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _recent: dict[str, list[float]] = {}
@@ -42,6 +47,7 @@ class CryptoOrderIn(BaseModel):
     amount: str
     wallet: str = ""
     tx_hash: str
+    payment_type: str = "setup_plus_initial_month"
 
 
 def _clean(v: str, n: int) -> str:
@@ -79,6 +85,8 @@ async def submit_crypto_order(body: CryptoOrderIn, request: Request,
     if body.package not in PACKAGES or body.asset not in ASSETS \
        or body.network not in NETWORKS:
         raise HTTPException(http.HTTP_400_BAD_REQUEST, "unknown selection")
+    ptype = body.payment_type if body.payment_type in PAYMENT_TYPES \
+        else "setup_plus_initial_month"
 
     reference = "SKLZ-" + secrets.token_hex(3).upper()
     row = {"reference": reference, "name": name, "email": email,
@@ -86,7 +94,7 @@ async def submit_crypto_order(body: CryptoOrderIn, request: Request,
            "package": body.package, "asset": body.asset,
            "network": body.network, "amount": _clean(body.amount, 40),
            "wallet": _clean(body.wallet, 120), "tx_hash": tx,
-           "status": "submitted"}
+           "payment_type": ptype, "status": "submitted"}
 
     def _insert():
         return sb.table("crypto_orders").insert(row).execute()
@@ -236,6 +244,18 @@ def _package_config() -> dict:
                         "display": f"${monthly:,}", "label": "per month"},
             "stripe": {"setup": d["stripe_setup"],
                        "monthly": d["stripe_monthly"]},
+            # Every customer pays both. Activation is setup + the first
+            # monthly period; the parts stay separate so the customer can
+            # see what each buys, and the total is stated because that is
+            # what the checkout actually charges.
+            "activation": {
+                "usd": setup + monthly,
+                "usdt": setup + monthly,
+                "sol": (None if sol_setup is None or sol_monthly is None
+                        else round(sol_setup + sol_monthly, 4)),
+                "display": f"${setup + monthly:,}",
+                "label": "due today",
+                "breakdown": f"${setup:,} setup + ${monthly:,} first month"},
         }
         if d.get("custom_from_usd"):
             entry["custom_from"] = {

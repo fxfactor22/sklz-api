@@ -53,3 +53,19 @@ create table if not exists public.demo_leads (
 create index if not exists demo_leads_status on public.demo_leads (status, created_at desc);
 alter table public.demo_leads enable row level security;
 revoke all on public.demo_leads from anon, authenticated;
+
+-- ---- what a crypto payment represents ----
+alter table public.crypto_orders
+  add column if not exists payment_type text not null
+      default 'setup_plus_initial_month';
+
+alter table public.crypto_orders
+  drop constraint if exists crypto_orders_status_valid;
+alter table public.crypto_orders
+  add constraint crypto_orders_status_valid check (status in
+    ('awaiting_payment','submitted','verifying','confirmed',
+     'activation_pending','activated','rejected','information_required'));
+
+alter table public.crypto_orders
+  add constraint crypto_orders_payment_type_valid check (payment_type in
+    ('setup','monthly','setup_plus_initial_month','renewal'));

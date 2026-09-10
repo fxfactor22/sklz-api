@@ -717,6 +717,88 @@ async def admin_setup(user=Depends(get_current_user),
 
 
 # ------------------------------------------------ guest checkout (pay first)
+# ── Signal Desk: setup + subscription in one Checkout ───────────────
+# Stripe bills one-time prices on the FIRST INVOICE of a subscription, so
+# a single session can charge the implementation fee and start the
+# monthly service together. That is the honest shape of the offer: every
+# customer pays both, so the checkout charges both and the page says so.
+#
+# The mapping is explicit and deliberately NOT the retail catalog —
+# copy_basic_monthly is SKLZ Core at $29 and has nothing to do with
+# Signal Desk. A test enforces this.
+SIGNAL_DESK_PACKAGES = {
+    "signal_desk":     {"setup": "sd_setup",    "monthly": "sd_monthly"},
+    "signal_desk_pro": {"setup": "sdpro_setup", "monthly": "sdpro_monthly"},
+    "pro_trader_os":   {"setup": "ptos_setup",  "monthly": "ptos_monthly"},
+}
+RETAIL_KEYS = {"suite_monthly", "suite_annual", "suite_lifetime",
+               "gpt_monthly", "gpt_annual", "bundle_monthly", "bundle_annual",
+               "bundle_founder", "copy_basic_monthly", "copy_crypto_monthly",
+               "copy_pro_monthly", "copy_basic_annual", "copy_crypto_annual",
+               "copy_pro_annual"}
+
+
+class PackageCheckoutIn(BaseModel):
+    package: str
+    ref: str = ""
+
+
+@router.post("/checkout-package")
+async def checkout_package(payload: PackageCheckoutIn) -> dict:
+    """One session: implementation fee + ongoing monthly service."""
+    pkg = (payload.package or "").strip()
+    if pkg not in SIGNAL_DESK_PACKAGES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown package")
+    keys = SIGNAL_DESK_PACKAGES[pkg]
+    # A Signal Desk sale must never be billed on a retail price.
+    for k in keys.values():
+        if k in RETAIL_KEYS:
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                "package is mapped to a retail product")
+        if k not in CATALOG:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                                f"{k} is not in the catalog")
+
+    setup_name, setup_cents, setup_interval = CATALOG[keys["setup"]]
+    mon_name, mon_cents, mon_interval = CATALOG[keys["monthly"]]
+    if setup_interval is not None or mon_interval != "month":
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            "setup must be one-time and service monthly")
+
+    stripe = _stripe()
+    params: dict = {
+        # subscription mode, with the one-time setup billed on invoice one
+        "mode": "subscription",
+        "line_items": [
+            {"price": _price_id(stripe, keys["setup"]), "quantity": 1},
+            {"price": _price_id(stripe, keys["monthly"]), "quantity": 1},
+        ],
+        "success_url": f"{SITE}/claim.html?sid={{CHECKOUT_SESSION_ID}}&p={pkg}",
+        "cancel_url": f"{SITE}/signal-desk.html#packages",
+        "metadata": {"package": pkg, "setup": keys["setup"],
+                     "monthly": keys["monthly"], "guest": "true"},
+        "subscription_data": {"metadata": {"package": pkg,
+                                           "setup_product": keys["setup"]}},
+    }
+    ref = (payload.ref or "").strip()
+    if ref:
+        if not _UUID_RE.match(ref):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                "ref must be a uuid")
+        params["client_reference_id"] = ref
+        params["metadata"]["ref"] = ref
+        params["subscription_data"]["metadata"]["ref"] = ref
+
+    try:
+        session = stripe.checkout.Session.create(**params)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            f"checkout unavailable: {str(exc)[:160]}") from exc
+    return {"ok": True, "url": session.url,
+            "due_today_cents": setup_cents + mon_cents,
+            "setup_cents": setup_cents, "monthly_cents": mon_cents}
+
+
 @router.post("/checkout-public")
 async def checkout_public(payload: CheckoutIn,
                           sb: Client = Depends(get_supabase)) -> dict:

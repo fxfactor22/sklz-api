@@ -63,8 +63,8 @@ def test_no_stripe_connect_or_payouts():
     for marker in ("acct_", "transfer_data", "on_behalf_of",
                    "application_fee", "payout", "stripe connect"):
         assert marker not in low, marker
-    # payment goes through the existing public checkout, nothing else
-    assert "/api/billing/checkout-public" in HTML
+    # payment goes through SKLZ's own checkout, nothing else
+    assert "/api/billing/checkout-package" in HTML
 
 
 def test_expiry_is_real_not_fake_scarcity():
@@ -258,13 +258,19 @@ def test_old_retail_products_are_not_reused_for_signal_desk():
         assert "copy_pro_monthly" not in page
 
 
-def test_no_combined_today_total_is_quoted():
-    for page in (PAGE, HTML):
-        low = page.lower()
-        assert "548" not in low and "$548" not in low
-        assert "today" not in low or "setup today" in low
-    assert "two separate charges" in PAGE
-    assert "two separate charges" in HTML
+def test_the_combined_total_is_quoted_because_it_is_charged():
+    """Earlier the rule was: never show a combined total, because the
+    checkout charged only one part. The checkout now charges setup AND
+    the first month in one session, so quoting the total is the honest
+    presentation — and hiding it would be the misleading one."""
+    assert '"label": "due today"' in API
+    assert "due today" in HTML
+    # never a bare total: the parts are always alongside it
+    assert '"breakdown"' in API
+    assert "one-time implementation" in HTML and "per month" in HTML
+    # the permanent page explains both halves rather than a single number
+    assert "one-time implementation plus an ongoing monthly service" in PAGE
+    assert "not one or the other" in PAGE
 
 
 def test_setup_and_monthly_are_labelled_distinctly():
@@ -329,10 +335,111 @@ def test_irreversibility_warning_on_both_crypto_options():
 
 
 def test_crypto_submission_records_which_charge():
-    assert "charge:CFG.charge" in HTML
-    assert "setup" in HTML and "monthly" in HTML
+    assert 'payment_type:"setup_plus_initial_month"' in HTML
+    assert "activation?.[" in HTML
 
 
 def test_prices_remain_configurable_by_env():
     for env in ("SKLZ_PRICE_", "SKLZ_SOL_", "SKLZ_WALLET_", "SKLZ_PKG_"):
         assert env in API, env
+
+
+# ── purchase semantics: setup AND monthly, never a choice ────────────
+def test_the_either_or_toggle_is_gone():
+    """A customer does not choose between implementation and service."""
+    for bad in ("setCharge(", 'id="ch_setup"', 'id="ch_monthly"',
+                "One-time setup</button>", "Monthly service</button>"):
+        assert bad not in HTML, bad
+
+
+def test_both_charges_are_presented_together():
+    assert 'id="dueBox"' in HTML
+    assert "one-time implementation" in HTML
+    assert "per month" in HTML
+    assert "due today" in HTML
+
+
+def test_activation_total_is_setup_plus_first_month():
+    """The checkout charges both, so the page states both."""
+    assert '"usd": setup + monthly' in API
+    assert '"breakdown": f"${setup:,} setup + ${monthly:,} first month"' in API
+    assert '"label": "due today"' in API
+
+
+def test_stripe_charges_setup_and_subscription_in_one_session():
+    assert "/api/billing/checkout-package" in HTML
+    assert '"mode": "subscription"' in BILL
+    fn = BILL[BILL.index("async def checkout_package("):]
+    fn = fn[:fn.index("@router.post(\"/checkout-public\")")]
+    assert 'keys["setup"]' in fn and 'keys["monthly"]' in fn
+    assert fn.count('"quantity": 1') == 2      # two line items
+
+
+def test_signal_desk_can_never_be_billed_on_a_retail_price():
+    assert "RETAIL_KEYS" in BILL
+    for retail in ("copy_basic_monthly", "copy_pro_monthly", "bundle_monthly",
+                   "suite_monthly", "gpt_monthly"):
+        assert retail in BILL.split("RETAIL_KEYS = {")[1].split("}")[0], retail
+    fn = BILL[BILL.index("async def checkout_package("):]
+    assert "if k in RETAIL_KEYS:" in fn
+    assert "mapped to a retail product" in fn
+    # the package map itself points only at Signal Desk keys
+    m = BILL.split("SIGNAL_DESK_PACKAGES = {")[1].split("}\n")[0]
+    for retail in ("copy_", "bundle_", "suite_", "gpt_"):
+        assert retail not in m, retail
+
+
+def test_setup_must_be_one_time_and_service_recurring():
+    fn = BILL[BILL.index("async def checkout_package("):]
+    assert 'setup_interval is not None or mon_interval != "month"' in fn
+
+
+def test_crypto_order_knows_what_it_bought():
+    for t in ("setup", "monthly", "setup_plus_initial_month", "renewal"):
+        assert f'"{t}"' in API, t
+    assert "PAYMENT_TYPES" in API
+    assert '"payment_type": ptype' in API
+    assert 'payment_type:"setup_plus_initial_month"' in HTML
+
+
+def test_information_required_status_exists():
+    assert '"information_required"' in API
+    sql = open("migrations/D2-migration.sql").read()
+    assert "information_required" in sql
+    assert "crypto_orders_payment_type_valid" in sql
+
+
+def test_crypto_renewal_expectation_is_stated():
+    assert "Renewals are paid monthly in USDT or" in HTML
+    assert HTML.count("Renewals are paid monthly") == 2   # both assets
+
+
+def test_qr_encodes_exactly_the_configured_wallet():
+    """QR value == displayed address == backend configuration, by
+    construction: one variable feeds all three."""
+    # backend is the only source
+    assert "CFG.usdt_address=w.usdt_trc20.address" in HTML
+    assert "CFG.sol_address=w.sol.address" in HTML
+    # the same variable is displayed and encoded
+    assert 'document.getElementById("addrUsdt").textContent=CFG.usdt_address' in HTML
+    assert 'qr("qrUsdt",CFG.usdt_address)' in HTML
+    assert 'document.getElementById("addrSol").textContent=CFG.sol_address' in HTML
+    assert 'qr("qrSol",CFG.sol_address)' in HTML
+    # and the encoder passes the value through untouched
+    fn = HTML[HTML.index("function qr(el,data){"):]
+    fn = fn[:fn.index("\n}")]
+    assert "encodeURIComponent(data)" in fn
+
+
+def test_setup_value_is_explained_on_both_pages():
+    assert "What the setup fee buys" in PAGE
+    assert "What the monthly fee buys" in PAGE
+    assert "go-live" in PAGE.lower()
+    assert "VPS · MT5 · SKLZ Runner" in HTML or "SKLZ Runner" in HTML
+
+
+def test_pro_trader_os_monthly_value_is_specific():
+    assert "website hosting" in PAGE.lower()
+    assert "ai services allowance" in PAGE.lower()
+    low = PAGE.lower()
+    assert "unlimited ai" not in low

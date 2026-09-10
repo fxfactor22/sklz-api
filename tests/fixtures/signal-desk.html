@@ -337,10 +337,31 @@ section{padding:60px 0;border-top:1px solid var(--line)}
     </div>
 
     <p style="text-align:center;color:var(--dim2);font-size:12.5px;margin-top:18px">
-      You pay the one-time setup today and the monthly service from then on —
-      two separate charges, exactly as shown. AI and automation allowances are
-      generous but not unlimited; unusually heavy use is quoted separately.</p>
+      Every plan is a one-time implementation plus an ongoing monthly service —
+      you buy both, not one or the other. The setup fee covers VPS, MT5, SKLZ
+      Runner, your master account, Telegram, the copier, testing and go-live.
+      The monthly covers the platform, automation, hosting, maintenance and
+      support. AI and automation allowances are generous but not unlimited;
+      unusually heavy use is quoted separately.</p>
   </section>
+
+    <div class="grid g2" style="margin-top:22px">
+      <div class="card">
+        <div style="font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;
+          color:var(--gold2);margin-bottom:10px">What the setup fee buys</div>
+        <div style="font-size:14px;color:#C6D0DC;line-height:1.9">
+          VPS preparation · MT5 installation · SKLZ Runner installation ·
+          master account connection · Telegram automation · copier
+          configuration · full system test · go-live assistance</div>
+      </div>
+      <div class="card">
+        <div style="font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;
+          color:var(--gold2);margin-bottom:10px">What the monthly fee buys</div>
+        <div style="font-size:14px;color:#C6D0DC;line-height:1.9">
+          Signal Desk platform access · signal automation · copy execution ·
+          hosting · maintenance · support<span id="os_extra"></span></div>
+      </div>
+    </div>
 
   <!-- ===== LEAD ===== -->
   <section id="demo">
@@ -393,6 +414,11 @@ const API = location.hostname==="localhost" ? "http://localhost:8000"
       const set=(id,v)=>{const e=document.getElementById(id); if(e&&v) e.textContent=v;};
       set("n_"+k,p.name); set("w_"+k,p.who);
       set("s_"+k,p.setup.display); set("m_"+k,p.monthly.display);
+      if(k==="pro_trader_os"){
+        const x=document.getElementById("os_extra");
+        if(x) x.textContent = " · plus for Pro Trader OS: website hosting, "+
+          "CRM, AI services allowance, business automation tools";
+      }
       if(p.custom_from){
         const c=document.getElementById("c_"+k);
         if(c) c.textContent = "Custom implementations quoted from $"+

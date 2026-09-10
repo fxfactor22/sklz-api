@@ -324,18 +324,14 @@ section{padding:34px 0}
 
     <div class="grid pkgs" id="pkgs"></div>
     <div style="text-align:center;margin-top:14px;font-size:12.5px;color:var(--dim2)">
-      You pay the one-time setup today and the monthly service from then on —
-      two separate charges, exactly as shown.</div>
+      Every plan is a one-time implementation plus an ongoing monthly service.
+      You pay both — the setup and your first month are charged today, then the
+      monthly service continues.</div>
 
     <div class="sec-h" style="margin-top:26px"><h2>Payment</h2>
       <span id="paySum">SKLZ Signal Desk</span></div>
 
-    <div style="display:flex;gap:8px;justify-content:center;margin-bottom:14px">
-      <button class="btn btn-gold" id="ch_setup" onclick="setCharge('setup')"
-        style="padding:9px 16px;font-size:13px">One-time setup</button>
-      <button class="btn btn-ghost" id="ch_monthly" onclick="setCharge('monthly')"
-        style="padding:9px 16px;font-size:13px">Monthly service</button>
-    </div>
+    <div class="card" id="dueBox" style="margin-bottom:14px"></div>
     <div class="grid pays">
       <div class="card pay sel" data-pay="stripe" onclick="pickPay(this)">
         <div class="m">💳</div><div class="n">Card</div>
@@ -380,7 +376,11 @@ section{padding:34px 0}
               <button class="cp" onclick="copy('amtUsdt2',this)">Copy amount</button></div>
           </div>
         </div>
-        <div style="text-align:center;margin-top:16px">
+        <div style="font-size:12px;color:var(--dim2);text-align:center;
+                    margin-top:12px">This activates your desk: implementation
+          plus the first monthly period. Renewals are paid monthly in USDT or
+          SOL until card billing is set up.</div>
+        <div style="text-align:center;margin-top:14px">
           <button class="btn btn-gold" onclick="go('paid')">I have paid →</button></div>
       </div>
 
@@ -405,7 +405,11 @@ section{padding:34px 0}
               <button class="cp" onclick="copy('amtSol2',this)">Copy amount</button></div>
           </div>
         </div>
-        <div style="text-align:center;margin-top:16px">
+        <div style="font-size:12px;color:var(--dim2);text-align:center;
+                    margin-top:12px">This activates your desk: implementation
+          plus the first monthly period. Renewals are paid monthly in USDT or
+          SOL until card billing is set up.</div>
+        <div style="text-align:center;margin-top:14px">
           <button class="btn btn-gold" onclick="go('paid')">I have paid →</button></div>
       </div>
     </div>
@@ -478,7 +482,8 @@ const CFG = {
   price: { signal_desk:{usd:null, usdt:null, sol:null, label:"SKLZ Signal Desk"},
            pro_trader_os:{usd:null, usdt:null, sol:null, label:"SKLZ Pro Trader OS"} },
   stripe_product: {},   // filled from the API
-  charge: "setup",      // setup | monthly
+  // Every customer buys BOTH. There is nothing to choose between.
+  charge: "activation",
   demo_ends: null
 };
 let pkg="signal_desk", pay="stripe";
@@ -532,9 +537,30 @@ function pickPay(el){
 }
 function refresh(){
   const p=CFG.price[pkg]; if(!p) return;
-  const part = CFG.charge==="monthly" ? p.monthly : p.setup;
+  const part = p.activation || p.setup;
   document.getElementById("paySum").textContent =
     `${p.label} · ${part.display} ${part.label}`;
+  const box=document.getElementById("dueBox");
+  if(box) box.innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr auto;gap:8px;
+                font-size:14px">
+      <div><b>${p.setup.display}</b> one-time implementation
+        <div style="font-size:12px;color:var(--dim2)">VPS · MT5 · SKLZ Runner ·
+          master account · Telegram · copier · testing · go-live</div></div>
+      <div style="text-align:right;color:var(--dim2);font-size:12px">setup</div>
+      <div style="border-top:1px solid var(--line);padding-top:8px">
+        <b style="color:var(--gold2)">${p.monthly.display}</b> per month
+        <div style="font-size:12px;color:var(--dim2)">platform · automation ·
+          hosting · maintenance · support</div></div>
+      <div style="text-align:right;color:var(--dim2);font-size:12px;
+                  border-top:1px solid var(--line);padding-top:8px">ongoing</div>
+      <div style="border-top:1px solid var(--line);padding-top:8px;
+                  font-size:15px"><b>${part.display} due today</b>
+        <div style="font-size:12px;color:var(--dim2)">${part.breakdown||""}</div>
+      </div>
+      <div style="text-align:right;border-top:1px solid var(--line);
+                  padding-top:8px"></div>
+    </div>`;
   // USDT tracks the USD figure. SOL is quoted only when an operator has
   // set one — SOL moves, and there is no rate feed here.
   const u = part.usdt ?? "—";
@@ -576,7 +602,8 @@ let PKG={};
     for(const [k,p] of Object.entries(PKG)){
       if(!p.available) continue;
       if(!first) first=k;
-      CFG.price[k]={label:p.name, setup:p.setup, monthly:p.monthly};
+      CFG.price[k]={label:p.name, setup:p.setup, monthly:p.monthly,
+                     activation:p.activation};
       CFG.stripe_product[k]={setup:p.stripe.setup, monthly:p.stripe.monthly};
       const el=document.createElement("div");
       el.className="card pkg"+(first===k?" sel":"");
@@ -586,7 +613,9 @@ let PKG={};
         <div class="price">${p.setup.display}<small> one-time setup</small></div>
         <div style="font-size:15px;color:var(--gold2);font-weight:700">
           + ${p.monthly.display}<small style="color:var(--dim);font-weight:500">
-          / month</small></div>`;
+          / month ongoing</small></div>
+        <div style="font-size:12px;color:var(--dim2);margin-top:6px">
+          ${p.activation ? p.activation.display+" due today" : ""}</div>`;
       box.appendChild(el);
     }
     if(first) pkg=first;
@@ -617,9 +646,11 @@ function hidePay(k){
 /* ---- Stripe ---- */
 async function stripe(){
   try{
-    const r=await fetch(API+"/api/billing/checkout-public",{
+    // one Checkout session charges the setup fee and starts the
+    // monthly subscription — the customer buys both, so both are billed
+    const r=await fetch(API+"/api/billing/checkout-package",{
       method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({product:CFG.stripe_product[pkg][CFG.charge]})});
+      body:JSON.stringify({package:pkg})});
     const d=await r.json();
     if(d&&d.url) location.href=d.url;
     else alert((d&&d.detail)||"Checkout is unavailable right now.");
@@ -632,8 +663,8 @@ async function submitPaid(){
   const body={
     name:val("f_name"), email:val("f_email"), telegram:val("f_tg"),
     package:val("f_pkg"), asset:val("f_asset"), network:val("f_net"),
-    charge:CFG.charge,
-    amount:String((CFG.price[val("f_pkg")]||{})[CFG.charge]?.[
+    payment_type:"setup_plus_initial_month",
+    amount:String((CFG.price[val("f_pkg")]||{}).activation?.[
       val("f_asset")==="USDT"?"usdt":"sol"] ?? ""),
     tx_hash:val("f_tx"),
     wallet:val("f_asset")==="USDT"?CFG.usdt_address:CFG.sol_address
@@ -655,14 +686,6 @@ async function submitPaid(){
                     "Telegram with your TXID and we'll activate you manually.";
     b.disabled=false; b.textContent="Submit for verification →";
   }
-}
-function setCharge(c){
-  CFG.charge=c;
-  document.getElementById("ch_setup").className =
-    "btn "+(c==="setup"?"btn-gold":"btn-ghost");
-  document.getElementById("ch_monthly").className =
-    "btn "+(c==="monthly"?"btn-gold":"btn-ghost");
-  refresh();
 }
 function val(id){return (document.getElementById(id).value||"").trim();}
 
