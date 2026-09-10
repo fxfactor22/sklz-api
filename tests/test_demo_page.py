@@ -443,3 +443,25 @@ def test_pro_trader_os_monthly_value_is_specific():
     assert "ai services allowance" in PAGE.lower()
     low = PAGE.lower()
     assert "unlimited ai" not in low
+
+
+def test_catalog_map_is_read_only_and_admin_only():
+    fn = BILL[BILL.index("async def catalog_map("):]
+    fn = fn[:fn.index('@router.post("/admin/setup")')]
+    assert "_require_admin(user)" in fn
+    for write in ("Price.create", "Product.create", "Session.create",
+                  ".modify(", ".delete("):
+        assert write not in fn, write
+    # it verifies against Stripe rather than trusting the catalog
+    assert "stripe_amount" in fn and '"matches"' in fn
+
+
+def test_catalog_map_never_returns_a_credential():
+    fn = BILL[BILL.index("async def catalog_map("):]
+    fn = fn[:fn.index('@router.post("/admin/setup")')]
+    assert "STRIPE_SECRET_KEY" in fn          # only to read the mode prefix
+    assert '[:8]' in fn                        # never the whole key
+    # check the CODE, not the docstring that names what it must not return
+    code = fn.split('"""', 2)[2]
+    for secret in ("webhook", "secret_key", "sk_live", "whsec"):
+        assert secret not in code.lower(), secret

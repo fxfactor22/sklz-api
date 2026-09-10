@@ -649,6 +649,53 @@ async def _handle_event(etype: str, obj: dict, sb: Client) -> dict:
 
 
 # -------------------------------------------------------------- admin setup
+@router.get("/admin/catalog-map")
+async def catalog_map(user=Depends(get_current_user)) -> dict:
+    """Read-only. What each catalog key actually resolves to in Stripe.
+
+    admin/setup creates prices by lookup_key but does not report the ids
+    it made, so there was no way to state the live mapping without
+    opening the dashboard. This reads it back and creates nothing.
+
+    Never returns a key, a secret or a webhook signing secret — only the
+    public product and price identifiers and the mode the account is in.
+    """
+    _require_admin(user)
+    stripe = _stripe()
+    prefix = os.environ.get("STRIPE_SECRET_KEY", "")[:8]
+    out = {"mode": "TEST" if "test" in prefix else "LIVE", "signal_desk": [],
+           "retail": []}
+    for key, (name, amount, interval) in CATALOG.items():
+        row = {"catalog_key": key, "name": name,
+               "amount": f"${amount/100:,.2f}",
+               "interval": interval or "one-time",
+               "price_id": None, "product_id": None, "found": False}
+        try:
+            res = stripe.Price.list(lookup_keys=[key], limit=1)
+            if res.data:
+                p = res.data[0]
+                row.update({"price_id": p.id,
+                            "product_id": (p.product if isinstance(p.product, str)
+                                           else getattr(p.product, "id", None)),
+                            "found": True})
+                # what Stripe actually holds, not what we intended
+                row["stripe_amount"] = f"${(p.unit_amount or 0)/100:,.2f}"
+                rec = getattr(p, "recurring", None)
+                row["stripe_interval"] = (rec.interval if rec else "one-time")
+                row["matches"] = (row["stripe_amount"] == row["amount"]
+                                  and row["stripe_interval"] == row["interval"])
+        except Exception as exc:  # noqa: BLE001
+            row["error"] = f"{type(exc).__name__}: {str(exc)[:120]}"
+        bucket = "signal_desk" if key in {
+            "sd_setup", "sd_monthly", "sdpro_setup", "sdpro_monthly",
+            "ptos_setup", "ptos_monthly"} else "retail"
+        out[bucket].append(row)
+    sd = out["signal_desk"]
+    out["ready"] = bool(sd) and all(r.get("found") and r.get("matches")
+                                    for r in sd)
+    return out
+
+
 @router.post("/admin/setup")
 async def admin_setup(user=Depends(get_current_user),
                       sb: Client = Depends(get_supabase)) -> dict:
