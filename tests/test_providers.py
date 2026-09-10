@@ -110,7 +110,7 @@ def test_a_closed_provider_cannot_be_linked():
 
 def test_two_providers_cannot_share_one_tenant():
     """Enforced by a partial unique index; asserted here as intent."""
-    sql = open("migrations/P0-migration.sql").read()
+    sql = open("/mnt/user-data/outputs/P0-migration.sql").read()
     assert "providers_iskra_tenant_uniq" in sql
     assert "unique index" in sql.lower()
     assert "where iskra_tenant_id is not null" in sql.lower()
@@ -118,20 +118,66 @@ def test_two_providers_cannot_share_one_tenant():
 
 # ── safety posture ───────────────────────────────────────────────────
 def test_providers_table_is_not_reachable_by_a_public_key():
-    sql = open("migrations/P0-migration.sql").read().lower()
+    sql = open("/mnt/user-data/outputs/P0-migration.sql").read().lower()
     assert "enable row level security" in sql
     assert "revoke all on public.providers from anon, authenticated" in sql
     assert "create policy" not in sql       # no policy = no public access
 
 
 def test_nothing_existing_is_rekeyed_in_this_migration():
-    sql = open("migrations/P0-migration.sql").read().lower()
+    sql = open("/mnt/user-data/outputs/P0-migration.sql").read().lower()
     for table in ("subscriptions", "copy_slaves", "journal_trades",
                   "signals", "bot_orders", "tg_leads"):
         assert f"alter table public.{table}" not in sql, table
 
 
 def test_status_is_independent_of_subscription_state():
-    sql = open("migrations/P0-migration.sql").read()
+    sql = open("/mnt/user-data/outputs/P0-migration.sql").read()
     assert "'draft', 'active', 'suspended', 'closed'" in sql
     assert "subscription" not in sql.split("check (status")[1][:200]
+
+
+# ── the admin allowlist must be the SAME one the rest of SKLZ uses ───
+def test_provider_rules_reads_the_canonical_admin_list():
+    """P0 invented OWNER_EMAIL. Every admin check that already worked
+    reads ADMIN_EMAILS, so provider routes refused the one account that
+    could reach every other admin endpoint."""
+    src = open("./provider_rules.py").read()
+    assert '"ADMIN_EMAILS", "fxfactor24@gmail.com"' in src
+    tv = open("./tv_access.py").read()
+    assert 'os.environ.get("ADMIN_EMAILS", "fxfactor24@gmail.com")' in tv
+
+
+def test_the_confirmed_owner_is_a_platform_admin():
+    import os, types, importlib, sys
+    sys.path.insert(0, ".")
+    import provider_rules
+    importlib.reload(provider_rules)
+    owner = types.SimpleNamespace(
+        id="99255796-3eb1-408d-8400-0f2eada29a18",
+        email="fxfactor24@gmail.com", role="authenticated")
+    for env in ("ADMIN_EMAILS", "OWNER_EMAIL"):
+        os.environ.pop(env, None)
+    assert provider_rules.is_platform_admin(owner) is True
+    os.environ["ADMIN_EMAILS"] = "fxfactor24@gmail.com"
+    assert provider_rules.is_platform_admin(owner) is True
+
+
+def test_a_jwt_role_of_authenticated_does_not_grant_admin():
+    """Supabase puts role='authenticated' on every signed-in user."""
+    import types, importlib, sys
+    sys.path.insert(0, ".")
+    import provider_rules
+    importlib.reload(provider_rules)
+    import os
+    os.environ["ADMIN_EMAILS"] = "fxfactor24@gmail.com"
+    stranger = types.SimpleNamespace(id="x", email="stranger@example.com",
+                                     role="authenticated")
+    assert provider_rules.is_platform_admin(stranger) is False
+
+
+def test_the_route_still_requires_platform_admin():
+    src = open("./orders_api.py").read()
+    fn = src[src.index("async def create_demo_link("):]
+    assert "rules.is_platform_admin(user)" in fn
+    assert "HTTP_403_FORBIDDEN" in fn

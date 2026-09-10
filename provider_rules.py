@@ -49,17 +49,25 @@ def is_valid_slug(value: str | None) -> bool:
 
 
 def _bootstrap_admin_emails() -> set[str]:
-    """The env allowlist, which is a BOOTSTRAP and not the model.
+    """The platform admin allowlist — the SAME one the rest of SKLZ uses.
 
-    Every admin check in SKLZ today is an email list in an environment
-    variable. That cannot be the permanent answer — it is unauditable,
-    it cannot be granted per provider, and it ties authority to an
-    address someone may change. `profiles.role` already exists and is
-    already carried on the user object; this list stays only so the first
-    admin can exist before any role has been assigned.
+    This originally read OWNER_EMAIL, a variable P0 invented. Every admin
+    check that already worked (tv_access, billing) reads ADMIN_EMAILS,
+    so provider routes refused the very account that could reach every
+    other admin endpoint. Reading both keeps this one list rather than
+    forking a second admin model: ADMIN_EMAILS is the canonical source,
+    OWNER_EMAIL is honoured because bot_ingest still uses it for its own
+    owner check.
+
+    `profiles.role` remains the intended permanent model; this list is
+    how the first admin exists before any role is assigned.
     """
-    raw = os.environ.get("OWNER_EMAIL", "")
-    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+    emails: set[str] = set()
+    for var, default in (("ADMIN_EMAILS", "fxfactor24@gmail.com"),
+                         ("OWNER_EMAIL", "")):
+        raw = os.environ.get(var, default)
+        emails |= {e.strip().lower() for e in raw.split(",") if e.strip()}
+    return emails
 
 
 def is_platform_admin(user) -> bool:
