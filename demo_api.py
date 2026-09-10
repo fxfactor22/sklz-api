@@ -178,6 +178,78 @@ def _rate_limited(retry_after: int):
 
 
 # ── endpoints ───────────────────────────────────────────────────────
+@router.post("/_diag")
+async def diagnostic(request: Request) -> dict:
+    """Non-secret fingerprints of what SKLZ actually received.
+
+    Exists to settle one question with evidence instead of theory: when
+    two correct-looking HMAC implementations disagree, the answer is in
+    the bytes, and neither side can see the other's.
+
+    Returns NOTHING that could help forge a signature — no secret, no
+    full HMAC, only lengths, digests and 12-character prefixes. Off
+    unless SKLZ_DEMO_DIAG=1, and it performs no action and touches no
+    state whatever the signature says.
+    """
+    if os.environ.get("SKLZ_DEMO_DIAG", "0") != "1":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
+
+    raw = await request.body()
+    header = request.headers.get("x-sklz-signature", "")
+    ts, sig = "", ""
+    for part in header.split(","):
+        k, _, v = part.strip().partition("=")
+        if k == "t":
+            ts = v
+        elif k == "v1":
+            sig = v
+
+    secret = os.environ.get("SKLZ_DEMO_SECRET", "")
+    payload = (ts + ".").encode() + raw
+    calc = (hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+            if secret else "")
+
+    skew = None
+    try:
+        skew = round(time.time() - int(ts))
+    except ValueError:
+        pass
+
+    return {
+        "received": {
+            "header_present": bool(header),
+            "header_raw_len": len(header),
+            "t": ts,
+            "t_len": len(ts),
+            "sig_len": len(sig),
+            "sig_prefix": sig[:12].lower(),
+            "content_type": request.headers.get("content-type", ""),
+            "content_length_header": request.headers.get("content-length", ""),
+        },
+        "body": {
+            "byte_length": len(raw),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "first_40_chars": raw[:40].decode("utf-8", "replace"),
+            "last_20_chars": raw[-20:].decode("utf-8", "replace"),
+        },
+        "signing_payload": {
+            "byte_length": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        },
+        "hmac": {
+            "calculated_prefix": calc[:12],
+            "received_prefix": sig[:12].lower(),
+            "match": bool(calc) and hmac.compare_digest(calc, sig.lower()),
+        },
+        "clock": {"server_unix": int(time.time()), "skew_seconds": skew,
+                  "within_window": skew is not None
+                  and abs(skew) <= MAX_SKEW_SECONDS},
+        "secret": {"configured": bool(secret),
+                   "fingerprint": hashlib.sha256(
+                       secret.encode()).hexdigest()[:12] if secret else ""},
+    }
+
+
 @router.post("/trade/create")
 async def trade_create(request: Request) -> dict:
     body = await _verify(request)

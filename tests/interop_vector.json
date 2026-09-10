@@ -1,0 +1,46 @@
+{
+  "secret": "interop-test-secret",
+  "timestamp": "1789030000",
+  "cases": {
+    "contract_example": {
+      "body": "{\"demo_session_id\":\"test-session\",\"action\":\"positions\"}",
+      "body_bytes": 55,
+      "sha256_body": "4008478eb88f26969d9455de0cab542a69c141ee060a0ed6d160a1f9d729f806",
+      "payload_bytes": 66,
+      "sha256_payload": "30b98214228cd72394464bc33fca110050645433040c7e3b25857872be2125a4",
+      "hmac": "72da6d9f0d98c29597dcf15f06631fc28cdc333dba2522ada21c93f8fa87adb9"
+    },
+    "empty_body": {
+      "body": "",
+      "body_bytes": 0,
+      "sha256_body": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "payload_bytes": 11,
+      "sha256_payload": "9c1878eefa2143441187eaa73bc61a668612c50382df3627d3d1608ea7eda785",
+      "hmac": "afd353fd4fbf3d4c9987e640d584b231995b8d0553fc3fe92c71c26fa3471600"
+    },
+    "empty_object": {
+      "body": "{}",
+      "body_bytes": 2,
+      "sha256_body": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "payload_bytes": 13,
+      "sha256_payload": "d2246658e33f1fa26f4e4ffef12ea6477ef3515fce89f6dbdb9adccc81e3f00b",
+      "hmac": "99c88a861744a6a461e7c4faa90c2c1ec74e9ac6d7fe86bd3e930cc6af99e588"
+    },
+    "ordinary_trade": {
+      "body": "{\"demo_session\":\"860e8222aaaa4444bbbb5555cccc6666\",\"idempotency_key\":\"k-1\",\"symbol\":\"EURUSD\",\"side\":\"buy\",\"volume\":1,\"sl\":1.07,\"tp\":1.099}",
+      "body_bytes": 138,
+      "sha256_body": "0a7aaa7c077685e540c247931b1f29c60626c857d4aa6fc568c6b22f76e535a5",
+      "payload_bytes": 149,
+      "sha256_payload": "73ed22971f41f35767eb5dc16968a8a909c2621e93031c7e25efe2bb08aabdea",
+      "hmac": "29f939e1b12ceae48f1dedfd6daa234799ea80dabeff745773b3a43bf42a18e0"
+    },
+    "unicode_ar_ru": {
+      "body": "{\"note\":\"تجربة\",\"note_ru\":\"демо\"}",
+      "body_bytes": 42,
+      "sha256_body": "72f59a0504bb245534a6c326dfac426b4281fe32dd9a2d8d6473ca27b1f833e7",
+      "payload_bytes": 53,
+      "sha256_payload": "985512779445f78fed7a50f53c84673a4b3701bd055b9aba80eb61fc180c226e",
+      "hmac": "f4537b67a287e58e65ec319fa3090127aecbbef18e03525c48face7293729f1c"
+    }
+  }
+}
