@@ -115,6 +115,15 @@ section{padding:60px 0;border-top:1px solid var(--line)}
 .pk li:before{content:"✓";position:absolute;left:0;color:var(--green);font-size:12px}
 .pk .plus{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;
  color:var(--gold2);margin:16px 0 8px}
+.prices{display:flex;align-items:center;gap:12px;margin:18px 0 4px;
+ padding:14px;background:var(--panel2);border:1px solid var(--line);border-radius:12px}
+.prices .amt{display:block;font-size:26px;font-weight:800;letter-spacing:-.8px}
+.prices .lab{display:block;font-size:11px;color:var(--dim2);
+ text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
+.prices .plus2{color:var(--dim2);font-size:18px}
+.prices .mo .amt{color:var(--gold2)}
+.custom{margin-top:12px;font-size:12.5px;color:var(--dim2);
+ border-top:1px solid var(--line);padding-top:10px}
 .badge{position:absolute;top:-11px;right:20px;background:var(--gold);color:#12100A;
  font-size:10px;font-weight:800;letter-spacing:.1em;padding:4px 10px;border-radius:6px}
 
@@ -262,43 +271,75 @@ section{padding:60px 0;border-top:1px solid var(--line)}
 
   <!-- ===== PACKAGES ===== -->
   <section id="packages">
-    <div class="sh"><h2>Two ways to run it</h2>
-      <p>Signal Desk is the trading technology. Pro Trader OS adds the business
-         around it.</p></div>
-    <div class="grid g2">
-      <div class="card pk">
-        <h3>SKLZ Signal Desk</h3>
-        <div class="who">For traders and signal providers</div>
-        <div class="price" id="p_desk">Talk to us about pricing
-          <small id="p_desk_s"></small></div>
-        <ul><li>SKLZ Runner</li><li>Master MT5 connection</li>
-          <li>Automated Telegram signals</li><li>Signal lifecycle updates</li>
-          <li>MT5 master → slave copier</li><li>Fixed Lot and Auto Scale</li>
-          <li>Per-account controls and emergency stop</li>
-          <li>Manual trade controls</li><li>Trading journal and analytics</li>
-          <li>Provider dashboard</li><li>Assisted setup and go-live</li></ul>
-        <a class="btn btn-ghost" style="margin-top:20px;width:100%;text-align:center"
-           href="#demo">Request private demo</a>
+    <div class="sh"><h2>Three ways to run it</h2>
+      <p>Signal Desk is the trading technology. Pro Trader OS adds the business around it. Every tier is a one-time setup plus a monthly service.</p></div>
+    <div class="grid g3" id="pkgGrid">
+      <div class="card pk" data-k="signal_desk">
+        <h3 id="n_signal_desk">SKLZ Signal Desk</h3>
+        <div class="who" id="w_signal_desk">For traders and signal providers</div>
+        <div class="prices">
+          <div class="setup"><span class="amt" id="s_signal_desk">—</span>
+            <span class="lab">one-time setup</span></div>
+          <div class="plus2">+</div>
+          <div class="mo"><span class="amt" id="m_signal_desk">—</span>
+            <span class="lab">per month</span></div>
+        </div>
+        <ul><li>SKLZ Runner + assisted VPS setup</li>
+          <li>Master MT5 connection</li><li>Automated Telegram signals</li>
+          <li>Signal lifecycle updates</li><li>MT5 copy trader</li>
+          <li>Fixed Lot / Auto Scale</li><li>Activate or pause any account</li>
+          <li>Manual trade controls</li><li>Journal and analytics</li>
+          <li>Signal Desk dashboard</li></ul>
+        <a class="btn btn-ghost" style="margin-top:18px;width:100%;
+          text-align:center" href="#demo">Request private demo</a>
       </div>
-      <div class="card pk pro">
-        <span class="badge">FULL BUSINESS</span>
-        <h3>SKLZ Pro Trader OS</h3>
-        <div class="who">For providers running it as a business</div>
-        <div class="price" id="p_os">Talk to us about pricing
-          <small id="p_os_s"></small></div>
-        <ul><li>Everything in Signal Desk</li></ul>
-        <div class="plus">Plus the business layer</div>
-        <ul><li>Branded professional website</li><li>CRM</li>
-          <li>Unified inbox</li><li>AI response team</li>
-          <li>Lead capture and funnels</li><li>Subscriber and client management</li>
-          <li>Academy</li><li>Marketing automation</li></ul>
-        <a class="btn btn-gold" style="margin-top:20px;width:100%;text-align:center"
-           href="#demo">Request private demo</a>
+
+      <div class="card pk pro" data-k="signal_desk_pro">
+        <span class="badge">MOST CHOSEN</span>
+        <h3 id="n_signal_desk_pro">SKLZ Signal Desk Pro</h3>
+        <div class="who" id="w_signal_desk_pro">For established signal businesses</div>
+        <div class="prices">
+          <div class="setup"><span class="amt" id="s_signal_desk_pro">—</span>
+            <span class="lab">one-time setup</span></div>
+          <div class="plus2">+</div>
+          <div class="mo"><span class="amt" id="m_signal_desk_pro">—</span>
+            <span class="lab">per month</span></div>
+        </div>
+        <ul><li>Everything in Signal Desk</li>
+          <li>More connected copy accounts</li>
+          <li>Deeper operational controls</li>
+          <li>Advanced journal and analytics</li>
+          <li>Priority setup and support</li>
+          <li>Assistance with more complex trading setups</li></ul>
+        <a class="btn btn-gold" style="margin-top:18px;width:100%;
+          text-align:center" href="#demo">Request private demo</a>
+      </div>
+
+      <div class="card pk" data-k="pro_trader_os">
+        <h3 id="n_pro_trader_os">SKLZ Pro Trader OS</h3>
+        <div class="who" id="w_pro_trader_os">The full business layer</div>
+        <div class="prices">
+          <div class="setup"><span class="amt" id="s_pro_trader_os">—</span>
+            <span class="lab">one-time setup</span></div>
+          <div class="plus2">+</div>
+          <div class="mo"><span class="amt" id="m_pro_trader_os">—</span>
+            <span class="lab">per month</span></div>
+        </div>
+        <ul><li>Everything in Signal Desk Pro</li>
+          <li>Branded website and hosting</li><li>CRM and unified inbox</li>
+          <li>AI response team and webchat</li><li>Lead capture and funnels</li>
+          <li>Subscriber and client operations</li>
+          <li>Marketing automation</li><li>Academy</li></ul>
+        <div class="custom" id="c_pro_trader_os"></div>
+        <a class="btn btn-ghost" style="margin-top:18px;width:100%;
+          text-align:center" href="#demo">Request private demo</a>
       </div>
     </div>
+
     <p style="text-align:center;color:var(--dim2);font-size:12.5px;margin-top:18px">
-      Setup, subscription and support options are quoted per provider —
-      audience size and account count differ.</p>
+      You pay the one-time setup today and the monthly service from then on —
+      two separate charges, exactly as shown. AI and automation allowances are
+      generous but not unlimited; unusually heavy use is quoted separately.</p>
   </section>
 
   <!-- ===== LEAD ===== -->
@@ -346,14 +387,19 @@ const API = location.hostname==="localhost" ? "http://localhost:8000"
     if(!r.ok) return;
     const d = await r.json();
     if(!d || !d.packages) return;
-    const set=(id,p)=>{ if(!p) return;
-      const el=document.getElementById(id); if(!el) return;
-      el.firstChild.nodeValue = p.display || "Talk to us about pricing";
-      const s=document.getElementById(id+"_s");
-      if(s && p.note) s.textContent = " "+p.note; };
-    set("p_desk", d.packages.signal_desk);
-    set("p_os",   d.packages.pro_trader_os);
-  }catch(e){/* the page reads correctly without it */}
+    for(const [k,p] of Object.entries(d.packages)){
+      const card=document.querySelector(`.pk[data-k="${k}"]`);
+      if(!p.available){ if(card) card.style.display="none"; continue; }
+      const set=(id,v)=>{const e=document.getElementById(id); if(e&&v) e.textContent=v;};
+      set("n_"+k,p.name); set("w_"+k,p.who);
+      set("s_"+k,p.setup.display); set("m_"+k,p.monthly.display);
+      if(p.custom_from){
+        const c=document.getElementById("c_"+k);
+        if(c) c.textContent = "Custom implementations quoted from $"+
+          p.custom_from.usd.toLocaleString()+" setup.";
+      }
+    }
+  }catch(e){/* the page still reads correctly without prices */}
 })();
 
 async function sendLead(){
@@ -375,7 +421,7 @@ async function sendLead(){
       '<div style="text-align:center;padding:22px">'+
       '<div style="font-size:40px">✅</div>'+
       '<h3 style="margin-top:10px;font-size:20px">Request received</h3>'+
-      '<p style="color:var(--dim);margin-top:8px">We\\'ll build your private '+
+      '<p style="color:var(--dim);margin-top:8px">We will build your private '+
       'Signal Desk and send the link to '+v("l_email")+'. '+
       'Usually within a working day.</p></div>';
   }catch(e){

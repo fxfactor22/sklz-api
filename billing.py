@@ -65,6 +65,19 @@ CATALOG = {
     "copy_basic_annual":   ("SKLZ Core", 27800, "year"),
     "copy_crypto_annual":  ("SKLZ Plus", 47000, "year"),
     "copy_pro_annual":     ("SKLZ Pro", 75800, "year"),
+
+    # ---- Signal Desk commercial model ----
+    # Setup and monthly are SEPARATE products because _checkout builds one
+    # line item and picks its mode from the interval: a session is either
+    # a payment or a subscription, never both. Keeping them separate also
+    # keeps the offer honest — the customer is told a setup fee and a
+    # monthly fee, and that is exactly what they are charged.
+    "sd_setup":      ("SKLZ Signal Desk — Setup", 49900, None),
+    "sd_monthly":    ("SKLZ Signal Desk", 4900, "month"),
+    "sdpro_setup":   ("SKLZ Signal Desk Pro — Setup", 99900, None),
+    "sdpro_monthly": ("SKLZ Signal Desk Pro", 9900, "month"),
+    "ptos_setup":    ("SKLZ Pro Trader OS — Setup", 149900, None),
+    "ptos_monthly":  ("SKLZ Pro Trader OS", 14900, "month"),
 }
 PLAN_NAMES = {
     "suite_monthly": "Indicator Suite", "suite_annual": "Indicator Suite",
@@ -72,6 +85,9 @@ PLAN_NAMES = {
     "gpt_monthly": "TradeGPT Pro", "gpt_annual": "TradeGPT Pro",
     "bundle_monthly": "Bundle", "bundle_annual": "Bundle",
     "bundle_founder": "Bundle (Founder)",
+    "sd_setup": "Signal Desk — Setup", "sd_monthly": "Signal Desk",
+    "sdpro_setup": "Signal Desk Pro — Setup", "sdpro_monthly": "Signal Desk Pro",
+    "ptos_setup": "Pro Trader OS — Setup", "ptos_monthly": "Pro Trader OS",
     "copy_basic_monthly": "SKLZ Core",
     "copy_crypto_monthly": "SKLZ Plus",
     "copy_pro_monthly": "SKLZ Pro",

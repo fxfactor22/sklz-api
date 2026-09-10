@@ -161,27 +161,104 @@ async def set_status(reference: str, body: StatusIn,
     return {"ok": True, "reference": reference, "status": body.status}
 
 
-# ── packages: pricing lives in config, never in the page ────────────
-# §18: no hard-coded pricing until admin pricing is finalised. Unset
-# means the page says "talk to us", which is true, rather than showing a
-# number somebody would have to honour.
+# ── commercial model: one server-side source ────────────────────────
+# Prices, wallets and quoted crypto amounts live here, not in markup.
+# Every value is overridable by environment variable so the offer can
+# change without a frontend deploy.
+#
+# Wallets default to the confirmed public receiving addresses. They are
+# PUBLIC addresses — never a key, never a seed. If one is cleared, the
+# corresponding payment option disappears from the page rather than
+# showing something a customer might send money to.
+import os as _os
+
+WALLET_USDT_TRC20 = "TTjmrD5Vkp4jQUe2ACmo4YGcL8zGkQ3U4s"
+WALLET_SOL = "8y4eKQDLeoy1P7fAdjXk9cb1bwLCzqjUsV5KgWkQ64Ya"
+
+PACKAGE_DEFS = [
+    {"key": "signal_desk", "name": "SKLZ Signal Desk",
+     "who": "For traders and signal providers",
+     "setup_usd": 499, "monthly_usd": 49,
+     "stripe_setup": "sd_setup", "stripe_monthly": "sd_monthly"},
+    {"key": "signal_desk_pro", "name": "SKLZ Signal Desk Pro",
+     "who": "For established signal businesses",
+     "setup_usd": 999, "monthly_usd": 99,
+     "stripe_setup": "sdpro_setup", "stripe_monthly": "sdpro_monthly"},
+    {"key": "pro_trader_os", "name": "SKLZ Pro Trader OS",
+     "who": "The full business layer",
+     "setup_usd": 1499, "monthly_usd": 149,
+     "stripe_setup": "ptos_setup", "stripe_monthly": "ptos_monthly",
+     "custom_from_usd": 1999},
+]
+
+
+def _num_env(name: str, default):
+    raw = _os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw) if "." in raw else int(raw)
+    except ValueError:
+        return default
+
+
+def _wallets() -> dict:
+    """Public receiving addresses. Empty means the option is hidden."""
+    usdt = _os.environ.get("SKLZ_WALLET_USDT_TRC20", WALLET_USDT_TRC20).strip()
+    sol = _os.environ.get("SKLZ_WALLET_SOL", WALLET_SOL).strip()
+    return {
+        "usdt_trc20": {"address": usdt, "network": "TRON (TRC20)",
+                       "asset": "USDT", "available": bool(usdt),
+                       "warning": "USDT — TRC20 ONLY"},
+        "sol": {"address": sol, "network": "Solana", "asset": "SOL",
+                "available": bool(sol), "warning": "SOL — SOLANA NETWORK ONLY"},
+    }
+
+
 def _package_config() -> dict:
-    import os
+    """The commercial model as the pages should present it."""
     out = {}
-    for key, env in (("signal_desk", "SKLZ_PRICE_SIGNAL_DESK"),
-                     ("pro_trader_os", "SKLZ_PRICE_PRO_TRADER_OS")):
-        display = os.environ.get(env, "").strip()
-        note = os.environ.get(env + "_NOTE", "").strip()
-        out[key] = {"display": display or "Talk to us about pricing",
-                    "note": note,
-                    "configured": bool(display)}
+    for d in PACKAGE_DEFS:
+        k = d["key"].upper()
+        setup = _num_env(f"SKLZ_PRICE_{k}_SETUP", d["setup_usd"])
+        monthly = _num_env(f"SKLZ_PRICE_{k}_MONTHLY", d["monthly_usd"])
+        # SOL moves. There is no rate feed in this phase, so an amount is
+        # quoted only when an operator has set one; otherwise the page
+        # asks the customer to request it rather than inventing a figure.
+        sol_setup = _num_env(f"SKLZ_SOL_{k}_SETUP", None)
+        sol_monthly = _num_env(f"SKLZ_SOL_{k}_MONTHLY", None)
+        entry = {
+            "key": d["key"], "name": d["name"], "who": d["who"],
+            "available": _os.environ.get(f"SKLZ_PKG_{k}", "1") != "0",
+            "setup": {"usd": setup, "usdt": setup, "sol": sol_setup,
+                      "display": f"${setup:,}", "label": "one-time setup"},
+            "monthly": {"usd": monthly, "usdt": monthly, "sol": sol_monthly,
+                        "display": f"${monthly:,}", "label": "per month"},
+            "stripe": {"setup": d["stripe_setup"],
+                       "monthly": d["stripe_monthly"]},
+        }
+        if d.get("custom_from_usd"):
+            entry["custom_from"] = {
+                "usd": _num_env(f"SKLZ_PRICE_{k}_CUSTOM_FROM",
+                                d["custom_from_usd"]),
+                "note": "custom implementations quoted from"}
+        out[d["key"]] = entry
     return out
 
 
 @router.get("/packages")
 async def packages() -> dict:
-    """Public. What the product pages should display for each package."""
-    return {"ok": True, "packages": _package_config()}
+    """Public. The whole commercial model, for both product pages.
+
+    Setup and monthly are returned as separate figures deliberately: the
+    customer is shown a setup fee and a monthly fee, and Stripe charges
+    exactly those, in separate sessions. No combined "today" total is
+    quoted, because no combined charge is made.
+    """
+    return {"ok": True, "packages": _package_config(),
+            "wallets": _wallets(),
+            "crypto_note": ("Crypto transfers are irreversible. Confirm the "
+                            "wallet address and network before sending.")}
 
 
 class LeadIn(BaseModel):

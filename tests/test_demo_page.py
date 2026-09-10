@@ -26,14 +26,16 @@ def test_the_paused_account_is_skipped_not_forced():
 
 
 def test_both_packages_and_their_features():
-    assert 'data-pkg="signal_desk"' in HTML
-    assert 'data-pkg="pro_trader_os"' in HTML
-    for f in ("SKLZ Runner", "Master MT5 connection", "Telegram distribution",
-              "Fixed Lot", "Auto Scale", "Trading journal", "Provider dashboard"):
-        assert f in HTML, f
-    for f in ("Branded website", "CRM and unified inbox", "AI sales assistant",
-              "Academy", "Marketing automation", "ISKRA business tools"):
-        assert f in HTML, f
+    """Feature lists live on the permanent product page. The demo builds
+    its cards from the API so pricing and availability cannot drift."""
+    for f in ("SKLZ Runner", "Master MT5 connection",
+              "Automated Telegram signals", "Fixed Lot / Auto Scale",
+              "Journal and analytics", "Signal Desk dashboard"):
+        assert f in PAGE, f
+    for f in ("Branded website", "CRM and unified inbox",
+              "AI response team", "Academy", "Marketing automation"):
+        assert f in PAGE, f
+    assert 'id="pkgs"' in HTML and "p.stripe.setup" in HTML
 
 
 def test_all_three_payment_methods():
@@ -43,8 +45,8 @@ def test_all_three_payment_methods():
 
 def test_trc20_warning_is_unmissable():
     assert "USDT — TRC20 ONLY" in HTML
-    assert "sending on any other network loses the funds" in HTML
     assert "SOL — SOLANA NETWORK ONLY" in HTML
+    assert HTML.count("Crypto transfers are irreversible") == 2
 
 
 def test_wallets_qr_and_copy_buttons():
@@ -192,14 +194,14 @@ def test_pricing_is_not_hard_coded_on_either_page():
     # PRICING must not be hard-coded. Simulated account figures on the
     # demo desk are different — they are labelled demo data, not an offer.
     for label, src, ids in (
-            ("product page", PAGE, ("p_desk", "p_os")),
-            ("demo page", HTML, ("pr_signal_desk", "pr_pro_trader_os",
-                                 "paySum", "amtUsdt", "amtSol"))):
+            ("product page", PAGE, ("s_signal_desk", "m_signal_desk",
+                                    "s_signal_desk_pro", "m_signal_desk_pro",
+                                    "s_pro_trader_os", "m_pro_trader_os")),
+            ("demo page", HTML, ("paySum", "amtUsdt", "amtSol"))):
         for i in ids:
             m = re.search(r'id="%s"[^>]*>([^<]*)' % i, src)
             if m:
                 assert not re.search(r"\d", m.group(1)), f"{label}:{i}"
-    assert "Talk to us about pricing" in PAGE
     assert "/api/orders/packages" in PAGE
     assert "/api/orders/packages" in HTML
 
@@ -215,7 +217,122 @@ def test_lead_endpoint_is_validated_and_rate_limited():
     assert "_EMAIL.match(email)" in API
 
 
-def test_packages_endpoint_defaults_to_talk_to_us():
-    assert 'display or "Talk to us about pricing"' in API
-    assert "SKLZ_PRICE_SIGNAL_DESK" in API
-    assert "SKLZ_PRICE_PRO_TRADER_OS" in API
+def test_packages_endpoint_serves_the_agreed_defaults():
+    """Pricing is final, so defaults are real — and still env-overridable
+    so the offer can change without a frontend deploy."""
+    for name, setup, monthly in (("signal_desk", 499, 49),
+                                 ("signal_desk_pro", 999, 99),
+                                 ("pro_trader_os", 1499, 149)):
+        assert f'"key": "{name}"' in API, name
+        assert f'"setup_usd": {setup}' in API, name
+        assert f'"monthly_usd": {monthly}' in API, name
+    assert '"custom_from_usd": 1999' in API
+    assert 'SKLZ_PRICE_{k}_SETUP' in API or "SKLZ_PRICE_" in API
+
+
+# ── commercial model ─────────────────────────────────────────────────
+BILL = open("./billing.py").read()
+
+
+def test_six_stripe_products_exist_at_the_agreed_prices():
+    for key, cents, interval in (
+            ("sd_setup", 49900, "None"), ("sd_monthly", 4900, '"month"'),
+            ("sdpro_setup", 99900, "None"), ("sdpro_monthly", 9900, '"month"'),
+            ("ptos_setup", 149900, "None"), ("ptos_monthly", 14900, '"month"')):
+        import re
+        m = re.search(r'"%s":\s*\("([^"]+)",\s*(\d+),\s*(\S+?)\)' % key, BILL)
+        assert m, key
+        assert int(m.group(2)) == cents, (key, m.group(2))
+        assert m.group(3) == interval, (key, m.group(3))
+
+
+def test_setup_is_one_time_and_monthly_recurring():
+    """_checkout picks its mode from the interval, so these must differ."""
+    assert '"mode": "subscription" if interval else "payment"' in BILL
+
+
+def test_old_retail_products_are_not_reused_for_signal_desk():
+    """copy_basic_monthly is SKLZ Core at $29 — not a Signal Desk offer."""
+    for page in (PAGE, HTML):
+        assert "copy_basic_monthly" not in page
+        assert "copy_pro_monthly" not in page
+
+
+def test_no_combined_today_total_is_quoted():
+    for page in (PAGE, HTML):
+        low = page.lower()
+        assert "548" not in low and "$548" not in low
+        assert "today" not in low or "setup today" in low
+    assert "two separate charges" in PAGE
+    assert "two separate charges" in HTML
+
+
+def test_setup_and_monthly_are_labelled_distinctly():
+    assert "one-time setup" in PAGE and "per month" in PAGE
+    assert "one-time setup" in HTML
+
+
+def test_three_tiers_on_both_pages():
+    for k in ("signal_desk", "signal_desk_pro", "pro_trader_os"):
+        assert k in PAGE, k
+    assert 'id="pkgs"' in HTML          # demo builds them from the API
+
+
+def test_custom_pro_trader_os_is_from_not_charged():
+    assert "custom_from" in PAGE
+    assert "quoted from" in PAGE.lower()
+    # and never auto-charged
+    assert "1999" not in HTML
+
+
+def test_no_wallet_address_is_hard_coded_in_markup():
+    """An address in HTML is an address that goes stale unseen."""
+    import re
+    for name, src in (("product page", PAGE), ("demo page", HTML)):
+        # TRON addresses start T and are 34 chars; Solana are base58 32-44
+        assert not re.search(r'"T[1-9A-HJ-NP-Za-km-z]{33}"', src), name
+        assert "TQmZ4sK9" not in src and "7xKXtg2CW" not in src
+    assert "usdt_address: \"\"" in HTML or 'usdt_address: ""' in HTML
+
+
+def test_wallets_come_from_the_server_and_hide_when_unset():
+    assert "WALLET_USDT_TRC20" in API and "WALLET_SOL" in API
+    assert "TTjmrD5Vkp4jQUe2ACmo4YGcL8zGkQ3U4s" in API      # confirmed USDT
+    assert "8y4eKQDLeoy1P7fAdjXk9cb1bwLCzqjUsV5KgWkQ64Ya" in API  # confirmed SOL
+    assert '"available": bool(usdt)' in API
+    assert "hidePay(" in HTML
+
+
+def test_no_private_key_or_seed_is_ever_requested():
+    for src in (PAGE, HTML, API):
+        low = src.lower()
+        for bad in ("private key", "seed phrase", "mnemonic", "secret key"):
+            assert bad not in low, bad
+
+
+def test_sol_amount_is_never_invented():
+    """SOL moves and there is no rate feed in this phase."""
+    assert "SKLZ_SOL_" in API
+    assert '"sol": sol_setup' in API
+    assert "request amount" in HTML          # shown when unset
+    for old in ("0.85", "2.27"):
+        assert old not in HTML, old
+
+
+def test_usdt_tracks_the_usd_figure():
+    assert '"usdt": setup' in API and '"usdt": monthly' in API
+
+
+def test_irreversibility_warning_on_both_crypto_options():
+    assert HTML.count("Crypto transfers are irreversible") == 2
+    assert "USDT — TRC20 ONLY" in HTML and "SOL — SOLANA NETWORK ONLY" in HTML
+
+
+def test_crypto_submission_records_which_charge():
+    assert "charge:CFG.charge" in HTML
+    assert "setup" in HTML and "monthly" in HTML
+
+
+def test_prices_remain_configurable_by_env():
+    for env in ("SKLZ_PRICE_", "SKLZ_SOL_", "SKLZ_WALLET_", "SKLZ_PKG_"):
+        assert env in API, env
