@@ -22,6 +22,8 @@ from supabase import Client
 
 from auth import get_current_user
 from db import get_supabase
+from routing import (RoutingScope, resolve_destinations,
+                     get_resolver, CHANNEL_KEYS as _RCHK)
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
 
@@ -99,49 +101,18 @@ def enrich_levels(payload: dict) -> dict:
 
 
 # ── telegram ─────────────────────────────────────────────────────────
-def _tg_channel(category: str) -> str:
-    return os.environ.get(f"TG_CHANNEL_{category.upper()}", "")
-
-
-def _mirror_targets() -> list[dict]:
-    """Extra destinations that receive EVERY signal, whatever its category.
-
-    Each may use its own bot token, so a group administered by a different
-    bot still works without changing the main one.
-
-        TG_MIRROR_CHAT    -100xxxxxxxxxx
-        TG_MIRROR_TOKEN   (optional; falls back to TELEGRAM_BOT_TOKEN)
-
-    A second one can be added with TG_MIRROR2_CHAT / TG_MIRROR2_TOKEN.
-    """
-    out = []
-    for prefix in ("TG_MIRROR", "TG_MIRROR2", "TG_MIRROR3"):
-        chat = os.environ.get(f"{prefix}_CHAT", "").strip()
-        if not chat:
-            continue
-        out.append({
-            "chat": chat,
-            "token": (os.environ.get(f"{prefix}_TOKEN", "").strip()
-                      or os.environ.get("TELEGRAM_BOT_TOKEN", "")),
-            "name": prefix.lower(),
-        })
-    return out
-
-
-CHANNEL_KEYS = ("forex", "crypto", "stocks", "metals")
-
-
 def list_channels() -> list[dict]:
     """Every channel we can post to, and whether it is configured."""
     out = []
     for k in CHANNEL_KEYS:
         out.append({"id": k, "label": k.capitalize(),
-                    "configured": bool(_tg_channel(k))})
+                    "configured": get_resolver().describe()["categories"].get(k, False)})
+    desc = get_resolver().describe()
     out.append({"id": "general", "label": "General / marketing",
-                "configured": bool(_general_channel())})
-    for m in _mirror_targets():
-        out.append({"id": m["name"], "label": f"Signal group ({m['name']})",
-                    "configured": True})
+                "configured": bool(desc.get("general"))})
+    for m in desc.get("mirrors", []):
+        out.append({"id": m["key"], "label": f"Signal group ({m['key']})",
+                    "configured": bool(m.get("chat_id"))})
     return out
 
 
@@ -150,31 +121,22 @@ def send_to_channels(channels: list[str], text: str) -> dict:
 
     `channels` may contain category names, "general", or "all".
     """
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    if not token:
-        return {"sent": False, "reason": "TELEGRAM_BOT_TOKEN not set", "results": {}}
-
-    wanted = set(channels or [])
-    if "all" in wanted:
-        wanted = set(CHANNEL_KEYS) | {"general"}
+    dests = resolve_destinations(
+        RoutingScope(channels=tuple(channels or []), purpose="broadcast"))
+    if not any(d.token for d in dests):
+        return {"sent": False, "reason": "TELEGRAM_BOT_TOKEN not set",
+                "results": {}}
 
     results, any_ok = {}, False
-    if "all" in (channels or []) or "mirrors" in wanted:
-        for m in _mirror_targets():
-            try:
-                ok = _post_telegram(m["chat"], text, m["token"])
-            except Exception:
-                ok = False
-            results[m["name"]] = "sent" if ok else "failed"
-            any_ok = any_ok or ok
-        wanted.discard("mirrors")
-    for name in sorted(wanted):
-        chat = _general_channel() if name == "general" else _tg_channel(name)
-        if not chat:
-            results[name] = "not configured"
+    for d in dests:
+        if not d.enabled:
+            results[d.key] = "not configured"
             continue
-        ok = _post_telegram(chat, text)
-        results[name] = "sent" if ok else "failed"
+        try:
+            ok = deliver(d, text)
+        except Exception:  # noqa: BLE001
+            ok = False
+        results[d.key] = "sent" if ok else "failed"
         any_ok = any_ok or ok
     return {"sent": any_ok, "results": results}
 
@@ -196,8 +158,17 @@ def format_signal(sig: dict) -> str:
     )
 
 
+def deliver(dest, text: str) -> bool:
+    """Telegram delivery adapter. Takes a resolved Destination and sends.
+
+    It does NOT resolve routing. Given a destination with no credential it
+    fails rather than reaching for the environment, because a sender that
+    can rediscover tokens is a second routing system in disguise.
+    """
+    return _post_telegram(dest.chat_id, text, dest.token)
+
+
 def _post_telegram(chat: str, text: str, token: str = "") -> bool:
-    token = token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
     if not token or not chat:
         return False
     url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -213,34 +184,29 @@ def _post_telegram(chat: str, text: str, token: str = "") -> bool:
         return False
 
 
-def _general_channel() -> str:
-    # public/marketing channel that receives ALL signals. Accept several names.
-    for name in ("TG_CHANNEL_SIGNALS", "TG_CHANNEL_GENERAL", "TG_CHANNEL_ALL",
-                 "TG_CHANNEL_PUBLIC", "TG_CHANNEL_MARKETING", "TG_CHANNEL_MAIN"):
-        v = os.environ.get(name, "")
-        if v:
-            return v
-    return ""
-
-
 def send_to_telegram(category: str, text: str) -> dict:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    if not token:
+    """Publish one signal. Destinations come from the resolver, not here."""
+    dests = resolve_destinations(RoutingScope(category=category,
+                                              purpose="signal"))
+    if not any(d.token for d in dests):
         return {"sent": False, "reason": "TELEGRAM_BOT_TOKEN not set"}
-    cat_chat = _tg_channel(category)
-    gen_chat = _general_channel()
-    cat_ok = _post_telegram(cat_chat, text) if cat_chat else False
+
+    by_key = {d.key: d for d in dests}
+    cat_d = by_key.get(category)
+    gen_d = by_key.get("general")
+    cat_chat = cat_d.chat_id if cat_d else ""
+    cat_ok = deliver(cat_d, text) if (cat_d and cat_d.enabled) else False
     # every signal also goes to the public/marketing channel
-    gen_ok = _post_telegram(gen_chat, text) if gen_chat else None
+    gen_ok = deliver(gen_d, text) if gen_d else None
 
     # and to any mirror destinations — groups that take every signal
     # regardless of category, each possibly via its own bot
     mirrors = {}
-    for m in _mirror_targets():
+    for m in [d for d in dests if not d.primary]:
         try:
-            mirrors[m["name"]] = _post_telegram(m["chat"], text, m["token"])
-        except Exception:
-            mirrors[m["name"]] = False
+            mirrors[m.key] = deliver(m, text)
+        except Exception:  # noqa: BLE001
+            mirrors[m.key] = False
 
     return {"sent": bool(cat_ok or gen_ok or any(mirrors.values())),
             "category_channel": cat_ok,
@@ -326,7 +292,8 @@ async def entitlements(user=Depends(get_current_user),
         pass
     return {"plan": plan, "allowed": allowed, "enabled": prefs,
             "all_categories": CATEGORIES,
-            "channels": {c: bool(_tg_channel(c)) for c in CATEGORIES}}
+            "channels": {c: get_resolver().describe()["categories"].get(c, False)
+                         for c in CATEGORIES}}
 
 
 class PrefsIn(BaseModel):
