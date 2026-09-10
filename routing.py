@@ -223,6 +223,24 @@ class EnvTelegramDestinationResolver(DestinationResolver):
                                 token=Secret(self._sales_token()),
                                 enabled=bool(chat))]
 
+        # The demo signal channel. Deliberately disabled unless BOTH the
+        # chat and an explicit enable flag are set: §14 of the demo
+        # contract says do not publish to @sklzlabsdemo until the
+        # integration verification stage, and a destination that goes live
+        # because someone set one variable is not disabled.
+        if scope.purpose == "demo_signal":
+            chat = os.environ.get("TG_DEMO_CHAT", "").strip()
+            on = os.environ.get("TG_DEMO_ENABLED", "0") == "1"
+            return [Destination(
+                key="demo_signals", chat_id=chat,
+                token=Secret(os.environ.get("TG_DEMO_TOKEN", "").strip()
+                             or self._sales_token()),
+                language=scope.language or "en",
+                enabled=bool(chat and on),
+                meta={"label": "SKLZ Demo Signals",
+                      "reason": "" if (chat and on)
+                      else "demo delivery disabled"})]
+
         # A user's direct message. The credential is ours; the chat is the
         # caller's, so it is routing context rather than configuration.
         if scope.purpose == "alert":
