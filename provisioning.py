@@ -127,7 +127,14 @@ class LifecycleIn(BaseModel):
 
 
 # ── diagnostics ─────────────────────────────────────────────────────
-@router.get("/_iskra-diag")
+# The diagnostics live under a THREE-segment static path.
+#
+# `providers.py` owns `GET /api/providers/{provider_id}`, a single-segment
+# catch-all mounted first, and it swallowed `/api/providers/_iskra-diag`
+# whole — the router read "_iskra-diag" as a provider id. Mount order
+# would have hidden it rather than removed it; a path shape that cannot
+# be mistaken for an id removes it.
+@router.get("/integration/iskra/diag")
 async def iskra_diag(user=Depends(get_current_user)) -> dict:
     """Compare fingerprints before debugging anything else.
 
@@ -477,3 +484,120 @@ async def iskra_status(provider_id: str,
              "offboarded": "linked_offboarded"}.get(life, "linked_unknown")
     return {"ok": True, "state": state, "provider_status": prov["status"],
             "tenant": tenant, "link": result.get("link") or {}}
+
+
+@router.post("/integration/iskra/interop-proof")
+async def interop_proof(user=Depends(get_current_user),
+                        sb: Client = Depends(get_supabase)) -> dict:
+    """Prove signed interoperability WITHOUT creating a business.
+
+    Two probes, because they prove different things:
+
+      A. a wrong signature   -> expect 401. Proves the rejection path.
+      B. a correct signature
+         over an invalid body -> expect 400. THIS is the positive proof:
+                                 a 400 means the signature verified and
+                                 the body was rejected afterwards.
+
+    A passing (A) alone is frequently mistaken for evidence that signing
+    works. It is not; it is evidence that refusing works.
+
+    Both target `lifecycle`, which cannot bring a business into
+    existence under any validation outcome, and (B) omits
+    `idempotency_key`, which the contract makes a 400.
+    """
+    if not rules.is_platform_admin(user):
+        raise HTTPException(http.HTTP_403_FORBIDDEN, "platform admin only")
+
+    before = _side_effect_snapshot(sb)
+
+    mine = iskra.secret_fingerprint()
+    if not mine:
+        return {"ok": False, "verdict": "sklz_secret_missing",
+                "detail": "ISKRA_PROVISIONING_SECRET is not set on SKLZ; "
+                          "the interop proof cannot run",
+                "sklz_fingerprint": "", "side_effects": before}
+
+    try:
+        theirs_raw = iskra.diag()
+    except iskra.IskraError as exc:
+        return {"ok": False, "verdict": "iskra_unreachable",
+                "error": exc.code, "detail": exc.detail,
+                "sklz_fingerprint": mine, "side_effects": before}
+    theirs = str((theirs_raw.get("secret") or {}).get("fingerprint") or "")
+
+    if not theirs:
+        verdict = "iskra_secret_missing"
+    elif theirs != mine:
+        verdict = "fingerprint_mismatch"
+    else:
+        verdict = "match"
+
+    out = {"sklz_fingerprint": mine, "iskra_fingerprint": theirs,
+           "verdict": verdict, "iskra_server_time": theirs_raw.get(
+               "server_time"), "base_url": iskra.base_url()}
+
+    if verdict != "match":
+        out["ok"] = False
+        out["detail"] = ("fingerprints differ — the two sides hold "
+                         "different strings; no request will ever verify"
+                         if verdict == "fingerprint_mismatch" else
+                         "ISKRA has no provisioning secret configured")
+        out["side_effects"] = before
+        return out
+
+    negative = iskra.probe_bad_signature()
+    positive = iskra.probe_signed_invalid_body()
+    after = _side_effect_snapshot(sb)
+
+    neg_ok = negative.get("status") == 401
+    # 400 is the contract answer. A 404 would also prove the signature
+    # verified (lookup happens after auth), so it is reported as a pass
+    # with a note rather than silently accepted or wrongly failed.
+    pos_status = positive.get("status")
+    pos_ok = pos_status in (400, 404)
+
+    out.update({
+        "ok": bool(neg_ok and pos_ok and before == after),
+        "negative_wrong_signature": {
+            "expected": 401, "got": negative.get("status"),
+            "pass": neg_ok, "body": negative.get("body"),
+            "proves": "the rejection path only"},
+        "positive_signed_invalid_body": {
+            "expected": 400, "got": pos_status, "pass": pos_ok,
+            "body": positive.get("body"),
+            "proves": ("the signature verified and the body was rejected "
+                       "afterwards — signing interoperates")
+            if pos_status == 400 else
+            ("a 404 also proves the signature verified, since the lookup "
+             "runs after authentication" if pos_status == 404 else
+             "signature verification did NOT succeed")},
+        "side_effects": {"before": before, "after": after,
+                         "unchanged": before == after},
+    })
+    _audit(sb, None, "interop_proof", user,
+           {"verdict": verdict, "negative": negative.get("status"),
+            "positive": pos_status, "unchanged": before == after})
+    return out
+
+
+def _side_effect_snapshot(sb: Client) -> dict:
+    """Counts that would move if anything had actually been created."""
+    snap = {"linked_providers": None, "provisioning_intents": None,
+            "succeeded_intents": None}
+    try:
+        rows = (sb.table("providers").select("id,iskra_tenant_id")
+                .execute()).data or []
+        snap["linked_providers"] = len(
+            [r for r in rows if r.get("iskra_tenant_id")])
+    except Exception:
+        pass
+    try:
+        rows = (sb.table("provisioning_intents").select("id,state")
+                .execute()).data or []
+        snap["provisioning_intents"] = len(rows)
+        snap["succeeded_intents"] = len(
+            [r for r in rows if r.get("state") == "succeeded"])
+    except Exception:
+        pass
+    return snap

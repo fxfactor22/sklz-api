@@ -256,3 +256,94 @@ def test_audit_events_cover_the_required_set():
                   "owner_invite_requested", "lifecycle_request",
                   "lifecycle_result"):
         assert f'"{event}"' in src, event
+
+
+# ── P1.1: route collision, permanently ───────────────────────────────
+def test_diag_path_cannot_be_read_as_a_provider_id():
+    """`GET /api/providers/{provider_id}` is a single-segment catch-all
+    mounted first, and it swallowed `/api/providers/_iskra-diag` whole."""
+    src = open("./provisioning.py").read()
+    assert '@router.get("/integration/iskra/diag")' in src
+    assert '@router.get("/_iskra-diag")' not in src
+    # three segments: it cannot match /{provider_id} (one) or
+    # /{provider_id}/provision (two)
+    path = "/integration/iskra/diag"
+    assert len([p for p in path.split("/") if p]) == 3
+
+
+def test_no_single_segment_static_route_remains_under_providers():
+    """Any one-segment static path here is shadowed by the catch-all."""
+    import re
+    for name in ("provisioning.py", "providers.py"):
+        src = open(f"./{name}").read()
+        for m in re.finditer(r'@router\.(get|post|patch)\("(/[^"]*)"\)', src):
+            path = m.group(2)
+            parts = [p for p in path.split("/") if p]
+            if len(parts) == 1 and not parts[0].startswith("{"):
+                # /mine is defined BEFORE the catch-all in providers.py,
+                # which is the one case where order genuinely saves it
+                assert name == "providers.py" and parts[0] == "mine", path
+
+
+def test_mine_is_declared_before_the_catch_all():
+    src = open("./providers.py").read()
+    assert src.index('@router.get("/mine")') < \
+        src.index('@router.get("/{provider_id}")')
+
+
+def test_diag_and_proof_stay_platform_admin_only():
+    src = open("./provisioning.py").read()
+    for fn in ("async def iskra_diag(", "async def interop_proof("):
+        body = src[src.index(fn):]
+        body = body[:body.index("\n@router") if "\n@router" in body
+                    else len(body)]
+        assert "rules.is_platform_admin(user)" in body, fn
+
+
+# ── P1.1: the two proofs ─────────────────────────────────────────────
+def test_the_positive_probe_targets_an_endpoint_that_cannot_create():
+    """Even if every validation passed, lifecycle makes no business."""
+    src = open("./iskra_client.py").read()
+    fn = src[src.index("def probe_signed_invalid_body("):]
+    fn = fn[:fn.index("\ndef _raw_probe")]
+    assert "/api/provisioning/lifecycle" in fn
+    assert "/api/provisioning/tenant" not in fn
+    assert "body: dict = {}" in fn          # no idempotency_key -> 400
+
+
+def test_the_negative_probe_sends_a_wrong_mac_not_a_missing_header():
+    src = open("./iskra_client.py").read()
+    fn = src[src.index("def probe_bad_signature("):]
+    fn = fn[:fn.index("\ndef probe_signed_invalid_body")]
+    assert "'0' * 64" in fn                  # correct shape, wrong value
+    assert "x-iskra-signature" in fn
+
+
+def test_a_401_and_a_400_prove_different_things():
+    """A passing negative test is not evidence that signing works."""
+    src = open("./provisioning.py").read()
+    assert "the rejection path only" in src
+    assert "signing interoperates" in src
+
+
+def test_the_proof_records_a_side_effect_snapshot_either_side():
+    src = open("./provisioning.py").read()
+    fn = src[src.index("async def interop_proof("):]
+    assert fn.index("before = _side_effect_snapshot(sb)") < \
+        fn.index("probe_bad_signature()")
+    assert "after = _side_effect_snapshot(sb)" in fn
+    assert '"unchanged": before == after' in fn
+
+
+def test_the_proof_refuses_to_run_without_a_local_secret():
+    src = open("./provisioning.py").read()
+    fn = src[src.index("async def interop_proof("):]
+    assert fn.index('if not mine:') < fn.index("probe_bad_signature()")
+    assert "sklz_secret_missing" in fn
+
+
+def test_every_configuration_verdict_exists():
+    src = open("./provisioning.py").read()
+    for verdict in ("match", "fingerprint_mismatch", "sklz_secret_missing",
+                    "iskra_secret_missing", "iskra_unreachable"):
+        assert f'"{verdict}"' in src, verdict

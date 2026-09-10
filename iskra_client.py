@@ -196,6 +196,65 @@ def _request(method: str, path: str, body: dict | None,
     return status, data if isinstance(data, dict) else {}
 
 
+def probe_bad_signature() -> dict:
+    """NEGATIVE proof: a deliberately wrong signature must be refused.
+
+    Proves the rejection path and nothing else — which is worth saying,
+    because a passing negative test is often mistaken for evidence that
+    signing works. It is not. See probe_signed_invalid_body.
+    """
+    body = {"idempotency_key": "interop-negative", "provider_id": "probe"}
+    raw = json.dumps(body, separators=(",", ":")).encode("utf-8")
+    t = str(int(time.time()))
+    req = urllib.request.Request(
+        base_url() + "/api/provisioning/lifecycle", data=raw, method="POST",
+        headers={"content-type": "application/json",
+                 # correct shape, wrong mac
+                 "x-iskra-signature": f"t={t},v1={'0' * 64}"})
+    return _raw_probe(req)
+
+
+def probe_signed_invalid_body() -> dict:
+    """POSITIVE proof, with no side effect available to it.
+
+    A correctly signed request carrying a body ISKRA must reject. If the
+    answer is 400 rather than 401, the signature verified — which is the
+    only way to prove the signing path works without creating a company.
+
+    The target is `lifecycle` deliberately: even if every validation
+    passed, lifecycle cannot bring a business into existence. And the
+    body omits `idempotency_key`, which the contract makes a 400.
+    """
+    body: dict = {}
+    raw = json.dumps(body, separators=(",", ":")).encode("utf-8")
+    header, _ = sign(raw)
+    req = urllib.request.Request(
+        base_url() + "/api/provisioning/lifecycle", data=raw, method="POST",
+        headers={"content-type": "application/json",
+                 "x-iskra-signature": header})
+    return _raw_probe(req)
+
+
+def _raw_probe(req) -> dict:
+    """Send and report, without raising — a probe wants the status."""
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            return {"status": resp.status,
+                    "body": _small(resp.read())}
+    except urllib.error.HTTPError as exc:
+        return {"status": exc.code, "body": _small(exc.read())}
+    except Exception as exc:  # noqa: BLE001
+        return {"status": 0, "error": f"{type(exc).__name__}: {exc}"[:200]}
+
+
+def _small(raw: bytes) -> dict:
+    try:
+        data = json.loads(raw.decode("utf-8", "replace") or "{}")
+    except ValueError:
+        return {"raw": raw.decode("utf-8", "replace")[:200]}
+    return redact(data) if isinstance(data, dict) else {"raw": str(data)[:200]}
+
+
 # ── the five contract endpoints ─────────────────────────────────────
 def diag() -> dict:
     """Unsigned fingerprint check. The first thing to run, always."""
