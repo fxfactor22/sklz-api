@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from supabase import Client
 
 from db import get_supabase
+from aio import offload
 from routing import RoutingScope, resolve_destinations
 
 router = APIRouter(prefix="/api/signals", tags=["signal-lifecycle"])
@@ -266,18 +267,27 @@ async def summary_loop(app=None) -> None:
                 text = format_summary(day, week)
                 # Destinations come from the resolver; this loop no longer
                 # knows that they happen to live in environment variables.
-                sent = 0
-                for d in resolve_destinations(
-                        RoutingScope(purpose="summary")):
-                    if d.enabled and _tg(d.chat_id, d.token.reveal(), text):
-                        sent += 1
-                try:
-                    import sklz_arabic
-                    if sklz_arabic.post(
-                            sklz_arabic.format_summary_ar(day, week)):
-                        sent += 1
-                except Exception:  # noqa: BLE001
-                    pass
+                # The whole send block runs on a worker thread: this loop
+                # is an asyncio task, so a blocking send here stalls the
+                # API exactly as it would inside a request handler.
+                # Offloading once keeps the sends in their original order.
+                def _send_all() -> int:
+                    n = 0
+                    for d in resolve_destinations(
+                            RoutingScope(purpose="summary")):
+                        if d.enabled and _tg(d.chat_id, d.token.reveal(),
+                                             text):
+                            n += 1
+                    try:
+                        import sklz_arabic
+                        if sklz_arabic.post(
+                                sklz_arabic.format_summary_ar(day, week)):
+                            n += 1
+                    except Exception:  # noqa: BLE001
+                        pass
+                    return n
+
+                sent = await offload(_send_all)
                 sent_on = today
                 print(f"[signal-summary] posted to {sent} channel(s)")
             except Exception as exc:  # noqa: BLE001

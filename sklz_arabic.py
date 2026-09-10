@@ -44,6 +44,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request, status
 
 import policy
+from aio import offload
 from routing import RoutingScope, resolve_destinations
 
 router = APIRouter(prefix="/api/arabic", tags=["arabic"])
@@ -467,8 +468,8 @@ async def content_loop(log=print) -> None:
                 slot, label = SLOTS[idx]
                 stamp = f"{today}:{slot}"
                 if _state["last"].get(slot) != stamp:
-                    text = compose(slot)
-                    if text and post(text):
+                    text = await offload(compose, slot)
+                    if text and await offload(post, text):
                         _state["last"][slot] = stamp
                         _state["posted"] += 1
                         log(f"[arabic] posted {label} ({slot})")
@@ -525,8 +526,10 @@ async def bots(request: Request) -> dict:
     out = {}
     for name in _TOKEN_VARS:
         val = os.environ.get(name, "").strip()
-        out[name] = _bot_username(val) if val else "not set"
-    out["_active_for_arabic"] = _bot_username(_token()) or "none"
+        out[name] = (await offload(_bot_username, val)) if val \
+            else "not set"
+    out["_active_for_arabic"] = (await offload(_bot_username, _token())
+                                 or "none")
     out["_channel"] = _chat() or "not set"
     return out
 
@@ -538,7 +541,7 @@ async def preview(slot: str, request: Request) -> dict:
     if slot not in dict(SLOTS):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             f"slot must be one of {[s for s, _ in SLOTS]}")
-    text, reason = compose_debug(slot)
+    text, reason = await offload(compose_debug, slot)
     return {"slot": slot, "text": text, "blocked": not text,
             "reason": reason, "chars": len(text)}
 
@@ -547,7 +550,7 @@ async def preview(slot: str, request: Request) -> dict:
 async def welcome(request: Request, pin: bool = True) -> dict:
     """Post (and pin) the Arabic welcome message with the Start button."""
     _admin(request)
-    res = send_welcome(pin=pin)
+    res = await offload(send_welcome, pin=pin)
     if not res.get("ok"):
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, res.get("error", ""))
     return res
@@ -560,12 +563,12 @@ async def post_now(slot: str, request: Request,
     _admin(request)
     if slot not in dict(SLOTS):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown slot")
-    text, reason = compose_debug(slot)
+    text, reason = await offload(compose_debug, slot)
     if not text:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             f"post not written — {reason}")
     if image_url:
-        if not post_photo(text, image_url):
+        if not await offload(post_photo, text, image_url):
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY,
                 "Telegram refused the photo — check the URL is publicly "
@@ -573,7 +576,7 @@ async def post_now(slot: str, request: Request,
                 + _state.get("last_error", ""))
         _state["posted"] += 1
         return {"ok": True, "slot": slot, "text": text, "with_image": True}
-    if not post(text):
+    if not await offload(post, text):
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             "Telegram refused the message — is the bot an "
                             "admin of the channel?")

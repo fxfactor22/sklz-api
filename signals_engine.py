@@ -22,6 +22,7 @@ from supabase import Client
 
 from auth import get_current_user
 from db import get_supabase
+from aio import offload
 from routing import (RoutingScope, resolve_destinations,
                      get_resolver, CHANNEL_KEYS as _RCHK)
 
@@ -244,14 +245,16 @@ async def signal_webhook(key: str, payload: dict,
         # never lose the Telegram send just because the DB hiccuped
         print(f"[signals] db insert failed: {exc}")
 
-    tg = send_to_telegram(category, format_signal(sig))
+    # Off the event loop. The webhook still waits for the real Telegram
+    # outcome — every other request no longer waits behind it.
+    tg = await offload(send_to_telegram, category, format_signal(sig))
     # The Arabic channel gets the same signal WRITTEN in Arabic, not the
     # English text forwarded like a mirror would. This belongs here, in
     # the webhook, because this is where the structured signal exists —
     # send_to_telegram only ever sees the finished English string.
     try:
         import sklz_arabic
-        tg["arabic"] = sklz_arabic.send_signal(sig)
+        tg["arabic"] = await offload(sklz_arabic.send_signal, sig)
     except Exception as exc:  # noqa: BLE001
         tg["arabic"] = False
         print(f"[signals] arabic send failed: {type(exc).__name__}: {exc}")
