@@ -34,6 +34,8 @@ naming it now would prejudge the answer.
 from __future__ import annotations
 
 import os
+
+import envflags
 from dataclasses import dataclass, field
 
 # Categories that have their own channel today.
@@ -206,23 +208,14 @@ class EnvTelegramDestinationResolver(DestinationResolver):
 
     # ---- the one entry point ----
     def resolve(self, scope: RoutingScope) -> list[Destination]:
-        # Arabic is its own destination with its own bot, whatever the
-        # purpose — signal, summary, generated content or welcome post.
-        if scope.language == "ar":
-            chat = self._arabic_chat()
-            return [Destination(key="arabic", chat_id=chat,
-                                token=Secret(self._arabic_token()),
-                                language="ar", enabled=bool(chat))]
-
-        # The scanner's own channel. Separate from the summary channel even
-        # though the summary falls back to the same variable — they are two
-        # purposes that happen to share a default, not one destination.
-        if scope.purpose == "scanner_alert":
-            chat = os.environ.get("ALERT_CHANNEL_ID", "").strip()
-            return [Destination(key="scanner_channel", chat_id=chat,
-                                token=Secret(self._sales_token()),
-                                enabled=bool(chat))]
-
+        # PURPOSE IS CHECKED BEFORE LANGUAGE, deliberately.
+        #
+        # The reverse order shipped in D1, and it meant an Arabic-language
+        # DEMO signal matched the Arabic branch first and resolved to the
+        # PRODUCTION Arabic channel — a live audience — with no enable
+        # flag in the way, while the response still reported the demo
+        # label. A demo scope must be incapable of resolving anywhere
+        # except the demo destination.
         # The demo signal channel. Deliberately disabled unless BOTH the
         # chat and an explicit enable flag are set: §14 of the demo
         # contract says do not publish to @sklzlabsdemo until the
@@ -230,7 +223,7 @@ class EnvTelegramDestinationResolver(DestinationResolver):
         # because someone set one variable is not disabled.
         if scope.purpose == "demo_signal":
             chat = os.environ.get("TG_DEMO_CHAT", "").strip()
-            on = os.environ.get("TG_DEMO_ENABLED", "0") == "1"
+            on = envflags.flag("TG_DEMO_ENABLED")
             return [Destination(
                 key="demo_signals", chat_id=chat,
                 token=Secret(os.environ.get("TG_DEMO_TOKEN", "").strip()
@@ -240,6 +233,26 @@ class EnvTelegramDestinationResolver(DestinationResolver):
                 meta={"label": "SKLZ Demo Signals",
                       "reason": "" if (chat and on)
                       else "demo delivery disabled"})]
+
+        # Production Arabic channel. Reached only after the demo
+        # purpose above has declined the scope.
+        if scope.language == "ar":
+            chat = self._arabic_chat()
+            return [Destination(key="arabic", chat_id=chat,
+                                token=Secret(self._arabic_token()),
+                                language="ar", enabled=bool(chat))]
+
+
+        # Arabic is its own destination with its own bot, whatever the
+        # purpose — signal, summary, generated content or welcome post.
+        # The scanner's own channel. Separate from the summary channel even
+        # though the summary falls back to the same variable — they are two
+        # purposes that happen to share a default, not one destination.
+        if scope.purpose == "scanner_alert":
+            chat = os.environ.get("ALERT_CHANNEL_ID", "").strip()
+            return [Destination(key="scanner_channel", chat_id=chat,
+                                token=Secret(self._sales_token()),
+                                enabled=bool(chat))]
 
         # A user's direct message. The credential is ours; the chat is the
         # caller's, so it is routing context rather than configuration.

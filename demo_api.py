@@ -30,6 +30,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Request, status
 from supabase import Client
 
+import envflags
 import policy
 from db import get_supabase
 from routing import RoutingScope, resolve_destinations
@@ -191,7 +192,7 @@ async def diagnostic(request: Request) -> dict:
     unless SKLZ_DEMO_DIAG=1, and it performs no action and touches no
     state whatever the signature says.
     """
-    if os.environ.get("SKLZ_DEMO_DIAG", "0") != "1":
+    if not envflags.flag("SKLZ_DEMO_DIAG"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
 
     raw = await request.body()
@@ -619,6 +620,21 @@ async def signal_send(request: Request) -> dict:
                "message_id": None}
         _store_signal(sb, session, sig_id, pos, lang, text, "disabled",
                       "delivery_disabled")
+        return {"ok": True, "signal": _settle(sb, session, key, rec)}
+
+    # Independent of routing: a demo signal may only ever be delivered to
+    # the demo destination. Routing already guarantees that — and it
+    # guaranteed it before too, right up until a branch order let an
+    # Arabic demo signal resolve to a production channel. Two locks.
+    if dest.key != "demo_signals":
+        rec = {"signal_id": sig_id, "state": "disabled",
+               "reason": "wrong_destination", "text": text,
+               "destination_label": label, "delivered_at": None,
+               "message_id": None}
+        print(f"[demo] REFUSED delivery: resolver returned '{dest.key}', "
+              f"which is not the demo destination")
+        _store_signal(sb, session, sig_id, pos, lang, text, "disabled",
+                      "wrong_destination")
         return {"ok": True, "signal": _settle(sb, session, key, rec)}
 
     state, reason, msg_id = _deliver(dest, text)
