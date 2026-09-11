@@ -180,3 +180,53 @@ def test_closed_count_logic_in_isolation():
     closed = len([r for r in rows
                   if r.get("demo_close_state") == "succeeded"])
     assert closed == 1
+
+
+def test_the_summary_never_infers_current_state():
+    """openings minus closes is not the open-position count: trades can
+    be closed outside this system."""
+    fn = SRC[SRC.index("def compose("):SRC.index("def deliver(")]
+    assert "not current state" in fn
+    assert "the remainder are still open" in fn      # named as forbidden
+    assert "does not give that" in fn
+
+
+def test_summary_fields_are_named_as_recorded_events():
+    fn = SRC[SRC.index("def _verified_summary("):SRC.index("def _ai(")]
+    assert '"openings_recorded_24h"' in fn
+    assert '"verified_closes_recorded_24h"' in fn
+    assert '"trades":' not in fn          # nothing that reads as a total
+
+
+def test_the_wording_says_demo_funds_not_simulated():
+    fn = SRC[SRC.index("def compose("):SRC.index("def deliver(")]
+    assert "demo funds" in fn
+    assert "execution and automation\\n            \"are live" in fn or \
+        "are live; no real capital is involved" in fn
+    assert "simulated funds" not in SRC
+
+
+def test_cleanup_runs_without_any_traffic():
+    assert "_demo_cleanup_loop" in SRC
+    fn = SRC[SRC.index("def _cleanup_once("):SRC.index("def start(")]
+    assert "_sweep_demo_closes" in fn        # the SAME guarded sweep
+    loop = SRC[SRC.index("async def _demo_cleanup_loop"):]
+    assert "asyncio.sleep" in loop
+    assert "SKLZ_DEMO_CLEANUP_SECONDS" in loop
+
+
+def test_cleanup_reuses_the_existing_guards_rather_than_new_logic():
+    fn = SRC[SRC.index("def _cleanup_once("):SRC.index("def start(")]
+    # it must not build its own close command or widen the ticket scope
+    # 'ticket' appears only in the docstring explaining what stays
+    # untouchable; the code must build no command of its own
+    code = fn.split(chr(34)*3, 2)[2]
+    for banned in ("command_type", "insert(", "ticket"):
+        assert banned not in code, banned
+    assert "orders_api._sweep_demo_closes" in fn
+
+
+def test_a_cleanup_fault_cannot_stop_the_loop():
+    loop = SRC[SRC.index("async def _demo_cleanup_loop"):]
+    assert "except Exception as exc" in loop
+    assert "await asyncio.sleep" in loop.split("except Exception")[1]

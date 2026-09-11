@@ -152,7 +152,8 @@ def _verified_summary(sb: Client) -> dict:
     # evidence of closure. Only a close that itself succeeded is.
     closed = len([r for r in rows
                   if r.get("demo_close_state") == "succeeded"])
-    return {"trades": len(rows), "symbols": symbols, "closed": closed}
+    return {"openings_recorded_24h": len(rows), "symbols": symbols,
+            "verified_closes_recorded_24h": closed}
 
 
 def _ai(system: str, user: str) -> tuple[str, str]:
@@ -217,7 +218,14 @@ def compose(sb: Client, category: str) -> tuple[str, str]:
             "Write a factual summary of demonstration activity using ONLY "
             "this data. State no profit, loss or performance of any kind.\n"
             f"DATA: {json.dumps(facts)}\n"
-            "These ran on a broker DEMO account; say so.")
+            "IMPORTANT: these are RECORDED EVENTS from the last 24 hours, "
+            "not current state. Never say 'the remainder are still open' "
+            "or infer how many positions are open now — openings minus "
+            "closes does not give that, because trades can be closed "
+            "outside this system.\n"
+            "End with exactly: 'All activity was executed on an MT5 broker "
+            "demo account using demo funds. The execution and automation "
+            "are live; no real capital is involved.'")
     if err:
         return "", err
 
@@ -298,8 +306,43 @@ async def content_status(user=Depends(get_current_user)) -> dict:
                 "SKLZ_DEMO_CONTENT_MAX_PER_DAY": "1-4"}}
 
 
+def _cleanup_once() -> dict:
+    """Close abandoned demo positions without anyone visiting the page.
+
+    The existing sweep was opportunistic: it ran when someone called a
+    demo endpoint. On a public demo nobody may call one for hours, and
+    every abandoned click leaves a position open on a $20k account.
+
+    This reuses the SAME guarded sweep — demo-token trades only, on the
+    demo Runner, on the configured account, past the interaction window.
+    It adds a clock, nothing else. Untracked tickets remain untouchable.
+    """
+    from db import get_supabase as _gs
+    import orders_api
+    return {"queued": orders_api._sweep_demo_closes(_gs())}
+
+
 def start(app) -> None:
     """One post per configured hour, at most four a day."""
+
+    @app.on_event("startup")
+    async def _demo_cleanup_loop():           # noqa: ANN202
+        async def loop():
+            await asyncio.sleep(60)           # let the app settle
+            while True:
+                try:
+                    res = await offload(_cleanup_once)
+                    if res.get("queued"):
+                        print(f"[demo-cleanup] queued {res['queued']} close(s)")
+                except Exception as exc:  # noqa: BLE001
+                    # logged and retried on the next tick; a cleanup fault
+                    # must never stop the loop or affect trading
+                    print(f"[demo-cleanup] {type(exc).__name__}: {exc}")
+                await asyncio.sleep(
+                    max(60, int(os.environ.get(
+                        "SKLZ_DEMO_CLEANUP_SECONDS", "180") or 180)))
+        asyncio.create_task(loop())
+
     @app.on_event("startup")
     async def _demo_content_loop():           # noqa: ANN202
         async def loop():
