@@ -494,3 +494,187 @@ async def list_demo_links(user=Depends(get_current_user),
     for r in rows:
         r["url"] = f"{site}/demo/signal-desk.html?t={r['token']}"
     return {"ok": True, "links": rows}
+
+
+# ── live demo execution ─────────────────────────────────────────────
+# A cold prospect clicks a button and a real order appears on a real
+# broker's demo account. Everything about WHAT is traded is decided here;
+# the browser supplies a token and nothing else.
+#
+# The guard is identity as OBSERVED. The Runner reports its MT5 login on
+# every poll, and this refuses unless that login is the configured demo
+# account. A label cannot satisfy it, and neither can a request body.
+
+DEMO_BOT_NAME = "sklz-demo"
+DEMO_SYMBOL = "EURUSD"
+DEMO_LOT = 0.01
+DEMO_SL_PIPS = 150
+DEMO_TP_PIPS = 220
+DEMO_RUNS_PER_TOKEN = 3
+DEMO_STALE_POLL_SECONDS = 90
+
+
+def _demo_login() -> str:
+    """The one account a demo command may execute on. No default."""
+    return _os.environ.get("SKLZ_DEMO_MT5_LOGIN", "").strip()
+
+
+def _demo_enabled() -> bool:
+    return _os.environ.get("SKLZ_LIVE_DEMO_ENABLED", "0") == "1"
+
+
+def _runner_identity(sb: Client) -> dict:
+    """What the demo Runner last reported about itself."""
+    try:
+        rows = (sb.table("bot_state").select("*")
+                .eq("bot_name", DEMO_BOT_NAME).limit(1).execute()).data or []
+    except Exception:
+        return {}
+    return rows[0] if rows else {}
+
+
+def _demo_guard(sb: Client) -> str:
+    """Why a live demo run must not happen, or "" if it may.
+
+    Fail closed at every step. An unset variable, a silent Runner, a
+    mismatched login — all of them stop the run. None of them fall back.
+    """
+    if not _demo_enabled():
+        return "live demo execution is switched off"
+    expected = _demo_login()
+    if not expected:
+        return ("SKLZ_DEMO_MT5_LOGIN is not configured — refusing to "
+                "execute without a named demo account")
+
+    state = _runner_identity(sb)
+    if not state:
+        return "the demo Runner has never reported in"
+
+    observed = str(state.get("last_account") or "").strip()
+    if not observed:
+        return "the demo Runner has not reported an MT5 login"
+    if observed != expected:
+        # The whole point. A demo command may only execute where the
+        # Runner has PROVEN it is attached.
+        return (f"refusing: the demo Runner is attached to account "
+                f"{observed}, not {expected}")
+
+    server = str(state.get("last_server") or "")
+    want_server = _os.environ.get("SKLZ_DEMO_MT5_SERVER", "").strip()
+    if want_server and want_server.lower() not in server.lower():
+        return (f"refusing: the demo Runner reports server '{server}', "
+                f"which is not '{want_server}'")
+
+    seen = state.get("account_seen_at")
+    if seen:
+        try:
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(
+                str(seen).replace("Z", "+00:00"))).total_seconds()
+            if age > DEMO_STALE_POLL_SECONDS:
+                return (f"the demo Runner has not polled for {int(age)}s — "
+                        f"it may be offline")
+        except (TypeError, ValueError):
+            pass
+    return ""
+
+
+@demo_router.post("/{token}/run-live")
+async def run_live_demo(token: str, request: Request,
+                        sb: Client = Depends(get_supabase)) -> dict:
+    """Place ONE real order on the demo account, on behalf of a prospect.
+
+    The browser sends a token. It does not send — and cannot send — a bot
+    name, an account, a symbol, a lot size, a stop or a destination.
+    """
+    link = await read_demo_link(token, sb)      # 404/410 handles expiry
+
+    why = _demo_guard(sb)
+    if why:
+        raise HTTPException(http.HTTP_503_SERVICE_UNAVAILABLE,
+                            {"error": "live_demo_unavailable", "detail": why})
+
+    tok = token.strip().lower()
+
+    def _count():
+        return (sb.table("bot_orders").select("id")
+                .eq("demo_token", tok).execute()).data or []
+
+    try:
+        used = len(await offload(_count))
+    except Exception:
+        used = 0
+    if used >= DEMO_RUNS_PER_TOKEN:
+        raise HTTPException(
+            http.HTTP_429_TOO_MANY_REQUESTS,
+            {"error": "demo_runs_exhausted",
+             "detail": f"this demo has placed its {DEMO_RUNS_PER_TOKEN} "
+                       f"trades. Message us for a fresh link.",
+             "used": used})
+
+    # Everything below is decided here, not requested.
+    row = {"bot_name": DEMO_BOT_NAME, "symbol": DEMO_SYMBOL, "side": "buy",
+           "note": f"[demo] {link['provider_name']}"[:300],
+           "lots": DEMO_LOT, "sl": 0, "tp": 0,
+           "status": "pending", "demo_token": tok, "demo_kind": "market",
+           "mode": "execute", "command_type": "market"}
+
+    def _insert():
+        return sb.table("bot_orders").insert(row).execute()
+
+    try:
+        res = await offload(_insert)
+        created = (res.data or [{}])[0]
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(http.HTTP_503_SERVICE_UNAVAILABLE,
+                            {"error": "queue_unavailable",
+                             "detail": str(exc)[:160]}) from exc
+
+    print(f"[demo] live run queued token={tok[:8]} "
+          f"command={created.get('command_id')} provider={link['provider_name']}")
+    return {"ok": True, "command_id": created.get("command_id"),
+            "symbol": DEMO_SYMBOL, "side": "buy", "volume": DEMO_LOT,
+            "runs_used": used + 1, "runs_allowed": DEMO_RUNS_PER_TOKEN,
+            "state": "queued",
+            "note": "The demo Runner polls every few seconds."}
+
+
+@demo_router.get("/{token}/run-live/{command_id}")
+async def demo_run_state(token: str, command_id: str,
+                         sb: Client = Depends(get_supabase)) -> dict:
+    """What the broker actually did. Polled by the prospect's page.
+
+    Never claims a fill the Runner has not reported.
+    """
+    await read_demo_link(token, sb)
+    tok = token.strip().lower()
+
+    def _get():
+        return (sb.table("bot_orders").select("*")
+                .eq("command_id", command_id).eq("demo_token", tok)
+                .limit(1).execute()).data or []
+
+    rows = await offload(_get)
+    if not rows:
+        raise HTTPException(http.HTTP_404_NOT_FOUND, "unknown command")
+    r = rows[0]
+
+    out = {"ok": True, "state": r.get("status"),
+           "symbol": r.get("symbol"), "side": r.get("side"),
+           "volume": r.get("lots"),
+           "ticket": r.get("ticket"), "fill_price": r.get("fill_price"),
+           "retcode": r.get("retcode"),
+           "broker_comment": r.get("broker_comment"),
+           "account": r.get("actual_account"),
+           "timings": {"queued": r.get("created_at"),
+                       "runner_received": r.get("runner_received_at"),
+                       "mt5_requested": r.get("mt5_requested_at"),
+                       "broker_confirmed": r.get("broker_confirmed_at")}}
+    # Real latency, from the timestamps A3 already records.
+    try:
+        a = datetime.fromisoformat(str(r["created_at"]).replace("Z", "+00:00"))
+        b = datetime.fromisoformat(
+            str(r["broker_confirmed_at"]).replace("Z", "+00:00"))
+        out["latency_ms"] = int((b - a).total_seconds() * 1000)
+    except (TypeError, ValueError, KeyError):
+        out["latency_ms"] = None
+    return out
