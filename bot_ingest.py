@@ -363,6 +363,9 @@ class ResultIn(_BM_RESULT):
     runner_received_at: str = ""
     mt5_requested_at: str = ""
     broker_confirmed_at: str = ""
+    # A positions read answers with a list, not a ticket. Without this
+    # the Runner's answer was accepted and silently discarded.
+    positions: list = []
 
 
 @router.post("/result", dependencies=[Depends(require_bot_key)])
@@ -419,6 +422,7 @@ async def post_result(body: ResultIn,
         "uncertainty_reason": (body.broker_comment or
                                "runner could not confirm the outcome"
                                )[:300] if state == "unknown" else None,
+        "positions": (body.positions or None),
         "actual_account": actual[:64] or None,
         "account_server": (body.server or "")[:96] or None,
         "account_mismatch": mismatch,

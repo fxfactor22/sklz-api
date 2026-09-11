@@ -484,3 +484,15 @@ def test_positions_does_not_require_a_ticket():
     i_pos = fn.index('elif action == "positions":')
     i_req = fn.index("this action needs the ticket")
     assert i_pos < i_req, "positions must be handled before the ticket check"
+
+
+def test_a_positions_read_survives_the_result_ingest():
+    """The Runner answered with a list and the ingest had nowhere to put
+    it, so a successful read returned nothing."""
+    bi = open("bot_ingest.py").read()
+    assert "positions: list = []" in bi
+    assert '"positions": (body.positions or None)' in bi
+    api = open("orders_api.py").read()
+    assert '"positions": r.get("positions") or []' in api
+    sql = open("migrations/D7-migration.sql").read()
+    assert "add column if not exists positions jsonb" in sql
