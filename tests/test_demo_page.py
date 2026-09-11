@@ -477,7 +477,7 @@ def test_catalog_map_never_returns_a_credential():
 
 
 # ── D4: private prospect links ───────────────────────────────────────
-GEN = open("/mnt/user-data/outputs/demo-generator.html").read()
+GEN = open("tests/fixtures/demo-generator.html").read()
 
 
 def test_the_link_is_the_credential_so_it_is_unguessable():

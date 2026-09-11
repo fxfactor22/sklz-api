@@ -4,6 +4,13 @@ The D6 bug shipped because every test read source text. This one runs
 the real functions, so a missing import fails it with NameError.
 """
 import os, sys, types
+import pytest
+
+# This test imports the real app module, so it needs the app's deps.
+# Skip rather than fail where they are absent (a laptop), run where
+# they exist (the container).
+pytest.importorskip("fastapi")
+
 sys.path.insert(0, ".")
 
 os.environ.setdefault("SUPABASE_URL", "https://example.invalid")
@@ -171,3 +178,13 @@ def test_auto_close_state_comes_from_the_close_row(monkeypatch):
 def test_close_state_without_a_close_command_says_so():
     out = oa._close_state(_SB({}, {}), {"command_id": "x"})
     assert out["state"] == "not_scheduled"
+
+
+def test_the_status_endpoint_actually_uses_the_close_row():
+    """The runtime test above exercises _close_state directly, so it
+    cannot see whether the endpoint calls it. This checks the wiring."""
+    src = open("./orders_api.py").read()
+    fn = src[src.index("async def demo_run_state("):]
+    assert 'out["auto_close"] = await offload(_close_state, sb, r)' in fn
+    # the stale single-source read must be gone
+    assert 'out["auto_close"] = {"state": r.get("demo_close_state")' not in fn
