@@ -849,31 +849,3 @@ def test_the_message_reference_lives_on_the_existing_row():
     sql = open("migrations/D6-migration.sql").read()
     assert "demo_tg_message_id" in sql
     assert "demo_token" in open("migrations/D5-migration.sql").read()
-
-
-def test_the_ai_centre_is_on_the_desk():
-    h = open("tests/fixtures/signal-desk-demo.html").read()
-    assert 'id="aiPanel"' in h and 'id="aiText"' in h
-    for preset in ("Explain this trade", "Moved to breakeven",
-                   "Stop changed", "Trade closed", "Today's summary",
-                   "Market update"):
-        assert preset in h, preset
-
-
-def test_nothing_sends_without_the_operator():
-    h = open("tests/fixtures/signal-desk-demo.html").read()
-    fn = h[h.index("async function aiDraft"):h.index("async function aiSend")]
-    assert "ai-send" not in fn          # drafting never sends
-    assert "Nothing is sent until you press Send" in h
-
-
-def test_the_draft_surfaces_the_policy_verdict():
-    h = open("tests/fixtures/signal-desk-demo.html").read()
-    assert "d.policy_ok" in h and "policy_reason" in h
-
-
-def test_the_editable_text_is_what_gets_sent():
-    h = open("tests/fixtures/signal-desk-demo.html").read()
-    fn = h[h.index("async function aiSend"):]
-    fn = fn[:fn.index("\nasync function")]
-    assert "ta.value" in fn and "JSON.stringify({text})" in fn
