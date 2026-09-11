@@ -15,6 +15,7 @@ Multi-user licensing (per-customer keys) rides on the license server later.
 from __future__ import annotations
 
 import os
+import os as _os
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel as _BM_RESULT
 
@@ -494,6 +495,15 @@ async def place_order(body: OrderIn, user=Depends(get_current_user),
     _require_owner(user)
     if body.side not in ("buy", "sell"):
         return {"ok": False, "reason": "side must be buy|sell"}
+    # The dashboard now hides demo Runners, but a stale tab or a typed
+    # name must not be able to send a funded trade to a demo account.
+    # A gold order intended for the funded 50k reached the demo account
+    # this way; the UI fix alone would leave that path open.
+    if _os.environ.get("SKLZ_DEMO_BOT_NAME", "sklz-demo").strip().lower() \
+            == (body.bot_name or "").strip().lower():
+        return {"ok": False,
+                "reason": "that is the demo Runner — manual orders go to a "
+                          "live Runner. Pick one from the list."}
     try:
         sb.table("bot_orders").insert({
             "bot_name": body.bot_name, "symbol": body.symbol.upper(),

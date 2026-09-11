@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="theme-color" content="#080A0F"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<title>Bot Monitor — SKLZ Labs</title>
+<style>
+  :root{--up:#34D399;--down:#F87171;
+    --bg:#080A0F;--panel:#0F131C;--panel-2:#141A26;--line:#1E2735;
+    --ink:#EAEEF6;--muted:#8B94A8;--dim:#5B6377;
+    --gold:#F5A623;--blue:#1DA9E0;--red:#F87171;--green:#34D399;
+    --mono:'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace;
+    --sans:'Inter','SF Pro Text',-apple-system,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);min-height:100vh}
+  nav{border-bottom:1px solid var(--line);background:rgba(8,10,15,.85);
+    backdrop-filter:blur(12px);position:sticky;top:0;z-index:10}
+  .nav-in{max-width:860px;margin:0 auto;padding:0 16px;height:64px;display:flex;
+    align-items:center;justify-content:space-between}
+  .logo{height:62px}
+  .nav-right{display:flex;gap:10px;align-items:center}
+  .pill{font-family:var(--mono);font-size:11px;padding:5px 11px;border-radius:20px;
+    border:1px solid var(--line);color:var(--muted);background:var(--panel);cursor:pointer}
+  .wrap{max-width:860px;margin:0 auto;padding:20px 16px 60px}
+  h1{font-size:22px;letter-spacing:-.01em;margin:6px 0 16px}
+  .sessions{display:grid;gap:12px}
+  .sess{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+    padding:16px;cursor:pointer;transition:border-color .2s}
+  .sess:hover,.sess.sel{border-color:var(--gold)}
+  .sess-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  .sess-title{font-family:var(--mono);font-size:14px;font-weight:600}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px}
+  .dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+  .dot.off{background:var(--dim)}
+  .badge{font-family:var(--mono);font-size:10.5px;padding:3px 8px;border-radius:6px}
+  .badge.paper{background:rgba(29,169,224,.12);color:var(--blue);border:1px solid rgba(29,169,224,.3)}
+  .badge.live{background:rgba(245,166,35,.14);color:var(--gold);border:1px solid rgba(245,166,35,.35)}
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));
+    gap:8px;margin-top:12px}
+  .m{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 11px}
+  .m .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:var(--dim);
+    text-transform:uppercase}
+  .m .v{font-family:var(--mono);font-size:15px;font-weight:600;margin-top:3px}
+  .v.up{color:var(--green)} .v.down{color:var(--red)}
+  .section-h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--dim);
+    text-transform:uppercase;margin:22px 0 10px}
+  .console{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+    padding:14px;font-family:var(--mono);font-size:11.5px;max-height:420px;
+    overflow-y:auto;line-height:1.75}
+  .ln{display:flex;gap:8px}
+  .ln .t{color:var(--dim);flex-shrink:0}
+  .ln .lv{flex-shrink:0;width:52px}
+  .ln .lv.info{color:var(--blue)} .ln .lv.warning{color:var(--gold)} .ln .lv.error{color:var(--red)}
+  .ai{background:linear-gradient(160deg,var(--panel-2),var(--panel));
+    border:1px solid var(--line);border-radius:13px;padding:18px;margin-top:10px}
+  .ai h3{font-size:15px;margin-bottom:10px}
+  .ai pre{font-family:var(--mono);font-size:12px;color:var(--muted);
+    white-space:pre-wrap;line-height:1.6}
+  .empty{color:var(--dim);font-family:var(--mono);font-size:12.5px;text-align:center;
+    padding:36px 12px}
+  .loading{text-align:center;padding:70px;color:var(--muted);font-family:var(--mono)}
+  .foot-note{margin-top:26px;font-size:11px;color:var(--dim);font-family:var(--mono);
+    text-align:center}
+
+  /* ---- mobile navigation drawer ---- */
+  .mnav-btn{display:none;position:fixed;top:12px;left:12px;z-index:120;
+    width:42px;height:42px;border-radius:10px;cursor:pointer;
+    background:#0F131C;border:1px solid #1E2735;color:#EAEEF6;
+    align-items:center;justify-content:center;font-size:18px;line-height:1}
+  .mnav-back{display:none;position:fixed;inset:0;z-index:110;
+    background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
+  .mnav-back.on{display:block}
+  @media(max-width:820px){
+    .mnav-btn{display:flex}
+    .side{display:block !important;position:fixed;top:0;left:0;bottom:0;
+      width:250px;max-width:82vw;z-index:115;overflow-y:auto;
+      transform:translateX(-105%);transition:transform .25s ease;
+      box-shadow:14px 0 34px rgba(0,0,0,.45)}
+    .side.open{transform:translateX(0)}
+    .main{padding-top:64px !important}
+  }
+</style>
+<link rel="stylesheet" href="/sklz-mobile.css"/>
+</head>
+<body>
+<nav><div class="nav-in">
+  <a href="/"><img src="./sklz-logo.png" class="logo" alt="SKLZ Labs"/></a>
+  <div class="nav-right">
+    <span class="pill" id="refresh-pill" onclick="loadAll()">↻ refresh</span>
+    <a class="pill" href="/marketplace.html">🏆 traders</a>
+    <a class="pill" href="/dashboard.html">← dashboard</a>
+  </div>
+</div></nav>
+
+<div class="wrap">
+  <h1>Bot Monitor</h1>
+  <div id="adminpanel" style="display:none;background:#0F131C;border:1px solid rgba(245,166,35,.35);border-radius:12px;padding:16px;margin-bottom:16px">
+  <div style="font-family:monospace;font-size:10px;color:#F5A623;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Admin — manual entry (learning)</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <select id="o-bot" style="flex:1;min-width:130px;background:#080A0F;border:1px solid #1E2735;border-radius:8px;padding:9px 11px;color:#EAEEF6;font-family:monospace;font-size:12px"><option value="learning-runner">learning-runner</option></select>
+    <span id="o-bot-note" style="font-size:10.5px;color:#F5A623;
+      flex-basis:100%"></span>
+    <select id="o-sym" style="flex:1;min-width:110px;background:#080A0F;border:1px solid #1E2735;border-radius:8px;padding:9px 11px;color:#EAEEF6;font-family:monospace;font-size:12px">
+      <option>XAUUSD</option><option>EURUSD</option><option>GBPUSD</option><option>USDJPY</option><option>AUDUSD</option><option>USDCAD</option><option>NZDUSD</option><option>USDCHF</option><option>EURGBP</option><option>EURJPY</option><option>GBPJPY</option><option>XAGUSD</option><option>US30</option><option>NAS100</option><option>SPX500</option><option>GER40</option><option>UK100</option><option>USOIL</option><option>BTCUSD</option><option>ETHUSD</option>
+    </select>
+    <input id="o-lots" type="number" step="0.01" placeholder="lots (auto)" style="width:96px;background:#080A0F;border:1px solid #1E2735;border-radius:8px;padding:9px 11px;color:#EAEEF6;font-family:monospace;font-size:12px"/>
+    <input id="o-sl" type="number" step="0.00001" placeholder="SL (auto)" style="width:104px;background:#080A0F;border:1px solid #1E2735;border-radius:8px;padding:9px 11px;color:#EAEEF6;font-family:monospace;font-size:12px"/>
+    <input id="o-tp" type="number" step="0.00001" placeholder="TP (none)" style="width:104px;background:#080A0F;border:1px solid #1E2735;border-radius:8px;padding:9px 11px;color:#EAEEF6;font-family:monospace;font-size:12px"/>
+    <input id="o-note" placeholder="your reasoning (the AI learns from this)" style="flex:2;min-width:180px;background:#080A0F;border:1px solid #1E2735;border-radius:8px;padding:9px 11px;color:#EAEEF6;font-size:12.5px"/>
+    <button onclick="sendOrder('buy')" style="background:rgba(52,211,153,.15);border:1px solid rgba(52,211,153,.5);color:#34D399;border-radius:8px;padding:9px 16px;font-family:monospace;font-weight:700;cursor:pointer">▲ BUY</button>
+    <button onclick="sendOrder('sell')" style="background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.5);color:#F87171;border-radius:8px;padding:9px 16px;font-family:monospace;font-weight:700;cursor:pointer">▼ SELL</button>
+  </div>
+</div>
+<div id="content"><div class="loading">Loading sessions…</div></div>
+  <div class="foot-note">Auto-refreshes every 10s · Read-only monitor · Software only, not financial advice</div>
+</div>
+
+<script>
+  const API_BASE = "https://api.sklzlabs.com";
+  let selected = null;
+  let timer = null;
+
+  function token(){ return localStorage.getItem('sklz_access'); }
+
+  async function api(path){
+    const r = await fetch(API_BASE+path, {headers:{'Authorization':'Bearer '+token()}});
+    if(r.status===401){ window.location.href='/login.html'; throw new Error('auth'); }
+    return r.json();
+  }
+
+  function fmtMoney(v){ return v==null?'—':('$'+Number(v).toLocaleString(undefined,{maximumFractionDigits:2})); }
+  function ago(iso){
+    const s = (Date.now()-new Date(iso).getTime())/1000;
+    if(s<90) return Math.round(s)+'s ago';
+    if(s<5400) return Math.round(s/60)+'m ago';
+    return Math.round(s/3600)+'h ago';
+  }
+
+  let IS_OWNER=false;
+  async function checkAdmin(){
+    try{
+      const r=await fetch(API_BASE+'/api/billing/status',{headers:{'Authorization':'Bearer '+token()}});
+      const d=await r.json();
+      IS_OWNER = !!d.owner;
+      if(IS_OWNER) document.getElementById('adminpanel').style.display='block';
+      applyOwnerUI();
+    }catch(e){}
+  }
+  async function sendOrder(side){
+    const bot=document.getElementById('o-bot').value||'learning-runner';
+    const sym=document.getElementById('o-sym').value.trim().toUpperCase();
+    const note=document.getElementById('o-note').value.trim();
+    if(!sym){alert('Enter a symbol');return;}
+    if(!note){alert('Add a note — the AI learns from your reasoning');return;}
+    if(!confirm((side==='buy'?'BUY ':'SELL ')+sym+'\nNote: '+note+'\n\nSend to '+bot+'?'))return;
+    try{
+      const r=await fetch(API_BASE+'/api/bot/order',{method:'POST',
+        headers:{'Authorization':'Bearer '+token(),'Content-Type':'application/json'},
+        body:JSON.stringify({bot_name:bot,symbol:sym,side:side,note:note,
+          lots:+document.getElementById('o-lots').value||0,
+          sl:+document.getElementById('o-sl').value||0,
+          tp:+document.getElementById('o-tp').value||0})});
+      const d=await r.json();
+      alert(d.ok?'✓ Order queued — executes within a few seconds':(d.reason||d.detail||'failed'));
+      if(d.ok)document.getElementById('o-note').value='';
+    }catch(e){alert('Network error');}
+  }
+  // Demo Runners must never be a manual-trade target. A demo Runner
+  // registers by heartbeat like any other, so it appeared in this list
+  // and — being the freshest session — was selected by default. A gold
+  // order intended for the funded account went to the demo account
+  // because of this line.
+  const DEMO_BOT_RE=/^sklz-demo|(^|[^a-z])demo([^a-z]|$)/i;
+  function fillBots(names){const s=document.getElementById('o-bot');if(!s)return;
+    const live=(names||[]).filter(n=>!DEMO_BOT_RE.test(n));
+    if(!live.length){
+      s.innerHTML='<option value="">— no live runner —</option>';
+      return;
+    }
+    s.innerHTML=live.map(n=>'<option>'+n+'</option>').join('');
+    const hidden=(names||[]).length-live.length;
+    const note=document.getElementById('o-bot-note');
+    if(note) note.textContent = hidden
+      ? hidden+' demo runner'+(hidden>1?'s':'')+' hidden — manual orders '+
+        'go to live runners only' : '';}
+  checkAdmin();
+  const BOTSTATE={};
+  async function refreshState(bot){
+    if(!IS_OWNER) return;
+    try{
+      const r=await fetch(API_BASE+'/api/bot/state?bot_name='+encodeURIComponent(bot),{headers:{'Authorization':'Bearer '+token()}});
+      const d=await r.json(); if(!d.ok)return;
+      BOTSTATE[bot]=d.state;
+      document.querySelectorAll('[data-botpill="'+CSS.escape(bot)+'"]').forEach(el=>{
+        el.textContent=d.state==='pause'?'● PAUSED':'● RUNNING';
+        el.style.color=d.state==='pause'?'var(--down,#F87171)':'var(--up,#34D399)';});
+      document.querySelectorAll('[data-botbtn="'+CSS.escape(bot)+'"]').forEach(el=>{
+        const on=el.dataset.cmd===(d.state==='pause'?'pause':'run');
+        el.style.outline=on?'2px solid currentColor':'none';el.style.opacity=on?'1':'.6';});
+    }catch(e){}
+  }
+  function applyOwnerUI(){
+    document.querySelectorAll('[data-botctl]').forEach(el=>{
+      el.style.display = IS_OWNER ? 'flex' : 'none';});
+    document.querySelectorAll('[data-botpill]').forEach(el=>{
+      el.style.display = IS_OWNER ? 'inline' : 'none';});
+  }
+  async function botCmd(bot,cmd){
+    try{
+      const r=await fetch(API_BASE+'/api/bot/control?bot_name='+encodeURIComponent(bot)+'&command='+cmd,
+        {method:'POST',headers:{'Authorization':'Bearer '+token()}});
+      const d=await r.json();
+      if(d.ok){refreshState(bot);}else{alert(d.reason||d.detail||'failed');}
+    }catch(e){alert('Command failed');}
+  }
+  function esc(s){const d=document.createElement('div');d.textContent=s??'';return d.innerHTML}
+
+  async function loadAll(){
+    if(!token()){ window.location.href='/login.html'; return; }
+    let data;
+    try{ data = await api('/api/bot/sessions'); }
+    catch(e){ if(e.message!=='auth')
+      document.getElementById('content').innerHTML =
+        '<div class="empty">Could not reach the API. Retrying…</div>'; return; }
+    let ss = data.sessions||[];
+    if(!ss.length){
+      document.getElementById('content').innerHTML =
+        '<div class="empty">No bot sessions yet.<br><br>Start the bot on your VPS with SKLZ_API_URL and<br>SKLZ_BOT_KEY set, and it will appear here.</div>';
+      return;
+    }
+    // dedupe: keep only the NEWEST session per bot label (restarts make new ids)
+    const newestByBot = {};
+    for(const s of ss){
+      const k = s.bot||'?';
+      if(!newestByBot[k] || new Date(s.last_seen) > new Date(newestByBot[k].last_seen))
+        newestByBot[k] = s;
+    }
+    ss = Object.values(newestByBot);
+    // live (heartbeat < 90s) first, then by recency
+    const isLive = s => (Date.now()-new Date(s.last_seen).getTime()) < 90_000;
+    ss.sort((a,b)=> (isLive(b)-isLive(a)) || (new Date(b.last_seen)-new Date(a.last_seen)));
+    const liveCount = ss.filter(isLive).length;
+
+    // default selection = first LIVE session, else first
+    if(!selected || !ss.find(s=>s.id===selected))
+      selected = (ss.find(isLive) || ss[0]).id;
+
+    const banner = `<div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:10px">
+      ${liveCount} live · ${ss.length} bot${ss.length!==1?'s':''} total
+      ${ss.length>liveCount?`<span style="color:var(--dim)">· stale sessions dimmed</span>`:''}</div>`;
+
+    const list = ss.map(s=>{
+      const fresh = (Date.now()-new Date(s.last_seen).getTime()) < 90_000;
+      const st = s.stats||{};
+      return `<div class="sess ${s.id===selected?'sel':''}" onclick="select('${s.id}')" style="${fresh?'':'opacity:.5'}">
+        <div class="sess-head">
+          <span class="sess-title"><span class="dot ${fresh?'on':'off'}"></span>
+            ${esc(s.bot)} · ${esc(s.symbol)} ${esc(s.timeframe||'')}</span>
+          <span>
+            <span class="badge ${s.mode==='live'?'live':'paper'}">${esc(s.mode)}</span>
+            <span class="badge paper" style="border-color:var(--line);color:var(--dim)">${ago(s.last_seen)}</span>
+          </span>
+        </div>
+        ${st.mode!==undefined && st.basket_open!==undefined ? `
+        <div class="metrics">
+          <div class="m"><div class="k">Equity</div><div class="v">${fmtMoney(s.equity)}</div></div>
+          <div class="m"><div class="k">Basket</div><div class="v">${st.basket_open?'● OPEN':'○ flat'}</div></div>
+          <div class="m"><div class="k">Legs</div><div class="v">${(st.legs&&st.legs.length)||0}</div></div>
+          <div class="m"><div class="k">Basket P/L</div>
+            <div class="v ${(st.basket_pl||0)>=0?'up':'down'}">${st.basket_pl!=null?fmtMoney(st.basket_pl):'—'}</div></div>
+          <div class="m"><div class="k">Peak</div><div class="v">${st.peak!=null?fmtMoney(st.peak):'—'}</div></div>
+          <div class="m"><div class="k">Protect</div><div class="v" style="font-size:11px">${st.trail_armed?'TRAIL':st.be_armed?'BE':'—'}</div></div>
+        </div>
+        ${st.legs&&st.legs.length?`<div style="font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
+          ${st.legs.map(l=>`<span style="border:1px solid var(--line);border-radius:5px;padding:2px 7px">
+            ${l.d>0?'▲':'▼'} ${esc(l.s)} <span style="color:${(l.pl||0)>=0?'var(--up)':'var(--down)'}">${fmtMoney(l.pl)}</span></span>`).join('')}
+        </div>`:''}
+        ` : `
+        <div class="metrics">
+          <div class="m"><div class="k">Equity</div><div class="v">${fmtMoney(s.equity)}</div></div>
+          <div class="m"><div class="k">Balance</div><div class="v">${fmtMoney(s.balance)}</div></div>
+          <div class="m"><div class="k">Signals</div><div class="v">${st.signals??'—'}</div></div>
+          <div class="m"><div class="k">Opened</div><div class="v">${st.positions_opened??'—'}</div></div>
+          <div class="m"><div class="k">Closed</div><div class="v">${st.positions_closed??'—'}</div></div>
+          <div class="m"><div class="k">Realized</div>
+            <div class="v ${ (st.realized_pl||0)>=0?'up':'down'}">${st.realized_pl!=null?fmtMoney(st.realized_pl):'—'}</div></div>
+        </div>`}
+        <div data-botctl="1" style="display:flex;gap:8px;margin-top:12px">
+          <button data-botbtn="${esc(s.bot)}" data-cmd="run" onclick="event.stopPropagation();botCmd('${esc(s.bot)}','run')" style="flex:1;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.4);color:var(--up,#34D399);border-radius:8px;padding:8px;font-family:var(--mono);font-size:11px;cursor:pointer">▶ START</button>
+          <button data-botbtn="${esc(s.bot)}" data-cmd="pause" onclick="event.stopPropagation();botCmd('${esc(s.bot)}','pause')" style="flex:1;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.4);color:var(--down,#F87171);border-radius:8px;padding:8px;font-family:var(--mono);font-size:11px;cursor:pointer">⏸ PAUSE</button>
+        </div>
+        <div style="text-align:center;margin-top:6px"><span data-botpill="${esc(s.bot)}" style="font-family:var(--mono);font-size:10px;color:var(--dim,#5B6377)">● checking…</span>
+        </div>
+      </div>`;
+    }).join('');
+
+    let html = `${banner}<div class="sessions">${list}</div>
+      <div class="section-h">Live console — selected session</div>
+      <div class="console" id="console"><div class="empty">loading…</div></div>
+      <div id="ai-slot"></div>`;
+    document.getElementById('content').innerHTML = html;
+    try{fillBots([...new Set(ss.map(s=>s.bot).filter(Boolean))]);}catch(e){}
+    applyOwnerUI();
+    try{[...new Set(ss.map(s=>s.bot).filter(Boolean))].forEach(refreshState);}catch(e){}
+    loadEvents(ss.find(s=>s.id===selected));
+  }
+
+  function select(id){ selected = id; loadAll(); }
+
+  async function loadEvents(session){
+    if(!session) return;
+    let data;
+    try{ data = await api(`/api/bot/sessions/${session.id}/events?limit=120`); }
+    catch(e){ return; }
+    const evs = (data.events||[]);
+    const el = document.getElementById('console');
+    el.innerHTML = evs.length ? evs.map(e=>{
+      const t = new Date(e.ts).toLocaleTimeString([],{hour12:false});
+      return `<div class="ln"><span class="t">${t}</span>
+        <span class="lv ${esc(e.level)}">${esc(e.level)}</span>
+        <span>${esc(e.message)}</span></div>`;
+    }).join('') : '<div class="empty">no events yet</div>';
+
+    const slot = document.getElementById('ai-slot');
+    if(session.ai_report){
+      slot.innerHTML = `<div class="section-h">AI Session Analysis</div>
+        <div class="ai"><h3>Claude's review of this session</h3>
+        <pre>${esc(typeof session.ai_report==='string'
+          ? session.ai_report : JSON.stringify(session.ai_report,null,2))}</pre></div>`;
+    } else { slot.innerHTML=''; }
+  }
+
+  loadAll();
+  timer = setInterval(loadAll, 10_000);
+</script>
+<!-- ISKRA AI webchat widget -->
+<script>
+(function(){
+  var SLUG='sklz', API='https://www.iskra.marketing/api/chat', CONV=null, open=false, greeted=false, busy=false;
+  try{ CONV=localStorage.getItem('iskra_conv_'+SLUG)||null; }catch(e){}
+  var css=document.createElement('style');
+  css.textContent='#ikFab{position:fixed;right:20px;bottom:20px;z-index:99990;width:58px;height:58px;border-radius:50%;background:linear-gradient(135deg,#22c55e,#0ea5e9);color:#fff;border:0;font-size:23px;cursor:pointer;box-shadow:0 10px 28px rgba(0,0,0,.35)}#ikPanel{position:fixed;right:18px;bottom:90px;z-index:99991;width:min(360px,calc(100vw - 28px));height:min(500px,calc(100vh - 120px));background:#0f1523;border:1px solid #223;border-radius:16px;box-shadow:0 22px 60px rgba(0,0,0,.5);display:none;flex-direction:column;overflow:hidden;font-family:system-ui,sans-serif}#ikPanel.on{display:flex}.ikHd{background:#141b2e;color:#fff;padding:13px 15px;display:flex;align-items:center;gap:9px}.ikHd .av{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#22c55e,#0ea5e9);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}.ikHd b{font-size:14px;display:block}.ikHd span{font-size:11px;color:#7dd3fc}.ikHd .x{margin-left:auto;background:none;border:0;color:#fff;font-size:17px;cursor:pointer;opacity:.8}.ikMs{flex:1;overflow-y:auto;padding:12px;background:#0b1020;display:flex;flex-direction:column;gap:9px}.ikM{max-width:84%;padding:9px 12px;border-radius:12px;font-size:13px;line-height:1.55;white-space:pre-wrap;color:#e6ecf7}.ikM.b{background:#141b2e;border:1px solid #223;border-bottom-left-radius:4px;align-self:flex-start}.ikM.u{background:#1d4ed8;border-bottom-right-radius:4px;align-self:flex-end}.ikIn{display:flex;gap:7px;padding:9px;border-top:1px solid #223;background:#0f1523}.ikIn input{flex:1;border:1px solid #2a3550;background:#0b1020;color:#e6ecf7;border-radius:999px;padding:9px 14px;font-size:13px;outline:none}.ikIn button{background:#22c55e;color:#06220f;border:0;border-radius:50%;width:38px;height:38px;font-size:14px;cursor:pointer;flex-shrink:0}.ikTy{display:inline-flex;gap:4px;padding:10px 13px;background:#141b2e;border:1px solid #223;border-radius:12px;align-self:flex-start}.ikTy i{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:ikp 1s infinite}.ikTy i:nth-child(2){animation-delay:.16s}.ikTy i:nth-child(3){animation-delay:.32s}@keyframes ikp{0%,100%{opacity:.3}50%{opacity:1}}';
+  document.head.appendChild(css);
+  var fab=document.createElement('button'); fab.id='ikFab'; fab.textContent='\uD83D\uDCAC'; fab.setAttribute('aria-label','Chat');
+  var p=document.createElement('div'); p.id='ikPanel';
+  p.innerHTML='<div class="ikHd"><div class="av">S</div><div><b>SKLZ AI</b><span>Ask about bots, tools & pricing</span></div><button class="x">\u2715</button></div><div class="ikMs" id="ikMs"></div><div class="ikIn"><input id="ikI" placeholder="Ask anything\u2026"/><button id="ikGo">\u27A4</button></div>';
+  document.body.appendChild(fab); document.body.appendChild(p);
+  function add(t,w){var m=document.getElementById('ikMs'),d=document.createElement('div');d.className='ikM '+w;d.textContent=t;m.appendChild(d);m.scrollTop=m.scrollHeight;}
+  function typing(on){var m=document.getElementById('ikMs'),e=document.getElementById('ikTy');if(e)e.remove();if(on){var d=document.createElement('div');d.className='ikTy';d.id='ikTy';d.innerHTML='<i></i><i></i><i></i>';m.appendChild(d);m.scrollTop=m.scrollHeight;}}
+  function send(){
+    if(busy)return; var i=document.getElementById('ikI'),q=(i.value||'').trim(); if(q==='')return;
+    i.value=''; add(q,'u'); typing(true); busy=true;
+    fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tenantSlug:SLUG,channel:'webchat',message:q,conversationId:CONV})})
+    .then(function(r){return r.json();}).then(function(d){
+      typing(false); busy=false;
+      if(d&&d.conversationId){CONV=d.conversationId;try{localStorage.setItem('iskra_conv_'+SLUG,CONV)}catch(e){}}
+      add((d&&(d.reply||d.error))||'Sorry \u2014 something went wrong.','b');
+    }).catch(function(){typing(false);busy=false;add('Connection problem \u2014 please try again.','b');});
+  }
+  fab.onclick=function(){open=(open===false);p.classList.toggle('on',open);if(open){if(greeted===false){greeted=true;add('Welcome to SKLZ Labs \uD83D\uDC4B I am SKLZ AI. Ask me about our MT5 bots, indicators, analytics, pricing \u2014 or join the copy-trading waitlist.','b');}document.getElementById('ikI').focus();}};
+  p.querySelector('.x').onclick=function(){open=false;p.classList.remove('on');};
+  document.getElementById('ikGo').onclick=send;
+  document.getElementById('ikI').addEventListener('keydown',function(e){if(e.key==='Enter')send();});
+})();
+
+  (function sklzMobileNav(){
+    if(document.querySelector('.mnav-btn')) return;
+    if(!document.querySelector('.side')) return;   // no sidebar on this page
+    var btn=document.createElement('div');
+    btn.className='mnav-btn'; btn.setAttribute('aria-label','Menu');
+    btn.innerHTML='&#9776;';
+    var back=document.createElement('div');
+    back.className='mnav-back';
+    function close(){
+      var s=document.querySelector('.side'); if(s) s.classList.remove('open');
+      back.classList.remove('on');
+    }
+    function toggle(){
+      var s=document.querySelector('.side'); if(!s) return;
+      var open=s.classList.toggle('open');
+      back.classList.toggle('on', open);
+    }
+    btn.addEventListener('click', toggle);
+    back.addEventListener('click', close);
+    document.body.appendChild(btn);
+    document.body.appendChild(back);
+    // close the drawer after tapping any nav item
+    document.addEventListener('click', function(e){
+      var item=e.target.closest ? e.target.closest('.nav-item') : null;
+      if(item) close();
+    });
+  })();
+</script>
+<!-- /ISKRA widget -->
+<script src="/sklz-i18n.js" defer></script>
+<script src="/sklz-mobile.js" defer></script>
+<script>
+/* SKLZ paywall: members areas need an active plan. Public pages are
+   exempt; everyone else routes through pricing. */
+(async function(){
+  var API=location.hostname==="localhost"?"http://localhost:8000":"https://api.sklzlabs.com";
+  var tok=localStorage.getItem("sklz_access")||"";
+  if(!tok){ location.href="/login.html?next="+encodeURIComponent(location.pathname); return; }
+  try{
+    var r=await fetch(API+"/api/billing/status",{headers:{"Authorization":"Bearer "+tok}});
+    if(r.status===401){ location.href="/login.html?next="+encodeURIComponent(location.pathname); return; }
+    var d=await r.json();
+    if(!(d&&(d.active||d.plan==="suite_lifetime"))){ location.href="/pricing.html?join=1"; }
+  }catch(e){/* API down: fail open — never lock paying users out on our outage */}
+})();
+</script>
+</body>
+</html>

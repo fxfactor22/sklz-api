@@ -230,3 +230,26 @@ def test_the_browser_still_sends_nothing_but_the_token():
     assert "body:" not in fn          # no request body at all
     for forbidden in ("symbol:", "lots", "volume:", "bot_name", "chat"):
         assert forbidden not in fn, forbidden
+
+
+# ── a funded trade must never reach the demo Runner ──────────────────
+def test_manual_orders_refuse_the_demo_runner():
+    """A gold order meant for the funded 50k reached the demo account
+    because the dashboard offered sklz-demo as a target."""
+    bi = open("./bot_ingest.py").read()
+    fn = bi[bi.index("async def place_order("):]
+    fn = fn[:fn.index("\n@router") if "\n@router" in fn else len(fn)]
+    assert 'SKLZ_DEMO_BOT_NAME' in fn
+    assert "that is the demo Runner" in fn
+    # the refusal happens BEFORE the insert
+    assert fn.index("SKLZ_DEMO_BOT_NAME") < fn.index('table("bot_orders").insert')
+
+
+def test_the_dashboard_hides_demo_runners():
+    h = open("tests/fixtures/bot.html").read()
+    assert "DEMO_BOT_RE" in h
+    import re
+    rx = re.compile(r'^sklz-demo|(^|[^a-z])demo([^a-z]|$)', re.I)
+    assert rx.search("sklz-demo")
+    assert not rx.search("Learning Runner [live]")
+    assert "no live runner" in h          # never silently empty
