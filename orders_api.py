@@ -754,7 +754,18 @@ async def demo_run_state(token: str, command_id: str,
     # CONFIRMED the fill. Nothing is announced before it exists.
     if r.get("status") == "succeeded" and r.get("ticket"):
         link = await read_demo_link(token, sb)
-        tg = await offload(_deliver_demo_signal, sb, r, link["provider_name"])
+        kind = r.get("demo_kind")
+        if kind == "market":
+            tg = await offload(_deliver_demo_signal, sb, r,
+                               link["provider_name"])
+        else:
+            # A lifecycle event edits the ORIGINAL signal rather than
+            # posting a new one, and composes from the MARKET row so the
+            # volume and entry are the real fill.
+            status = {"modify": "UPDATED", "breakeven": "BREAKEVEN",
+                      "close": "CLOSED"}.get(kind, "UPDATED")
+            tg = await offload(_lifecycle_edit, sb, tok, r, status,
+                               link["provider_name"])
         out["telegram"] = tg
         if tg.get("message_id") and out["latency_ms"] is not None:
             try:
@@ -843,6 +854,50 @@ def _demo_signal_text(row: dict, provider: str, status: str = "OPEN",
               "Automation is live; funds are virtual.", "",
               "Not financial advice."]
     return "\n".join(lines)
+
+
+def _signal_row(sb: Client, tok: str, ticket) -> dict:
+    """The MARKET row for a ticket — the only row that holds a fill.
+
+    A modify or breakeven row records a command, not an execution: its
+    lots are 0 and its filled_volume is null. Composing a signal from
+    one produced "Volume: 0" and a second Telegram post instead of an
+    edit to the original.
+    """
+    if not ticket:
+        return {}
+    try:
+        rows = (sb.table("bot_orders").select("*")
+                .eq("demo_token", tok).eq("ticket", int(ticket))
+                .eq("demo_kind", "market").limit(1).execute()).data or []
+    except Exception:
+        return {}
+    return rows[0] if rows else {}
+
+
+def _edit_demo_message(dest, message_id, text: str) -> dict:
+    """Edit the ORIGINAL post so one trade stays one message."""
+    import urllib.request
+    payload = {"chat_id": dest.chat_id, "message_id": int(message_id),
+               "text": text, "disable_web_page_preview": True}
+    try:
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{dest.token.reveal()}/editMessageText",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            d = json.loads(r.read().decode())
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"{type(exc).__name__}"}
+    if not d.get("ok"):
+        desc = str(d.get("description", ""))
+        # Telegram refuses an edit that would not change anything.
+        if "not modified" in desc.lower():
+            return {"message_id": int(message_id), "unchanged": True,
+                    "url": _tg_message_url(DEMO_TG_CHAT, message_id)}
+        return {"error": desc[:120]}
+    return {"message_id": int(message_id), "edited": True,
+            "url": _tg_message_url(DEMO_TG_CHAT, message_id)}
 
 
 def _deliver_demo_signal(sb: Client, row: dict, provider: str) -> dict:
@@ -1307,3 +1362,33 @@ async def demo_symbols(token: str,
             "symbols": [{"symbol": k, **v} for k, v in DEMO_SYMBOLS.items()],
             "note": ("Lot size is set per instrument so the exposure is "
                      "comparable. It is not chosen by the browser.")}
+
+
+def _lifecycle_edit(sb: Client, tok: str, event: dict, status: str,
+                    provider: str) -> dict:
+    """Edit the trade's original post to show its new state."""
+    base = _signal_row(sb, tok, event.get("ticket"))
+    if not base:
+        return {"error": "no signal row for that ticket"}
+    mid = base.get("demo_tg_message_id")
+    if not mid:
+        return {"error": "the original signal was never posted"}
+
+    dests = resolve_destinations(RoutingScope(purpose="demo_signal"))
+    dest = dests[0] if dests else None
+    if not dest or not dest.enabled:
+        return {"error": "demo delivery disabled"}
+    if str(dest.chat_id) not in (DEMO_TG_CHAT, "@sklzlabsdemo"):
+        return {"error": f"refused: resolver returned {dest.chat_id}"}
+
+    # current broker-side values win over anything stored earlier
+    live = {}
+    if event.get("sl"):
+        live["sl"] = event["sl"]
+    if event.get("tp"):
+        live["tp"] = event["tp"]
+    text = _demo_signal_text(base, provider, status, live)
+    ok, why = policy.validate(text, strict=False)
+    if not ok:
+        return {"error": f"policy:{why}"}
+    return _edit_demo_message(dest, mid, text)

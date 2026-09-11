@@ -636,3 +636,36 @@ def test_no_pnl_is_claimed():
         t = c(ROW, "P", s).lower()
         for banned in ("profit", "p/l", "pnl", "pips gained", "%"):
             assert banned not in t, (s, banned)
+
+
+def test_a_signal_is_composed_from_the_market_row_only():
+    """modify/breakeven rows hold a command, not a fill: lots 0 and
+    filled_volume null. Composing from one printed 'Volume: 0'."""
+    api = open("orders_api.py").read()
+    fn = api[api.index("def _signal_row("):api.index("def _edit_demo_message(")]
+    assert 'eq("demo_kind", "market")' in fn
+    st = api[api.index("async def demo_run_state("):]
+    assert 'if kind == "market":' in st
+    assert "_lifecycle_edit" in st
+
+
+def test_lifecycle_events_edit_rather_than_repost():
+    api = open("orders_api.py").read()
+    assert "editMessageText" in api
+    fn = api[api.index("def _lifecycle_edit("):]
+    assert "demo_tg_message_id" in fn
+    assert "sendMessage" not in fn          # never a second post
+
+
+def test_an_unchanged_edit_is_not_an_error():
+    api = open("orders_api.py").read()
+    fn = api[api.index("def _edit_demo_message("):api.index("def _deliver_demo_signal(")]
+    assert '"not modified" in desc.lower()' in fn
+    assert '"unchanged": True' in fn
+
+
+def test_the_edit_can_only_reach_the_demo_channel():
+    api = open("orders_api.py").read()
+    fn = api[api.index("def _lifecycle_edit("):]
+    assert 'not in (DEMO_TG_CHAT, "@sklzlabsdemo")' in fn
+    assert "policy.validate(text" in fn
