@@ -135,6 +135,21 @@ async def bot_update(body: BotUpdate, authorization: str = Header(default=""),
            "broadcast": body.broadcast, "created_at": _now()}
     saved = _save(sb, row)
 
+    # A demo trade's Telegram post follows its stop without any browser.
+    # The Runner already reports every confirmed trailing move here, so
+    # the communication layer listens rather than the Runner calling
+    # Telegram itself. Failure here must never affect trading or the
+    # update board, hence the blanket catch.
+    if kind in ("trail", "secured") and body.ticket and \
+            body.new_sl is not None:
+        try:
+            import orders_api
+            await orders_api.notify_demo_trailing(
+                sb, str(body.ticket), float(body.new_sl))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[updates] demo trailing notify skipped: "
+                  f"{type(exc).__name__}")
+
     # keep the matching signal's live status in step
     if body.symbol:
         try:

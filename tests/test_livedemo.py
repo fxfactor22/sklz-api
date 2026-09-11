@@ -705,3 +705,57 @@ def test_all_five_lifecycle_states_reach_telegram():
     assert '"modify": "UPDATED"' in st
     assert '"breakeven": "BREAKEVEN"' in st
     assert '"close": "CLOSED"' in st
+
+
+# ── trailing without a browser ───────────────────────────────────────
+def test_trailing_notification_needs_no_browser():
+    """The Runner already reports confirmed trail moves to the update
+    board. The communication layer listens there."""
+    u = open("updates_api.py").read()
+    assert "notify_demo_trailing" in u
+    assert 'kind in ("trail", "secured")' in u
+
+
+def test_the_runner_never_calls_telegram():
+    """Execution reports a trading fact; communication decides how to
+    say it."""
+    u = open("updates_api.py").read()
+    fn = u[u.index("saved = _save(sb, row)"):]
+    fn = fn[:fn.index("# keep the matching signal")]
+    assert "api.telegram.org" not in fn
+    assert "orders_api.notify_demo_trailing" in fn
+
+
+def test_a_telegram_failure_cannot_affect_the_update_board():
+    u = open("updates_api.py").read()
+    fn = u[u.index('kind in ("trail", "secured")'):]
+    fn = fn[:fn.index("# keep the matching signal")]
+    assert "try:" in fn and "except Exception" in fn
+    assert "notify skipped" in fn
+
+
+def test_every_demo_guard_still_applies():
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def notify_demo_trailing("):]
+    for guard in ('eq("demo_kind", "market")',
+                  'base.get("bot_name") != DEMO_BOT_NAME',
+                  '!= _demo_login()',
+                  'not base.get("demo_tg_message_id")'):
+        assert guard in fn, guard
+    assert 'not in (DEMO_TG_CHAT, "@sklzlabsdemo")' in fn
+
+
+def test_the_same_stop_twice_is_not_a_second_edit():
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def notify_demo_trailing("):]
+    assert 'abs(float(base.get("sl") or 0) - float(new_sl)) < 1e-9' in fn
+    assert '"skipped": "stop unchanged"' in fn
+    # and the new stop is remembered so the next event compares to truth
+    assert '{"sl": float(new_sl)}' in fn
+
+
+def test_a_non_demo_ticket_is_ignored():
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def notify_demo_trailing("):]
+    assert '"skipped": "not a demo trade"' in fn
+    assert '"skipped": "not the demo runner"' in fn

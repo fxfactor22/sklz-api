@@ -1450,3 +1450,70 @@ def _trailing_edit(sb: Client, tok: str, event: dict, provider: str) -> dict:
                 pass
         out = res
     return out
+
+
+async def notify_demo_trailing(sb: Client, ticket: str, new_sl: float) -> dict:
+    """Edit a demo trade's Telegram post when the broker stop moves.
+
+    Called from the update board, which the Runner already posts to after
+    every CONFIRMED trailing modification. The Runner never talks to
+    Telegram: it reports a trading fact, and this layer decides how to
+    communicate it.
+
+    Every demo guard still applies — the trade must belong to a demo
+    token, have been filled on the configured demo account, and already
+    have a Telegram message to edit.
+    """
+    def _find():
+        return (sb.table("bot_orders")
+                .select("command_id,demo_token,ticket,symbol,side,lots,"
+                        "filled_volume,fill_price,sl,tp,actual_account,"
+                        "demo_tg_message_id,bot_name")
+                .eq("ticket", int(ticket)).eq("demo_kind", "market")
+                .limit(1).execute()).data or []
+
+    rows = await offload(_find)
+    if not rows:
+        return {"skipped": "not a demo trade"}
+    base = rows[0]
+
+    if base.get("bot_name") != DEMO_BOT_NAME:
+        return {"skipped": "not the demo runner"}
+    if str(base.get("actual_account") or "") != _demo_login():
+        return {"skipped": "filled on another account"}
+    if not base.get("demo_tg_message_id"):
+        return {"skipped": "no message to edit"}
+    # idempotent: the same stop twice is not a second edit
+    if abs(float(base.get("sl") or 0) - float(new_sl)) < 1e-9:
+        return {"skipped": "stop unchanged"}
+
+    def _link():
+        return (sb.table("demo_links").select("provider_name")
+                .eq("token", base.get("demo_token") or "")
+                .limit(1).execute()).data or []
+
+    links = await offload(_link)
+    provider = (links[0]["provider_name"] if links else "SKLZ")
+
+    def _send():
+        dests = resolve_destinations(RoutingScope(purpose="demo_signal"))
+        dest = dests[0] if dests else None
+        if not dest or not dest.enabled:
+            return {"error": "demo delivery disabled"}
+        if str(dest.chat_id) not in (DEMO_TG_CHAT, "@sklzlabsdemo"):
+            return {"error": f"refused: resolver returned {dest.chat_id}"}
+        text = _demo_signal_text(base, provider, "TRAILING ACTIVE",
+                                 {"sl": new_sl})
+        ok, why = policy.validate(text, strict=False)
+        if not ok:
+            return {"error": f"policy:{why}"}
+        res = _edit_demo_message(dest, base["demo_tg_message_id"], text)
+        if res.get("message_id"):
+            try:
+                sb.table("bot_orders").update({"sl": float(new_sl)}) \
+                    .eq("command_id", base["command_id"]).execute()
+            except Exception:  # noqa: BLE001
+                pass
+        return res
+
+    return await offload(_send)
