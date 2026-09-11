@@ -177,8 +177,11 @@ def test_auto_close_is_idempotent_and_guarded():
     assert s.index("_demo_guard(sb)") < s.index("cutoff")   # guard first
 
 
-def test_the_hold_is_between_60_and_120_seconds():
-    assert "DEMO_HOLD_SECONDS = 90" in API
+def test_the_hold_allows_interaction_then_cleans_up():
+    """90s was right for fire-and-forget and wrong once the desk became
+    interactive: a prospect needs time to modify, breakeven and close."""
+    assert "DEMO_HOLD_SECONDS = 600" in API
+    assert "sweep" in API.lower()          # abandoned positions still close
 
 
 # ── the prospect button ──────────────────────────────────────────────
@@ -253,3 +256,151 @@ def test_the_dashboard_hides_demo_runners():
     assert rx.search("sklz-demo")
     assert not rx.search("Learning Runner [live]")
     assert "no live runner" in h          # never silently empty
+
+
+# ── sales readiness: honest labelling and fresh tokens ───────────────
+def test_every_step_declares_real_or_simulated():
+    h = open("tests/fixtures/signal-desk-demo.html").read()
+    assert h.count(">REAL<") >= 4
+    assert h.count(">SIMULATED PREVIEW<") >= 2
+    assert "ILLUSTRATIVE FIGURES" in h
+    # the summary line says which is which
+    assert "no subscriber\n          account executed anything" in h or \
+        "no subscriber" in h
+
+
+def test_a_fresh_token_reports_no_runs_used():
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def list_demo_links("):]
+    assert 'r["runs_used"] = used.get(r["token"], 0)' in fn
+    assert '"runs_remaining"' in fn
+    # counted from actual orders, so a new token can only be 0
+    assert 'eq("demo_kind", "market")' in fn
+
+
+def test_revoke_is_admin_only_and_keeps_history():
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def revoke_demo_link("):]
+    assert "rules.is_platform_admin(user)" in fn
+    assert '"revoked": True' in fn
+    assert ".delete()" not in fn
+
+
+# ── Phase 1: control desk ────────────────────────────────────────────
+def test_a_prospect_can_only_act_on_its_own_ticket():
+    """Without this, any ticket number in a request could be closed."""
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def _owned_ticket("):]
+    fn = fn[:fn.index("@demo_router.post")]
+    assert '.eq("demo_token", tok).eq("ticket", ticket)' in fn
+    assert "not_your_position" in fn
+    # and the fill must have happened on the demo account
+    assert '!= _demo_login()' in fn and "account_mismatch" in fn
+
+
+def test_control_verifies_ownership_before_queueing():
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def demo_control("):]
+    fn = fn[:fn.index("@demo_router.get")]
+    assert fn.index("_owned_ticket(sb, tok") < fn.index('table("bot_orders").insert')
+    # every command is bound to the demo runner
+    assert '"bot_name": DEMO_BOT_NAME' in fn
+    # the browser cannot name a runner or an account
+    sig = fn[:fn.index(")")]
+    for forbidden in ("bot_name", "account", "login"):
+        assert forbidden not in sig, forbidden
+
+
+def test_control_actions_map_to_existing_a3_commands():
+    api = open("orders_api.py").read()
+    for a in ("market", "modify", "breakeven", "close", "positions"):
+        assert f'"command_type": "{a}"' in api, a
+    # nothing pending was added
+    # no pending ORDER TYPES were added ("pending" alone is the A3 row
+    # status and appears legitimately)
+    for banned in ("buy_limit", "sell_limit", "buy_stop", "sell_stop",
+                   "ORDER_TYPE_BUY_LIMIT", "TRADE_ACTION_PENDING"):
+        assert banned not in api, banned
+
+
+def test_the_interaction_window_is_ten_minutes():
+    api = open("orders_api.py").read()
+    assert "DEMO_HOLD_SECONDS = 600" in api
+    # the sweep still backstops abandoned positions
+    assert "cutoff" in api and "DEMO_HOLD_SECONDS" in api
+
+
+def test_a_closed_ticket_is_not_closed_twice():
+    api = open("orders_api.py").read()
+    fn = api[api.index("def _sweep_demo_closes("):]
+    assert 'is_("demo_close_command_id", "null")' in fn
+
+
+# ── Phase 2: trailing visibility ─────────────────────────────────────
+def test_trailing_is_read_only_for_a_public_token():
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def demo_trailing("):]
+    assert '"read_only": True' in fn
+    for write in ("insert(", "update(", "os.environ[", "_os.environ["):
+        assert write not in fn, write
+
+
+def test_the_broker_claim_is_backed_by_the_implementation():
+    """We only say 'applied at the broker' because trailing.py does it."""
+    api = open("orders_api.py").read()
+    assert "continues if" in api and "browser is closed" in api
+    t = open("../eng/basket_engine/learn/trailing.py").read()
+    assert "set on the BROKER" in t
+
+
+def test_live_sl_comes_from_a_positions_read_not_memory():
+    api = open("orders_api.py").read()
+    assert '"command_type": "positions"' in api
+    r = open("../eng/basket_engine/learn/runner.py").read()
+    fn = r[r.index("def _cmd_positions("):]
+    fn = fn[:fn.index("\n    def ")]
+    assert "my_positions()" in fn and '"sl"' in fn
+
+
+# ── Phase 3: AI communication ────────────────────────────────────────
+def test_the_ai_receives_facts_as_data_and_may_not_invent():
+    api = open("orders_api.py").read()
+    fn = api[api.index("def _ai_draft("):]
+    fn = fn[:fn.index("@demo_router.post")]
+    assert "ONLY state facts present in the DATA" in fn
+    assert "Never invent or estimate" in fn
+    assert "BROKER DEMO ACCOUNT" in fn
+    assert "json.dumps(facts" in fn
+
+
+def test_facts_come_from_the_ledger_not_the_request():
+    api = open("orders_api.py").read()
+    fn = api[api.index("def _verified_facts("):]
+    fn = fn[:fn.index("def _ai_draft(")]
+    assert 'eq("demo_token", tok)' in fn
+    assert '"status") == "succeeded"' in fn
+    assert "fill_price" in fn and "retcode" in fn
+
+
+def test_policy_gates_the_draft_and_the_edited_text():
+    api = open("orders_api.py").read()
+    draft = api[api.index("async def demo_ai_draft("):]
+    assert "policy.validate(draft" in draft
+    send = api[api.index("async def demo_ai_send("):]
+    assert "policy.validate(text" in send
+    assert "policy_refused" in send
+
+
+def test_ai_send_can_only_reach_the_demo_channel():
+    api = open("orders_api.py").read()
+    fn = api[api.index("def _deliver_demo_signal_text("):]
+    assert 'RoutingScope(purpose="demo_signal")' in fn
+    assert 'not in (DEMO_TG_CHAT, "@sklzlabsdemo")' in fn
+    assert "refused: resolver returned" in fn
+
+
+def test_every_ai_message_is_marked_demo():
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def demo_ai_send("):]
+    assert 'if "DEMO" in text.upper()' in fn
+    assert "DEMO ACCOUNT" in fn

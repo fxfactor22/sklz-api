@@ -747,7 +747,11 @@ async def demo_run_state(token: str, command_id: str,
 
 
 # ── auto-close and real demo Telegram ───────────────────────────────
-DEMO_HOLD_SECONDS = 90          # how long a demo position stays open
+# An interactive prospect needs time to inspect, modify, breakeven and
+# close. 90s was right for a fire-and-forget demo and wrong the moment
+# the desk became usable. The sweep remains the backstop for positions
+# nobody came back to.
+DEMO_HOLD_SECONDS = 600
 DEMO_TG_CHAT = "-1004489542294"  # @sklzlabsdemo — the ONLY demo destination
 
 
@@ -921,3 +925,305 @@ async def demo_sweep(user=Depends(get_current_user),
     if not rules.is_platform_admin(user):
         raise HTTPException(http.HTTP_403_FORBIDDEN, "platform admin only")
     return {"ok": True, "queued": await offload(_sweep_demo_closes, sb)}
+
+
+# ── interactive control desk ────────────────────────────────────────
+CONTROL_ACTIONS = {"buy", "sell", "modify", "breakeven", "close", "positions"}
+DEMO_BE_OFFSET_PIPS = 2
+
+
+class ControlIn(BaseModel):
+    action: str
+    ticket: int | None = None
+    sl: float | None = None
+    tp: float | None = None
+
+
+async def _owned_ticket(sb: Client, tok: str, ticket: int) -> dict:
+    """The order THIS token created with THIS ticket, or nothing.
+
+    A prospect may only act on a position their own demo opened. Without
+    this, any ticket number typed into a request could be modified or
+    closed on the demo account — including one another prospect is
+    currently looking at.
+    """
+    def _q():
+        return (sb.table("bot_orders")
+                .select("command_id,ticket,symbol,side,lots,fill_price,"
+                        "actual_account,status")
+                .eq("demo_token", tok).eq("ticket", ticket)
+                .eq("status", "succeeded").limit(1).execute()).data or []
+
+    rows = await offload(_q)
+    if not rows:
+        raise HTTPException(http.HTTP_404_NOT_FOUND,
+                            {"error": "not_your_position",
+                             "detail": "this demo did not open that ticket"})
+    row = rows[0]
+    if str(row.get("actual_account") or "") != _demo_login():
+        raise HTTPException(http.HTTP_409_CONFLICT,
+                            {"error": "account_mismatch",
+                             "detail": "that ticket was filled on another "
+                                       "account"})
+    return row
+
+
+@demo_router.post("/{token}/control")
+async def demo_control(token: str, body: ControlIn,
+                       sb: Client = Depends(get_supabase)) -> dict:
+    """One door for every real action on the demo master.
+
+    The browser names an action and, for position actions, a ticket it
+    owns. It never names a Runner, an account, or a destination.
+    """
+    link = await read_demo_link(token, sb)          # expiry / revoked
+    why = _demo_guard(sb)                            # login / freshness
+    if why:
+        raise HTTPException(http.HTTP_503_SERVICE_UNAVAILABLE,
+                            {"error": "live_demo_unavailable", "detail": why})
+
+    action = (body.action or "").lower().strip()
+    if action not in CONTROL_ACTIONS:
+        raise HTTPException(http.HTTP_400_BAD_REQUEST,
+                            f"action must be one of {sorted(CONTROL_ACTIONS)}")
+    tok = token.strip().lower()
+
+    row: dict = {"bot_name": DEMO_BOT_NAME, "status": "pending",
+                 "demo_token": tok, "mode": "execute", "lots": 0,
+                 "symbol": "", "side": "buy"}
+
+    if action in ("buy", "sell"):
+        def _count():
+            return (sb.table("bot_orders").select("id")
+                    .eq("demo_token", tok).eq("demo_kind", "market")
+                    .execute()).data or []
+        used = len(await offload(_count))
+        if used >= DEMO_RUNS_PER_TOKEN:
+            raise HTTPException(http.HTTP_429_TOO_MANY_REQUESTS,
+                                {"error": "demo_runs_exhausted",
+                                 "used": used})
+        row.update({"symbol": DEMO_SYMBOL, "side": action, "lots": DEMO_LOT,
+                    "command_type": "market", "demo_kind": "market",
+                    "note": f"[demo] {link['provider_name']}"[:300]})
+    else:
+        if not body.ticket:
+            raise HTTPException(http.HTTP_400_BAD_REQUEST,
+                                "this action needs the ticket it applies to")
+        owned = await _owned_ticket(sb, tok, int(body.ticket))
+        row.update({"ticket": int(body.ticket),
+                    "symbol": owned.get("symbol") or "",
+                    "side": owned.get("side") or "buy",
+                    "note": f"[demo] {action} {body.ticket}"[:300]})
+        if action == "modify":
+            if body.sl is None and body.tp is None:
+                raise HTTPException(http.HTTP_400_BAD_REQUEST,
+                                    "give a stop, a target, or both")
+            row.update({"command_type": "modify", "demo_kind": "modify",
+                        "sl": float(body.sl or 0), "tp": float(body.tp or 0)})
+        elif action == "breakeven":
+            row.update({"command_type": "breakeven", "demo_kind": "breakeven",
+                        "offset_pips": DEMO_BE_OFFSET_PIPS})
+        elif action == "close":
+            row.update({"command_type": "close", "demo_kind": "close"})
+        else:   # positions
+            row.update({"command_type": "positions", "demo_kind": "positions"})
+
+    if action == "positions" and not body.ticket:
+        row.update({"command_type": "positions", "demo_kind": "positions",
+                    "note": "[demo] read positions"})
+
+    def _insert():
+        return sb.table("bot_orders").insert(row).execute()
+
+    try:
+        res = await offload(_insert)
+        created = (res.data or [{}])[0]
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(http.HTTP_503_SERVICE_UNAVAILABLE,
+                            {"error": "queue_unavailable",
+                             "detail": str(exc)[:160]}) from exc
+
+    return {"ok": True, "action": action,
+            "command_id": created.get("command_id"),
+            "state": "queued",
+            "note": "poll the command for the broker's answer"}
+
+
+@demo_router.get("/{token}/trailing")
+async def demo_trailing(token: str,
+                        sb: Client = Depends(get_supabase)) -> dict:
+    """The trailing configuration as the Runner actually runs it.
+
+    Read-only and display-only: a public demo token must never be able
+    to change global Runner configuration.
+    """
+    await read_demo_link(token, sb)
+    trigger = _num_env("SKLZ_TRAIL_TRIGGER_PIPS", 20)
+    distance = _num_env("SKLZ_TRAIL_DISTANCE_PIPS", 10)
+    return {"ok": True, "active": True,
+            "trigger_pips": trigger, "distance_pips": distance,
+            "where": "broker",
+            "note": ("Protection is applied at the broker and continues if "
+                     "the browser is closed."),
+            "read_only": True}
+
+
+# ── AI communication centre ─────────────────────────────────────────
+# The model receives FACTS AS DATA and is asked to phrase them. It is
+# never asked what happened, because it has no way to know — every
+# number here comes from bot_orders, which the Runner wrote from the
+# broker's own answer.
+AI_INTENTS = {"explain", "breakeven", "modified", "closed", "summary",
+              "update"}
+
+
+class AIDraftIn(BaseModel):
+    intent: str = "update"
+    ticket: int | None = None
+    instruction: str = ""
+
+
+def _verified_facts(sb: Client, tok: str, ticket: int | None) -> dict:
+    """Everything the AI is allowed to know, straight from the ledger."""
+    def _q():
+        q = (sb.table("bot_orders")
+             .select("ticket,symbol,side,lots,fill_price,retcode,"
+                     "broker_comment,status,demo_kind,sl,tp,executed_at,"
+                     "demo_closed_at,demo_close_state,actual_account")
+             .eq("demo_token", tok).order("created_at", desc=True).limit(25))
+        return (q.execute()).data or []
+
+    rows = [r for r in (sb and _q() or []) if r.get("status") == "succeeded"]
+    trades = [r for r in rows if r.get("demo_kind") == "market"]
+    if ticket:
+        trades = [r for r in trades if int(r.get("ticket") or 0) == ticket]
+    events = [r for r in rows if r.get("demo_kind") in
+              ("modify", "breakeven", "close")]
+    return {"trades": trades[:5], "events": events[:8],
+            "account_type": "broker demo account"}
+
+
+def _ai_draft(facts: dict, intent: str, instruction: str,
+              provider: str) -> tuple[str, str]:
+    """Ask Claude to phrase the facts. Returns (draft, error)."""
+    import urllib.request
+    key = _os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not key:
+        return "", "AI drafting is not configured"
+
+    system = (
+        "You write short Telegram updates for a trading signal channel.\n"
+        "ABSOLUTE RULE: you may ONLY state facts present in the DATA "
+        "below. Never invent or estimate a price, profit, loss, win rate, "
+        "subscriber count or outcome. If a number is not in the DATA, do "
+        "not mention it.\n"
+        "These trades were executed on a BROKER DEMO ACCOUNT. Say so.\n"
+        "Never promise results, never imply past performance predicts "
+        "future returns, never give financial advice.\n"
+        "Write plainly, 2-5 short lines, no hype, no emoji spam.")
+    user = (f"Channel: {provider}\nIntent: {intent}\n"
+            f"Operator instruction: {instruction or '(none)'}\n\n"
+            f"DATA (the only facts you may use):\n"
+            f"{json.dumps(facts, indent=2, default=str)}")
+
+    body = json.dumps({"model": "claude-sonnet-4-6", "max_tokens": 500,
+                       "system": system,
+                       "messages": [{"role": "user", "content": user}]})
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages", data=body.encode(),
+        headers={"content-type": "application/json", "x-api-key": key,
+                 "anthropic-version": "2023-06-01"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            d = json.loads(r.read().decode())
+    except Exception as exc:  # noqa: BLE001
+        return "", f"{type(exc).__name__}"
+    text = "".join(b.get("text", "") for b in (d.get("content") or [])
+                   if b.get("type") == "text").strip()
+    return text, "" if text else "the model returned nothing"
+
+
+@demo_router.post("/{token}/ai-draft")
+async def demo_ai_draft(token: str, body: AIDraftIn,
+                        sb: Client = Depends(get_supabase)) -> dict:
+    """Draft a subscriber update from verified facts. Sends nothing."""
+    link = await read_demo_link(token, sb)
+    intent = (body.intent or "update").lower()
+    if intent not in AI_INTENTS:
+        intent = "update"
+    tok = token.strip().lower()
+
+    facts = await offload(_verified_facts, sb, tok, body.ticket)
+    if not facts["trades"] and not facts["events"]:
+        return {"ok": False, "reason": "no verified trades yet — open one "
+                                       "first and the draft will describe it"}
+
+    draft, err = await offload(_ai_draft, facts, intent,
+                               _clean(body.instruction, 300),
+                               link["provider_name"])
+    if err:
+        return {"ok": False, "reason": err, "facts_used": facts}
+
+    ok, why = policy.validate(draft, strict=False)
+    return {"ok": True, "draft": draft, "policy_ok": ok,
+            "policy_reason": "" if ok else why,
+            "facts_used": facts,
+            "note": "edit freely — it is checked again before sending"}
+
+
+class AISendIn(BaseModel):
+    text: str
+
+
+@demo_router.post("/{token}/ai-send")
+async def demo_ai_send(token: str, body: AISendIn,
+                       sb: Client = Depends(get_supabase)) -> dict:
+    """Send an operator-approved message to the demo channel only."""
+    await read_demo_link(token, sb)
+    text = (body.text or "").strip()
+    if len(text) < 10:
+        raise HTTPException(http.HTTP_400_BAD_REQUEST, "nothing to send")
+    if len(text) > 3000:
+        raise HTTPException(http.HTTP_400_BAD_REQUEST, "too long")
+
+    # Edited text is re-checked. The draft passing is not a licence for
+    # whatever the operator typed over it.
+    ok, why = policy.validate(text, strict=False)
+    if not ok:
+        raise HTTPException(http.HTTP_400_BAD_REQUEST,
+                            {"error": "policy_refused", "detail": why})
+
+    marked = text if "DEMO" in text.upper() else (
+        "\u26a0\ufe0f DEMO ACCOUNT — demonstration message\n\n" + text)
+    row = {"command_id": f"ai-{secrets.token_hex(8)}", "fill_price": None,
+           "ticket": None, "symbol": "", "side": "", "lots": 0,
+           "resolved_symbol": "", "filled_volume": 0,
+           "demo_tg_message_id": None}
+    out = await offload(_deliver_demo_signal_text, sb, marked)
+    return {"ok": bool(out.get("message_id")), **out}
+
+
+def _deliver_demo_signal_text(sb: Client, text: str) -> dict:
+    """Deliver arbitrary approved text to the demo channel. One chat."""
+    dests = resolve_destinations(RoutingScope(purpose="demo_signal"))
+    dest = dests[0] if dests else None
+    if not dest or not dest.enabled:
+        return {"error": "demo delivery disabled"}
+    if str(dest.chat_id) not in (DEMO_TG_CHAT, "@sklzlabsdemo"):
+        return {"error": f"refused: resolver returned {dest.chat_id}"}
+    import urllib.request
+    payload = {"chat_id": dest.chat_id, "text": text,
+               "disable_web_page_preview": True}
+    try:
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{dest.token.reveal()}/sendMessage",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            d = json.loads(r.read().decode())
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"{type(exc).__name__}"}
+    if not d.get("ok"):
+        return {"error": str(d.get("description", "refused"))[:120]}
+    mid = (d.get("result") or {}).get("message_id")
+    return {"message_id": mid, "url": _tg_message_url(DEMO_TG_CHAT, mid)}
