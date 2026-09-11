@@ -189,9 +189,14 @@ PAGE = open("tests/fixtures/signal-desk-demo.html").read()
 
 
 def test_the_button_calls_the_real_backend():
-    assert "RUN LIVE DEMO" in PAGE
-    assert "/run-live" in PAGE and "method:\"POST\"" in PAGE
-    assert "async function runLive()" in PAGE
+    """The single RUN LIVE DEMO button became BUY/SELL with an instrument
+    selector, so a prospect can choose before trading."""
+    assert "async function runLive(side)" in PAGE
+    assert '"/control"' in PAGE or "/control`" in PAGE
+    assert 'id="symSel"' in PAGE
+    assert "runLive(\'buy\')" in PAGE
+    assert "runLive(\'sell\')" in PAGE
+    assert "BUY" in PAGE and "SELL" in PAGE
 
 
 def test_filled_is_never_shown_before_the_broker_confirms():
@@ -226,16 +231,19 @@ def test_the_copier_is_labelled_simulated():
     assert "SIMULATED COPY PREVIEW" in PAGE
 
 
-def test_the_browser_still_sends_nothing_but_the_token():
-    fn = PAGE[PAGE.index("async function runLive()"):]
-    # slice to the END of runLive, not to poll() — other helpers now sit
-    # between them, and one of them legitimately posts a body
-    fn = fn[:fn.index("\nlet LIVE_TICKET")] if "\nlet LIVE_TICKET" in fn \
-        else fn[:fn.index("async function poll(")]
+def test_the_browser_names_only_an_allowlisted_symbol():
+    """The browser now chooses an instrument — but only from the list the
+    server serves, and it still names no runner, account or lot."""
+    fn = PAGE[PAGE.index("async function runLive(side)"):]
+    fn = fn[:fn.index("\nasync function")]
     assert "TOKEN" in fn
-    assert "body:" not in fn          # run-live itself sends no body
-    for forbidden in ("symbol:", "lots", "volume:", "bot_name", "chat"):
+    assert "symbol:sym" in fn                  # the one thing it may pick
+    for forbidden in ("bot_name", "account", "login", "lots", "volume:",
+                      "chat"):
         assert forbidden not in fn, forbidden
+    # and the options come from the server, never hard-coded here
+    assert "/symbols" in PAGE
+    assert "sd.symbols.map" in PAGE
 
 
 # ── a funded trade must never reach the demo Runner ──────────────────

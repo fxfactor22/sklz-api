@@ -231,10 +231,15 @@ section{padding:34px 0}
               id="px">1.08522</span></div>
           </div>
           <div style="margin-left:auto;display:flex;gap:8px">
-            <button class="btn btn-gold" id="btnLive" onclick="runLive()">
-              ⚡ RUN LIVE DEMO</button>
-            <button class="btn btn-ghost" id="btnBuy" onclick="runFlow('buy')">
-              ▶ Replay</button>
+            <select id="symSel" style="background:var(--panel2);
+              color:var(--ink);border:1px solid var(--line);border-radius:9px;
+              padding:10px 11px;font:inherit;font-size:13px"></select>
+            <button class="btn btn-gold" id="btnLive" onclick="runLive('buy')">
+              ▲ BUY</button>
+            <button class="btn btn-ghost" id="btnSell" onclick="runLive('sell')">
+              ▼ SELL</button>
+            <button class="btn btn-ghost" id="btnBuy" onclick="runFlow('buy')"
+              style="padding:10px 12px;font-size:12px">▶ Replay</button>
           </div>
         </div>
 
@@ -283,7 +288,7 @@ section{padding:34px 0}
             <div class="k" data-k>—</div></div>
         </div>
 
-        <div class="card" id="posPanel" style="display:none;margin-top:14px;
+        <div class="card" id="posPanel" style="margin-top:14px;
              border-color:rgba(18,196,139,.3)">
           <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
             <b style="font-size:15px">Open position</b>
@@ -579,6 +584,22 @@ function expired(msg){
   const tag=document.getElementById("brandTag");
   if(tag){ tag.textContent=d.provider_name; tag.style.display=""; }
   CFG.demo_ends = Date.now() + (d.seconds_remaining*1000);
+
+  // The desk is a desk on arrival: instruments listed, positions read.
+  (async ()=>{
+    try{
+      const r=await fetch(`${API}/api/demo-links/${TOKEN}/symbols`);
+      const sd=await r.json();
+      const sel=document.getElementById("symSel");
+      if(sel && sd.symbols){
+        sel.innerHTML=sd.symbols.map(s=>
+          `<option value="${s.symbol}"${s.symbol===sd.default?" selected":""}>`+
+          `${s.label} · ${s.lot}${s.always_open?" · 24/7":""}</option>`).join("");
+      }
+    }catch(e){}
+    try{ await refreshPositions(); }catch(e){}
+    setInterval(()=>{ refreshPositions(); }, 20000);
+  })();
   function tick(){
     const ms = CFG.demo_ends - Date.now();
     const el = document.getElementById("timer");
@@ -806,29 +827,33 @@ function lreset(){
   document.getElementById("tg").classList.remove("on");
   const b=document.getElementById("tgLink"); if(b) b.remove();
 }
-async function runLive(){
+async function runLive(side){
+  side = side || "buy";
   if(running) return; running=true;
-  const btn=document.getElementById("btnLive");
-  btn.disabled=true; btn.textContent="Running…";
+  const btn=document.getElementById(side==="sell"?"btnSell":"btnLive");
+  const label=btn.textContent;
+  btn.disabled=true; btn.textContent="Working…";
   lreset();
   try{
-    const r=await fetch(`${API}/api/demo-links/${TOKEN}/run-live`,
-                        {method:"POST"});
+    const sym=(document.getElementById("symSel")||{}).value||"";
+    const r=await fetch(`${API}/api/demo-links/${TOKEN}/control`,
+      {method:"POST",headers:{"Content-Type":"application/json"},
+       body:JSON.stringify({action:side, symbol:sym})});
     const d=await r.json();
     if(!r.ok){
       const msg=(d.detail&&d.detail.detail)||d.detail||"unavailable";
       lset(0,"refused","s1d",String(msg));
-      btn.disabled=false; btn.textContent="⚡ RUN LIVE DEMO"; running=false;
+      btn.disabled=false; btn.textContent=label; running=false;
       return;
     }
     lset(0,"accepted","s1d",
-         `${d.side.toUpperCase()} ${d.symbol} · ${d.volume} lot · run `+
-         `${d.runs_used}/${d.runs_allowed}`);
+         `${side.toUpperCase()} ${(document.getElementById("symSel")||{}).value}`+
+         ` · queued on the demo desk`);
     await poll(d.command_id);
   }catch(e){
     lset(0,"error","s1d","could not reach the demo desk");
   }
-  btn.disabled=false; btn.textContent="⚡ RUN LIVE DEMO"; running=false;
+  btn.disabled=false; btn.textContent=label; running=false;
 }
 let LIVE_TICKET=null, POLLING=false;
 
