@@ -279,6 +279,115 @@ def _save_lead(sb: Client, chat_id: int, patch: dict) -> None:
         pass
 
 
+
+# ── demo sales funnel ───────────────────────────────────────────────
+# Conversational qualification for signal providers arriving from the
+# pinned showcase. State lives in tg_leads.step like every other flow;
+# prices come from the package config, never from here.
+_F_WELCOME = (
+    "*SKLZ Signal Desk*\n\n"
+    "I can work out which setup fits you \u2014 four short questions.\n\n"
+    "*First: what describes you best?*")
+
+_F_QUESTIONS = {
+    "type": ("*What describes you best?*", [
+        ("I run a signal channel", "provider"),
+        ("I trade my own account", "self"),
+        ("I manage several accounts", "multi"),
+        ("I want to start a signal business", "starting")]),
+    "workflow": ("*How do you send signals today?*", [
+        ("Telegram, by hand", "manual"),
+        ("Telegram, automated", "auto"),
+        ("Discord", "discord"),
+        ("Not distributing yet", "none")]),
+    "audience": ("*How many people follow you?*", [
+        ("Under 100", "u100"), ("100 \u2013 500", "100_500"),
+        ("500 \u2013 2,000", "500_2k"), ("2,000+", "2k_plus")]),
+    "accounts": ("*How many trading accounts are involved?*", [
+        ("Just one", "one"), ("Several of my own", "own_multi"),
+        ("Client or follower accounts", "client"),
+        ("Already copy trading", "copy")]),
+    "problem": ("*What costs you the most time or money?*", [
+        ("Signals arrive late", "late"),
+        ("Updating trades by hand", "manual_updates"),
+        ("Juggling accounts", "accounts"),
+        ("Answering subscribers", "support"),
+        ("Content and comms", "content"),
+        ("All of it", "all")]),
+}
+
+_F_ORDER = ["type", "workflow", "audience", "accounts", "problem"]
+
+
+def _f_buttons(stage: str) -> list:
+    q = _F_QUESTIONS.get(stage)
+    if not q:
+        return []
+    return [[{"text": label, "callback_data": f"f:{stage}:{val}"}]
+            for label, val in q[1]]
+
+
+def _f_recommend(lead: dict) -> tuple[str, str]:
+    """Which package fits, and why. Explainable, never exaggerated."""
+    audience = lead.get("f_audience") or ""
+    accounts = lead.get("f_accounts") or ""
+    problem = lead.get("f_problem") or ""
+    utype = lead.get("f_type") or ""
+
+    big = audience in ("500_2k", "2k_plus")
+    business = problem in ("content", "support", "all") or (
+        big and problem == "all")
+    multi = accounts in ("client", "copy", "own_multi")
+
+    if business and big:
+        return ("pro_trader_os",
+                "You are running a business, not just a channel \u2014 "
+                "subscribers, content and support are the work. Pro "
+                "Trader OS covers the operation around the trading.")
+    if multi or big:
+        return ("signal_desk_pro",
+                "More accounts and a larger audience mean more moving "
+                "parts. Signal Desk Pro adds the deeper controls and "
+                "priority setup.")
+    if utype == "starting":
+        return ("signal_desk",
+                "Starting out, the thing that matters is that your trades "
+                "reach people reliably. Signal Desk is that, without "
+                "paying for what you do not need yet.")
+    return ("signal_desk",
+            "Your bottleneck is distribution rather than operations. "
+            "Signal Desk removes the manual step and leaves the rest "
+            "alone.")
+
+
+def _f_summary(lead: dict, pkg_key: str, why: str) -> tuple[str, list]:
+    try:
+        import orders_api
+        cfg = orders_api._package_config().get(pkg_key, {})
+        name = cfg.get("name", "SKLZ Signal Desk")
+        setup = cfg.get("setup", {}).get("display", "")
+        month = cfg.get("monthly", {}).get("display", "")
+        price = f"{setup} setup + {month}/month" if setup else ""
+    except Exception:  # noqa: BLE001
+        name, price = "SKLZ Signal Desk", ""
+
+    site = os.environ.get("SITE_URL", "https://www.sklzlabs.com")
+    text = (f"*{name}*\n{price}\n\n{why}\n\n"
+            "Multi-account copying available with Signal Desk "
+            "implementation.\n\n"
+            "_Software and automation only. Not financial advice._")
+    buttons = [
+        [{"text": "\u26a1 Try the live demo",
+          "url": f"{site}/signal-desk.html#demo"}],
+        [{"text": "\U0001F4E6 View packages",
+          "url": f"{site}/signal-desk.html#packages"}],
+        [{"text": "\u2705 Activate",
+          "url": f"{site}/signal-desk.html#packages"}],
+        [{"text": "\U0001F464 Talk to a human",
+          "callback_data": "f:human:1"}]]
+    return text, buttons
+
+
 # ── flow ────────────────────────────────────────────────────────────
 def _lang_buttons() -> list:
     return [[{"text": "English", "callback_data": "lang:en"}],
@@ -360,6 +469,33 @@ async def webhook(secret: str, request: Request,
         lead = _get_lead(sb, chat_id)
         lang = lead.get("lang") or "en"
 
+        if data.startswith("f:"):
+            _, stage, val = data.split(":", 2)
+            if stage == "human":
+                _save_lead(sb, chat_id, {"human_requested": True,
+                                         "step": "f_human"})
+                await _asend(chat_id,
+                     "Noted \u2014 someone will message you here shortly.")
+                return {"ok": True}
+            _save_lead(sb, chat_id, {f"f_{stage}": val,
+                                     "step": f"f_{stage}_done"})
+            lead = _get_lead(sb, chat_id) or {}
+            lead[f"f_{stage}"] = val
+            nxt = None
+            for k in _F_ORDER:
+                if not lead.get(f"f_{k}"):
+                    nxt = k
+                    break
+            if nxt:
+                _save_lead(sb, chat_id, {"step": f"f_{nxt}"})
+                await _asend(chat_id, _F_QUESTIONS[nxt][0], _f_buttons(nxt))
+                return {"ok": True}
+            pkg, why = _f_recommend(lead)
+            _save_lead(sb, chat_id, {"recommended": pkg, "step": "f_done"})
+            text, buttons = _f_summary(lead, pkg, why)
+            await _asend(chat_id, text, buttons)
+            return {"ok": True}
+
         if data.startswith("lang:"):
             lang = data.split(":", 1)[1]
             _save_lead(sb, chat_id, {"lang": lang,
@@ -422,6 +558,18 @@ async def webhook(secret: str, request: Request,
         # their language by clicking an Arabic button. Asking again is a
         # pointless step at the exact moment attention is highest, so deep
         # links starting with 'ar' skip straight to the first real question.
+        # A prospect arriving from the demo showcase is a signal
+        # provider evaluating the product, not a retail lead choosing a
+        # language. They enter their own path and never touch the Arabic
+        # flow, which is keyed on a different payload.
+        if payload.startswith("demo"):
+            _save_lead(sb, chat_id, {
+                "lang": "en", "step": "f_type",
+                "source": "telegram_demo_funnel",
+                "name": (m.get("from") or {}).get("first_name", "")})
+            await _asend(chat_id, _F_WELCOME, _f_buttons("type"))
+            return {"ok": True}
+
         if payload.startswith("ar"):
             _save_lead(sb, chat_id, {"lang": "ar", "step": "trade"})
             await _asend(chat_id, t("ar", "welcome") + "\n\n*" + t("ar", "q_trade") + "*",
