@@ -1037,6 +1037,14 @@ async def demo_control(token: str, body: ControlIn,
         row.update({"symbol": sym, "side": action, "lots": lot,
                     "command_type": "market", "demo_kind": "market",
                     "note": f"[demo] {link['provider_name']} {sym}"[:300]})
+    elif action == "positions":
+        # A positions read needs no ticket: "what is open?" is a valid
+        # question with an empty answer. Requiring one meant the read
+        # could never be made without already knowing what to read.
+        row.update({"command_type": "positions", "demo_kind": "positions",
+                    "note": "[demo] read positions"})
+        if body.ticket:
+            row["ticket"] = int(body.ticket)
     else:
         if not body.ticket:
             raise HTTPException(http.HTTP_400_BAD_REQUEST,
@@ -1061,10 +1069,6 @@ async def demo_control(token: str, body: ControlIn,
             row.update({"command_type": "close", "demo_kind": "close"})
         else:   # positions
             row.update({"command_type": "positions", "demo_kind": "positions"})
-
-    if action == "positions" and not body.ticket:
-        row.update({"command_type": "positions", "demo_kind": "positions",
-                    "note": "[demo] read positions"})
 
     def _insert():
         return sb.table("bot_orders").insert(row).execute()

@@ -415,7 +415,11 @@ def _sym_fn():
     src = open("orders_api.py").read()
     tree = _a.parse(src)
     keep = [n for n in tree.body
-            if (isinstance(n, _a.FunctionDef) and n.name == "_demo_symbol")
+            # `str | None` in a signature is evaluated eagerly on Python
+            # 3.9 unless this import comes with it. orders_api.py has it;
+            # extracting nodes without it broke the harness, not the code.
+            if (isinstance(n, _a.ImportFrom) and n.module == "__future__")
+            or (isinstance(n, _a.FunctionDef) and n.name == "_demo_symbol")
             or (isinstance(n, _a.Assign)
                 and getattr(n.targets[0], "id", "") in ("DEMO_SYMBOL", "DEMO_LOT"))
             or (isinstance(n, _a.AnnAssign)
@@ -468,3 +472,15 @@ def test_the_symbol_list_is_readable_by_the_demo():
     assert 'async def demo_symbols(' in api
     fn = api[api.index("async def demo_symbols("):]
     assert "read_demo_link(token, sb)" in fn      # token still required
+
+
+def test_positions_does_not_require_a_ticket():
+    """'What is open?' is a valid question with an empty answer.
+    Requiring a ticket meant the read could never be made without
+    already knowing what it would return."""
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def demo_control("):]
+    fn = fn[:fn.index("@demo_router.get")]
+    i_pos = fn.index('elif action == "positions":')
+    i_req = fn.index("this action needs the ticket")
+    assert i_pos < i_req, "positions must be handled before the ticket check"
