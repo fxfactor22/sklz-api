@@ -228,9 +228,12 @@ def test_the_copier_is_labelled_simulated():
 
 def test_the_browser_still_sends_nothing_but_the_token():
     fn = PAGE[PAGE.index("async function runLive()"):]
-    fn = fn[:fn.index("async function poll(")]
+    # slice to the END of runLive, not to poll() — other helpers now sit
+    # between them, and one of them legitimately posts a body
+    fn = fn[:fn.index("\nlet LIVE_TICKET")] if "\nlet LIVE_TICKET" in fn \
+        else fn[:fn.index("async function poll(")]
     assert "TOKEN" in fn
-    assert "body:" not in fn          # no request body at all
+    assert "body:" not in fn          # run-live itself sends no body
     for forbidden in ("symbol:", "lots", "volume:", "bot_name", "chat"):
         assert forbidden not in fn, forbidden
 
@@ -496,3 +499,52 @@ def test_a_positions_read_survives_the_result_ingest():
     assert '"positions": r.get("positions") or []' in api
     sql = open("migrations/D7-migration.sql").read()
     assert "add column if not exists positions jsonb" in sql
+
+
+# ── control desk UI ──────────────────────────────────────────────────
+def test_the_page_exposes_every_control():
+    h = open("tests/fixtures/signal-desk-demo.html").read()
+    for label in ("Modify SL/TP", "Move to breakeven", "Close trade"):
+        assert label in h, label
+    assert 'id="posPanel"' in h and 'id="trailBox"' in h
+
+
+def test_controls_wait_for_the_broker_before_changing_state():
+    """No button may report success on its own say-so."""
+    h = open("tests/fixtures/signal-desk-demo.html").read()
+    fn = h[h.index("async function ctl(action"):h.index("async function ctlModify")]
+    assert "await awaitCmd(q.command_id)" in fn
+    assert 's.state==="succeeded"' in fn
+    assert fn.index("awaitCmd") < fn.index("confirmed by the broker")
+
+
+def test_the_panel_shows_only_what_the_broker_reports():
+    h = open("tests/fixtures/signal-desk-demo.html").read()
+    fn = h[h.index("async function refreshPositions"):]
+    fn = fn[:fn.index("async function poll(")]
+    for field in ("mine.ticket", "mine.symbol", "mine.side", "mine.volume",
+                  "mine.entry", "mine.sl", "mine.tp", "mine.profit"):
+        assert field in fn, field
+    assert "s.positions" in fn          # straight from the broker read
+
+
+def test_the_trailing_box_shows_the_live_stop():
+    h = open("tests/fixtures/signal-desk-demo.html").read()
+    assert "Trailing stop active" in h
+    assert "Current stop" in h and "mine.sl" in h
+    assert "/trailing" in h
+
+
+def test_every_control_acts_only_on_the_tokens_own_ticket():
+    h = open("tests/fixtures/signal-desk-demo.html").read()
+    fn = h[h.index("async function ctl(action"):h.index("async function refreshPositions")]
+    assert "ticket:LIVE_TICKET" in fn
+    assert "if(!LIVE_TICKET) return;" in fn
+    # and LIVE_TICKET only ever comes from a confirmed fill or a real read
+    assert "LIVE_TICKET=s.ticket" in h and "LIVE_TICKET=mine.ticket" in h
+
+
+def test_no_pending_order_controls_were_added():
+    h = open("tests/fixtures/signal-desk-demo.html").read().lower()
+    for banned in ("buy limit", "sell limit", "buy stop", "sell stop"):
+        assert banned not in h, banned

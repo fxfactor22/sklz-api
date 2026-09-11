@@ -283,6 +283,33 @@ section{padding:34px 0}
             <div class="k" data-k>—</div></div>
         </div>
 
+        <div class="card" id="posPanel" style="display:none;margin-top:14px;
+             border-color:rgba(18,196,139,.3)">
+          <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+            <b style="font-size:15px">Open position</b>
+            <span style="font-size:9.5px;color:var(--green);border:1px solid
+              rgba(18,196,139,.35);border-radius:4px;padding:1px 5px">REAL</span>
+            <span id="posState" style="font-size:11.5px;color:var(--dim2);
+              margin-left:auto"></span>
+          </div>
+          <div id="posBody" class="mono" style="font-size:13px;margin-top:10px;
+               display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
+               gap:8px"></div>
+          <div id="trailBox" style="margin-top:10px;font-size:12px;
+               color:var(--dim2);border-top:1px solid var(--line);
+               padding-top:9px"></div>
+          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+            <button class="btn btn-ghost" id="bMod" onclick="ctlModify()"
+              style="padding:9px 14px;font-size:13px">Modify SL/TP</button>
+            <button class="btn btn-ghost" id="bBE" onclick="ctl('breakeven')"
+              style="padding:9px 14px;font-size:13px">Move to breakeven</button>
+            <button class="btn btn-gold" id="bClose" onclick="ctl('close')"
+              style="padding:9px 14px;font-size:13px">Close trade</button>
+          </div>
+          <div id="ctlMsg" style="font-size:12px;margin-top:9px;
+               color:var(--dim2)"></div>
+        </div>
+
         <div class="tg" id="tg">
           <div class="h"><b id="tgTitle">Your Signals</b><span>via SKLZ · just now</span></div>
           <pre id="tgtext"></pre>
@@ -803,6 +830,110 @@ async function runLive(){
   }
   btn.disabled=false; btn.textContent="⚡ RUN LIVE DEMO"; running=false;
 }
+let LIVE_TICKET=null, POLLING=false;
+
+async function control(payload){
+  const r=await fetch(`${API}/api/demo-links/${TOKEN}/control`,
+    {method:"POST",headers:{"Content-Type":"application/json"},
+     body:JSON.stringify(payload)});
+  const d=await r.json();
+  if(!r.ok) throw new Error((d.detail&&d.detail.detail)||d.detail||"refused");
+  return d;
+}
+async function awaitCmd(cid,ms=48000){
+  const t0=Date.now();
+  while(Date.now()-t0<ms){
+    await new Promise(r=>setTimeout(r,2500));
+    const r=await fetch(`${API}/api/demo-links/${TOKEN}/run-live/${cid}`);
+    if(!r.ok) continue;
+    const s=await r.json();
+    if(s.state==="succeeded"||s.state==="failed") return s;
+  }
+  return {state:"timeout"};
+}
+function msg(t,good){
+  const m=document.getElementById("ctlMsg");
+  m.style.color = good===true?"var(--green)":good===false?"var(--red)":"var(--dim2)";
+  m.textContent=t;
+}
+function busy(on){
+  ["bMod","bBE","bClose"].forEach(id=>{
+    const b=document.getElementById(id); if(b) b.disabled=on;});
+}
+
+/* every button waits for the BROKER before the panel changes */
+async function ctl(action,extra){
+  if(!LIVE_TICKET) return;
+  busy(true); msg(`${action}: sent to the demo desk…`);
+  try{
+    const q=await control(Object.assign({action,ticket:LIVE_TICKET},extra||{}));
+    const s=await awaitCmd(q.command_id);
+    if(s.state==="succeeded"){
+      msg(`${action}: confirmed by the broker`,true);
+      if(action==="close"){
+        LIVE_TICKET=null;
+        document.getElementById("posState").textContent="closed";
+        busy(true);
+        await refreshPositions();
+        return;
+      }
+    } else {
+      msg(`${action}: ${s.broker_comment||s.state}`,false);
+    }
+  }catch(e){ msg(`${action}: ${e.message}`,false); }
+  busy(false);
+  await refreshPositions();
+}
+async function ctlModify(){
+  if(!LIVE_TICKET) return;
+  const sl=prompt("New stop loss (blank to leave it):","");
+  const tp=prompt("New take profit (blank to leave it):","");
+  const body={};
+  if(sl && !isNaN(+sl)) body.sl=+sl;
+  if(tp && !isNaN(+tp)) body.tp=+tp;
+  if(!("sl" in body) && !("tp" in body)){ msg("nothing to change"); return; }
+  await ctl("modify",body);
+}
+
+/* the panel only ever shows what the BROKER reports */
+async function refreshPositions(){
+  if(POLLING) return; POLLING=true;
+  try{
+    const q=await control({action:"positions"});
+    const s=await awaitCmd(q.command_id, 30000);
+    const list=(s.positions)||[];
+    const mine=LIVE_TICKET ? list.find(p=>p.ticket===LIVE_TICKET) : list[0];
+    const panel=document.getElementById("posPanel");
+    if(!mine){
+      document.getElementById("posBody").innerHTML=
+        '<div style="color:var(--dim2);font-size:12px">no open position</div>';
+      document.getElementById("trailBox").textContent="";
+      if(!LIVE_TICKET) panel.style.display=LIVE_TICKET?"block":"block";
+      POLLING=false; return;
+    }
+    LIVE_TICKET=mine.ticket;
+    panel.style.display="block";
+    document.getElementById("posState").textContent="live on the demo account";
+    const cell=(l,v)=>`<div><div style="font-size:10px;color:var(--dim2);
+      text-transform:uppercase;letter-spacing:.07em">${l}</div>
+      <div style="font-size:14px">${v}</div></div>`;
+    document.getElementById("posBody").innerHTML=
+      cell("Ticket",mine.ticket)+cell("Symbol",mine.symbol)+
+      cell("Side",(mine.side||"").toUpperCase())+cell("Lots",mine.volume)+
+      cell("Entry",mine.entry)+
+      cell("Stop",mine.sl||"—")+cell("Target",mine.tp||"—")+
+      cell("P/L",(mine.profit>=0?"+":"")+mine.profit);
+    try{
+      const tr=await (await fetch(`${API}/api/demo-links/${TOKEN}/trailing`)).json();
+      if(tr&&tr.ok) document.getElementById("trailBox").innerHTML=
+        `<b style="color:var(--gold2)">Trailing stop active</b> — starts after `+
+        `${tr.trigger_pips} pips, trails by ${tr.distance_pips}. `+
+        `Current stop <b>${mine.sl||"not set"}</b>.<br>${tr.note}`;
+    }catch(e){}
+  }catch(e){ msg(e.message,false); }
+  POLLING=false;
+}
+
 async function poll(cid){
   let dispatched=false;
   for(let i=0;i<40;i++){
@@ -850,7 +981,11 @@ async function poll(cid){
       lset(5,"0.50 lot"); lset(6,"0.36 lot"); lset(7,"skipped");
       const ac=s.auto_close||{};
       lset(8,"scheduled","s8d",
-        `closes automatically after ~${ac.after_seconds||90}s`);
+        `closes automatically after ~${Math.round((ac.after_seconds||600)/60)}`+
+        ` minutes if you leave it open`);
+      LIVE_TICKET=s.ticket;
+      await refreshPositions();
+      setInterval(()=>{ if(LIVE_TICKET) refreshPositions(); }, 20000);
       return;
     }
   }
