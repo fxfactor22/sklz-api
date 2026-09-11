@@ -74,3 +74,33 @@ def test_human_handoff_marks_the_lead():
     fn = fn[:fn.index('if data.startswith("lang:")')]
     assert '"human_requested": True' in fn
     assert '"step": "f_human"' in fn
+
+
+def test_the_funnel_fields_are_additive_only():
+    sql = open("migrations/D8-migration.sql").read()
+    assert "add column if not exists" in sql
+    for col in ("f_type", "f_workflow", "f_audience", "f_accounts",
+                "f_problem", "recommended", "human_requested"):
+        assert col in sql, col
+    # nothing existing is dropped, renamed or re-typed
+    for destructive in ("drop column", "alter column", "rename", "drop table"):
+        assert destructive not in sql.lower(), destructive
+
+
+def test_admin_can_see_funnel_leads():
+    api = open("orders_api.py").read()
+    assert "async def list_telegram_leads(" in api
+    fn = api[api.index("async def list_telegram_leads("):]
+    fn = fn[:fn.index('@leads_router.get("")')]
+    assert "rules.is_platform_admin(user)" in fn
+    assert 'table("tg_leads")' in fn
+    assert '"telegram_demo_funnel"' in fn
+    assert "waiting_for_human" in fn
+
+
+def test_the_admin_view_reads_the_existing_table():
+    """No second place for a lead to live."""
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def list_telegram_leads("):]
+    fn = fn[:fn.index('@leads_router.get("")')]
+    assert "insert(" not in fn and "update(" not in fn

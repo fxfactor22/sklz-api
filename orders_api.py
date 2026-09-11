@@ -346,6 +346,31 @@ async def demo_request(body: LeadIn, request: Request,
     return {"ok": True, "note": "We'll build your demo and send the link."}
 
 
+@leads_router.get("/telegram")
+async def list_telegram_leads(user=Depends(get_current_user),
+                              sb: Client = Depends(get_supabase)) -> dict:
+    """Funnel leads from the Telegram bot, human-requested first.
+
+    Reads the existing tg_leads table rather than introducing a second
+    place where a lead can live.
+    """
+    if not rules.is_platform_admin(user):
+        raise HTTPException(http.HTTP_403_FORBIDDEN, "platform admin only")
+
+    def _q():
+        return (sb.table("tg_leads").select("*")
+                .order("updated_at", desc=True).limit(200).execute()).data or []
+
+    rows = await offload(_q)
+    funnel = [r for r in rows
+              if (r.get("source") or "") == "telegram_demo_funnel"]
+    waiting = [r for r in funnel if r.get("human_requested")]
+    return {"ok": True,
+            "waiting_for_human": waiting,
+            "leads": funnel,
+            "counts": {"total": len(funnel), "awaiting_human": len(waiting)}}
+
+
 @leads_router.get("")
 async def list_leads(user=Depends(get_current_user),
                      sb: Client = Depends(get_supabase)) -> dict:
