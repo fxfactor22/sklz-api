@@ -929,7 +929,6 @@ async def demo_sweep(user=Depends(get_current_user),
 
 # ── interactive control desk ────────────────────────────────────────
 CONTROL_ACTIONS = {"buy", "sell", "modify", "breakeven", "close", "positions"}
-DEMO_BE_OFFSET_PIPS = 2
 
 
 class ControlIn(BaseModel):
@@ -1021,8 +1020,10 @@ async def demo_control(token: str, body: ControlIn,
             row.update({"command_type": "modify", "demo_kind": "modify",
                         "sl": float(body.sl or 0), "tp": float(body.tp or 0)})
         elif action == "breakeven":
-            row.update({"command_type": "breakeven", "demo_kind": "breakeven",
-                        "offset_pips": DEMO_BE_OFFSET_PIPS})
+            # The Runner defaults the offset to 0 — the stop goes to the
+            # ACTUAL entry. offset_pips has no column in bot_orders, and
+            # inventing one for two pips is not worth a migration.
+            row.update({"command_type": "breakeven", "demo_kind": "breakeven"})
         elif action == "close":
             row.update({"command_type": "close", "demo_kind": "close"})
         else:   # positions
