@@ -512,7 +512,9 @@ def test_a_positions_read_survives_the_result_ingest():
 # ── control desk UI ──────────────────────────────────────────────────
 def test_the_page_exposes_every_control():
     h = open("tests/fixtures/signal-desk-demo.html").read()
-    for label in ("Modify SL/TP", "Move to breakeven", "Close trade"):
+    # the modify control is now a labelled Stop/Target pair with Apply
+    for label in (">Stop<", ">Target<", ">Apply<", "Move to breakeven",
+                  "Close trade"):
         assert label in h, label
     assert 'id="posPanel"' in h and 'id="trailBox"' in h
 
@@ -556,3 +558,19 @@ def test_no_pending_order_controls_were_added():
     h = open("tests/fixtures/signal-desk-demo.html").read().lower()
     for banned in ("buy limit", "sell limit", "buy stop", "sell stop"):
         assert banned not in h, banned
+
+
+def test_modify_uses_inline_fields_not_browser_prompts():
+    h = open("tests/fixtures/signal-desk-demo.html").read()
+    assert "prompt(" not in h
+    assert 'id="inSL"' in h and 'id="inTP"' in h
+    fn = h[h.index("async function ctlModify"):]
+    fn = fn[:fn.index("\nasync function")]
+    assert 'getElementById("inSL")' in fn
+
+
+def test_the_fields_start_from_the_live_values():
+    h = open("tests/fixtures/signal-desk-demo.html").read()
+    assert "si.value = mine.sl" in h and "ti.value = mine.tp" in h
+    # and never overwrite what the trader is typing
+    assert "document.activeElement!==si" in h

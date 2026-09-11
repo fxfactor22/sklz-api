@@ -303,9 +303,22 @@ section{padding:34px 0}
           <div id="trailBox" style="margin-top:10px;font-size:12px;
                color:var(--dim2);border-top:1px solid var(--line);
                padding-top:9px"></div>
-          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;
+                      align-items:center">
+            <label style="font-size:10px;color:var(--dim2);
+              text-transform:uppercase;letter-spacing:.07em">Stop</label>
+            <input id="inSL" class="mono" inputmode="decimal" placeholder="—"
+              style="width:96px;background:var(--panel2);color:var(--ink);
+              border:1px solid var(--line);border-radius:8px;padding:8px 9px;
+              font-size:13px">
+            <label style="font-size:10px;color:var(--dim2);
+              text-transform:uppercase;letter-spacing:.07em">Target</label>
+            <input id="inTP" class="mono" inputmode="decimal" placeholder="—"
+              style="width:96px;background:var(--panel2);color:var(--ink);
+              border:1px solid var(--line);border-radius:8px;padding:8px 9px;
+              font-size:13px">
             <button class="btn btn-ghost" id="bMod" onclick="ctlModify()"
-              style="padding:9px 14px;font-size:13px">Modify SL/TP</button>
+              style="padding:9px 14px;font-size:13px">Apply</button>
             <button class="btn btn-ghost" id="bBE" onclick="ctl('breakeven')"
               style="padding:9px 14px;font-size:13px">Move to breakeven</button>
             <button class="btn btn-gold" id="bClose" onclick="ctl('close')"
@@ -911,12 +924,13 @@ async function ctl(action,extra){
 }
 async function ctlModify(){
   if(!LIVE_TICKET) return;
-  const sl=prompt("New stop loss (blank to leave it):","");
-  const tp=prompt("New take profit (blank to leave it):","");
+  const sl=(document.getElementById("inSL")||{}).value||"";
+  const tp=(document.getElementById("inTP")||{}).value||"";
   const body={};
-  if(sl && !isNaN(+sl)) body.sl=+sl;
-  if(tp && !isNaN(+tp)) body.tp=+tp;
-  if(!("sl" in body) && !("tp" in body)){ msg("nothing to change"); return; }
+  if(sl.trim() && !isNaN(+sl)) body.sl=+sl;
+  if(tp.trim() && !isNaN(+tp)) body.tp=+tp;
+  if(!("sl" in body) && !("tp" in body)){
+    msg("enter a stop or a target first"); return; }
   await ctl("modify",body);
 }
 
@@ -948,6 +962,11 @@ async function refreshPositions(){
       cell("Entry",mine.entry)+
       cell("Stop",mine.sl||"—")+cell("Target",mine.tp||"—")+
       cell("P/L",(mine.profit>=0?"+":"")+mine.profit);
+    // show the live values in the inputs so a change starts from truth,
+    // not from an empty box the trader has to fill from memory
+    const si=document.getElementById("inSL"), ti=document.getElementById("inTP");
+    if(si && document.activeElement!==si) si.value = mine.sl || "";
+    if(ti && document.activeElement!==ti) ti.value = mine.tp || "";
     try{
       const tr=await (await fetch(`${API}/api/demo-links/${TOKEN}/trailing`)).json();
       if(tr&&tr.ok) document.getElementById("trailBox").innerHTML=
