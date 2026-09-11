@@ -904,11 +904,11 @@ async function refreshPositions(){
     const list=(s.positions)||[];
     const mine=LIVE_TICKET ? list.find(p=>p.ticket===LIVE_TICKET) : list[0];
     const panel=document.getElementById("posPanel");
+    panel.style.display="block";          // always visible once asked for
     if(!mine){
       document.getElementById("posBody").innerHTML=
         '<div style="color:var(--dim2);font-size:12px">no open position</div>';
       document.getElementById("trailBox").textContent="";
-      if(!LIVE_TICKET) panel.style.display=LIVE_TICKET?"block":"block";
       POLLING=false; return;
     }
     LIVE_TICKET=mine.ticket;
@@ -984,7 +984,23 @@ async function poll(cid){
         `closes automatically after ~${Math.round((ac.after_seconds||600)/60)}`+
         ` minutes if you leave it open`);
       LIVE_TICKET=s.ticket;
-      await refreshPositions();
+      // Show the panel at once using the broker's own fill data. The
+      // positions read then replaces it with live values — waiting for
+      // that read meant nothing appeared for up to half a minute.
+      const panel=document.getElementById("posPanel");
+      panel.style.display="block";
+      document.getElementById("posState").textContent="live on the demo account";
+      const c=(l,v)=>`<div><div style="font-size:10px;color:var(--dim2);
+        text-transform:uppercase;letter-spacing:.07em">${l}</div>
+        <div style="font-size:14px">${v}</div></div>`;
+      document.getElementById("posBody").innerHTML=
+        c("Ticket",s.ticket)+c("Symbol",s.symbol)+
+        c("Side",(s.side||"").toUpperCase())+c("Lots",s.volume)+
+        c("Entry",s.fill_price)+c("Stop","reading…")+
+        c("Target","reading…")+c("P/L","—");
+      document.getElementById("trailBox").textContent=
+        "reading live position state from the broker…";
+      refreshPositions();
       setInterval(()=>{ if(LIVE_TICKET) refreshPositions(); }, 20000);
       return;
     }

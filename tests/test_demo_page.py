@@ -555,3 +555,36 @@ def test_demo_links_table_is_not_publicly_readable():
     sql = open("migrations/D4-migration.sql").read()
     assert "enable row level security" in sql
     assert "revoke all on public.demo_links from anon, authenticated" in sql
+
+
+def test_the_generator_reports_why_it_failed():
+    """'could not create' made an expired session look like a broken
+    generator."""
+    g = open("tests/fixtures/demo-generator.html").read()
+    assert "Admin session expired. Please sign in again." in g
+    assert "r.status===401" in g
+    assert "admin token present" in g
+    # distinct labels, so 403/500 are never masked as 401
+    for label in ("Not permitted (403)", "Rate limited (429)",
+                  "Server error ("):
+        assert label in g, label
+
+
+def test_the_generator_never_renders_the_token():
+    g = open("tests/fixtures/demo-generator.html").read()
+    body = g[g.index("async function make("):]
+    assert 'm.textContent=t' not in body
+    assert 'innerHTML=t' not in body
+
+
+def test_a_401_clears_the_stale_session():
+    g = open("tests/fixtures/demo-generator.html").read()
+    fn = g[g.index("r.status===401"):]
+    assert 'localStorage.removeItem("sklz_access")' in fn
+
+
+def test_no_fallback_auth_path_exists():
+    g = open("tests/fixtures/demo-generator.html").read()
+    for banned in ("service_role", "SUPABASE_SERVICE_KEY", "railway",
+                   "apikey"):
+        assert banned not in g.lower(), banned

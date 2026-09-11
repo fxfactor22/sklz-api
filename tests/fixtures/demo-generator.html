@@ -72,29 +72,43 @@ a{color:var(--gold2)}
       <button class="btn ghost" onclick="window.open(document.getElementById('url').textContent,'_blank')">Open it</button>
     </div>
     <div class="msg" id="exp" style="color:var(--dim)"></div>
+    <div class="msg" style="color:var(--green)">New link — 3 of 3 live demo
+      runs available.</div>
   </div>
 </div>
 
 <div class="card">
-  <div style="font-size:13px;color:var(--dim2);text-transform:uppercase;
-    letter-spacing:.09em">Recent demos</div>
+  <div style="display:flex;gap:12px;align-items:baseline">
+    <div style="font-size:13px;color:var(--dim2);text-transform:uppercase;
+      letter-spacing:.09em">Recent demos</div>
+    <span id="liveflag" style="font-size:11px;color:var(--gold2)"></span>
+  </div>
   <div id="list"><div class="msg" style="color:var(--dim2)">Refresh to load.</div></div>
 </div>
 
 <script>
 const API="https://api.sklzlabs.com";
 function tok(){
+  // The site stores the session as `sklz_access` — the same key every
+  // other admin page reads. Hunting for a Supabase-style "auth-token"
+  // key found nothing, because this app does not use one.
+  const direct = localStorage.getItem("sklz_access");
+  if(direct) return direct;
+  // fall back to a Supabase-shaped session if one is ever introduced
   try{
-    const k=Object.keys(localStorage).find(k=>k.includes("auth-token"));
-    return JSON.parse(localStorage.getItem(k)).access_token;
-  }catch(e){ return null; }
+    const k = Object.keys(localStorage).find(k => k.includes("auth-token"));
+    if(k) return JSON.parse(localStorage.getItem(k)).access_token;
+  }catch(e){}
+  return null;
 }
 function v(id){return (document.getElementById(id).value||"").trim();}
 async function make(){
   const b=document.getElementById("go"), m=document.getElementById("msg");
   const t=tok();
   if(!t){ m.style.color="var(--red)";
-    m.textContent="No admin session found. Sign in at sklzlabs.com in this browser, then reload.";
+    m.innerHTML='<b>No admin session found.</b><br>admin token present: no · '+
+      '<a href="/login.html?next='+encodeURIComponent(location.pathname)+
+      '">Sign in</a>, then reload this page.';
     return; }
   if(!v("p_name")||!v("p_chan")){ m.style.color="var(--red)";
     m.textContent="Provider name and Telegram channel are required."; return; }
@@ -106,8 +120,37 @@ async function make(){
         language:v("p_lang"),hours:Number(v("p_hours"))||48,
         contact_name:v("p_contact"),contact_email:v("p_email"),
         logo_url:v("p_logo"),note:v("p_note")})});
-    const d=await r.json();
-    if(!r.ok||!d.ok) throw new Error(d.detail||"could not create");
+
+    // Report what actually happened. "could not create" told us nothing
+    // and made an expired session look like a broken generator.
+    let d=null, raw="";
+    try{ d=await r.clone().json(); }catch(e){ raw=(await r.text()).slice(0,200); }
+
+    if(r.status===401){
+      // The session is gone. Say so, clear it, and send them to sign in
+      // — never guess at another way to authenticate.
+      try{ localStorage.removeItem("sklz_access"); }catch(e){}
+      m.style.color="var(--red)";
+      m.innerHTML='<b>Admin session expired. Please sign in again.</b><br>'+
+        'HTTP 401 · token was present · <a href="/login.html?next='+
+        encodeURIComponent(location.pathname)+'">Sign in</a>, then reload '+
+        'this page.';
+      b.disabled=false; b.textContent="Generate private link";
+      return;
+    }
+    if(!r.ok || !d || !d.ok){
+      const detail = d ? (typeof d.detail==="string" ? d.detail
+                          : JSON.stringify(d.detail||d)) : (raw||"no body");
+      const label = r.status===403 ? "Not permitted (403)"
+                  : r.status===429 ? "Rate limited (429)"
+                  : r.status>=500  ? "Server error ("+r.status+")"
+                  : "Failed (HTTP "+r.status+")";
+      m.style.color="var(--red)";
+      m.innerHTML=`<b>${label}</b><br>${detail}<br>`+
+        `<span style="color:var(--dim2)">admin token present: yes</span>`;
+      b.disabled=false; b.textContent="Generate private link";
+      return;
+    }
     document.getElementById("url").textContent=d.url;
     document.getElementById("exp").textContent =
       "Open until "+new Date(d.expires_at).toLocaleString()+" ("+d.hours+"h).";
@@ -122,20 +165,42 @@ function cp(){
   document.getElementById("msg").style.color="var(--green)";
   document.getElementById("msg").textContent="Copied.";
 }
+async function revoke(tok){
+  if(!confirm("Close this demo now? The prospect will see the ended page."))
+    return;
+  const t=tok2(); if(!t) return;
+  try{
+    await fetch(API+"/api/demo-links/"+tok+"/revoke",
+      {method:"POST",headers:{"Authorization":"Bearer "+t}});
+    load();
+  }catch(e){ alert("Could not revoke."); }
+}
+function tok2(){return tok();}
 async function load(){
   const t=tok(); if(!t) return;
   try{
     const r=await fetch(API+"/api/demo-links",{headers:{"Authorization":"Bearer "+t}});
     const d=await r.json(); const rows=(d.links||[]);
+    const lv=document.getElementById("liveflag");
+    if(lv) lv.textContent = d.live_demo_enabled
+      ? "live demo execution: ON" : "live demo execution: OFF";
     document.getElementById("list").innerHTML = rows.length ? (
-      '<table><tr><th>Provider</th><th>Channel</th><th>Expires</th><th>Opens</th><th></th></tr>'+
+      '<table><tr><th>Provider</th><th>Channel</th><th>Expires</th>'+
+      '<th>Runs</th><th>Opens</th><th></th></tr>'+
       rows.map(x=>{
         const left=(new Date(x.expires_at)-Date.now())/3600000;
         const st = x.revoked ? "closed" : left<=0 ? "expired"
                  : left.toFixed(0)+"h left";
+        const runs = (x.runs_used||0)+"/"+(x.runs_allowed||3);
+        const fresh = (x.runs_used||0)===0;
         return `<tr><td>${x.provider_name}</td><td>${x.telegram_channel}</td>`+
-          `<td>${st}</td><td>${x.opened_count||0}</td>`+
-          `<td><a href="${x.url}" target="_blank">open</a></td></tr>`;
+          `<td>${st}</td>`+
+          `<td style="color:${fresh?'var(--green)':'var(--gold2)'}">${runs}`+
+          `${fresh?' fresh':''}</td>`+
+          `<td>${x.opened_count||0}</td>`+
+          `<td><a href="${x.url}" target="_blank">open</a>`+
+          (x.revoked?'':` · <a href="#" onclick="revoke('${x.token}');`+
+           `return false">revoke</a>`)+`</td></tr>`;
       }).join("")+"</table>"
     ) : '<div class="msg" style="color:var(--dim2)">No demos yet.</div>';
   }catch(e){}
