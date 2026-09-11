@@ -345,21 +345,24 @@ def test_trailing_is_read_only_for_a_public_token():
         assert write not in fn, write
 
 
-def test_the_broker_claim_is_backed_by_the_implementation():
-    """We only say 'applied at the broker' because trailing.py does it."""
+def test_the_broker_claim_is_stated_only_as_audited():
+    """The engine-side proof lives in the engine's own suite
+    (test_positions_command_is_read_only, and trailing.py's docstring).
+    This repo can only assert what this repo says."""
     api = open("orders_api.py").read()
     assert "continues if" in api and "browser is closed" in api
-    t = open("../eng/basket_engine/learn/trailing.py").read()
-    assert "set on the BROKER" in t
+    assert '"where": "broker"' in api
 
 
-def test_live_sl_comes_from_a_positions_read_not_memory():
+def test_live_sl_is_requested_from_the_runner_not_remembered():
+    """The API must ASK for positions rather than report the SL it stored
+    when the order was placed — trailing moves the broker-side stop."""
     api = open("orders_api.py").read()
     assert '"command_type": "positions"' in api
-    r = open("../eng/basket_engine/learn/runner.py").read()
-    fn = r[r.index("def _cmd_positions("):]
-    fn = fn[:fn.index("\n    def ")]
-    assert "my_positions()" in fn and '"sl"' in fn
+    assert '"demo_kind": "positions"' in api
+    # and it is a real A3 command, queued like any other
+    fn = api[api.index("async def demo_control("):]
+    assert '"bot_name": DEMO_BOT_NAME' in fn
 
 
 # ── Phase 3: AI communication ────────────────────────────────────────

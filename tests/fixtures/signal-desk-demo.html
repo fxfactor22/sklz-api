@@ -238,21 +238,28 @@ section{padding:34px 0}
           </div>
         </div>
 
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin:12px 0 6px;
+                    font-size:11px;color:var(--dim2)">
+          <span><span style="color:var(--green)">●</span> REAL — executed on a
+            live broker demo account</span>
+          <span><span style="color:var(--gold)">●</span> SIMULATED PREVIEW —
+            illustration only, nothing executed</span>
+        </div>
         <div class="steps" id="steps">
           <div class="step" data-s="1"><div class="ic">📨</div>
-            <div><div class="t" id="s1t">Request accepted</div>
+            <div><div class="t" id="s1t">Request accepted<span style="font-size:9.5px;color:var(--green);border:1px solid rgba(18,196,139,.35);border-radius:4px;padding:1px 5px;margin-left:6px;letter-spacing:.04em">REAL</span></div>
               <div class="d" id="s1d">queued for the demo desk</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="2"><div class="ic">🛰️</div>
-            <div><div class="t">Runner dispatched</div>
+            <div><div class="t">Runner dispatched<span style="font-size:9.5px;color:var(--green);border:1px solid rgba(18,196,139,.35);border-radius:4px;padding:1px 5px;margin-left:6px;letter-spacing:.04em">REAL</span></div>
               <div class="d" id="s2d">the demo Runner picked up the command</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="3"><div class="ic">⚡</div>
-            <div><div class="t" id="s3t">Broker filled</div>
+            <div><div class="t" id="s3t">Broker filled<span style="font-size:9.5px;color:var(--green);border:1px solid rgba(18,196,139,.35);border-radius:4px;padding:1px 5px;margin-left:6px;letter-spacing:.04em">REAL</span></div>
               <div class="d" id="s3d">waiting for the broker</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="4"><div class="ic">✈️</div>
-            <div><div class="t">Signal generated &amp; sent to Telegram</div>
+            <div><div class="t">Signal generated &amp; sent to Telegram<span style="font-size:9.5px;color:var(--green);border:1px solid rgba(18,196,139,.35);border-radius:4px;padding:1px 5px;margin-left:6px;letter-spacing:.04em">REAL</span></div>
               <div class="d" id="tgDest">SKLZ demo channel</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="5"><div class="ic">🅰️</div>
@@ -263,15 +270,15 @@ section{padding:34px 0}
               <div class="d">Fixed Lot 0.50 · Exness · #8842119</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="6"><div class="ic">🅱️</div>
-            <div><div class="t">Slave account B copied</div>
+            <div><div class="t">Slave account B copied<span style="font-size:9.5px;color:var(--gold2);border:1px solid rgba(245,166,35,.35);border-radius:4px;padding:1px 5px;margin-left:6px;letter-spacing:.04em">SIMULATED PREVIEW</span></div>
               <div class="d">Auto Scale 0.4× equity · IC Markets · #5510338</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step skip" data-s="7"><div class="ic">⏸️</div>
-            <div><div class="t">Slave account C skipped</div>
+            <div><div class="t">Slave account C skipped<span style="font-size:9.5px;color:var(--gold2);border:1px solid rgba(245,166,35,.35);border-radius:4px;padding:1px 5px;margin-left:6px;letter-spacing:.04em">SIMULATED PREVIEW</span></div>
               <div class="d">copying paused by the subscriber — respected, not forced</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="8"><div class="ic">📒</div>
-            <div><div class="t">Auto-close scheduled</div>
+            <div><div class="t">Auto-close scheduled<span style="font-size:9.5px;color:var(--green);border:1px solid rgba(18,196,139,.35);border-radius:4px;padding:1px 5px;margin-left:6px;letter-spacing:.04em">REAL</span></div>
               <div class="d" id="s8d">the demo position closes itself shortly</div></div>
             <div class="k" data-k>—</div></div>
         </div>
@@ -280,14 +287,19 @@ section{padding:34px 0}
           <div class="h"><b id="tgTitle">Your Signals</b><span>via SKLZ · just now</span></div>
           <pre id="tgtext"></pre>
         </div>
-        <div class="simnote">Demonstration data. Simulated execution — no live
-          market order is placed.</div>
+        <div class="simnote">The broker execution, Runner, signal, Telegram
+          delivery and auto-close are <b style="color:var(--green)">real</b>,
+          on a broker DEMO account. Copy accounts and subscriber figures are a
+          <b style="color:var(--gold2)">simulated preview</b> — no subscriber
+          account executed anything.</div>
       </div>
 
       <div>
         <div class="card" style="margin-bottom:14px">
           <div class="sec-h" style="margin-bottom:6px"><h2 style="font-size:15px">
-            Connected accounts</h2></div>
+            Connected accounts <span style="font-size:9.5px;color:var(--gold2);
+            border:1px solid rgba(245,166,35,.35);border-radius:4px;
+            padding:1px 5px;margin-left:6px">SIMULATED PREVIEW</span></h2></div>
           <div class="acct"><div class="av">A</div>
             <div><div class="n">Slave A · Exness</div>
               <div class="s mono">#8842119 · Fixed Lot 0.50</div></div>
@@ -304,7 +316,9 @@ section{padding:34px 0}
 
         <div class="card">
           <div class="sec-h" style="margin-bottom:6px"><h2 style="font-size:15px">
-            Subscriber business</h2></div>
+            Subscriber business <span style="font-size:9.5px;color:var(--gold2);
+            border:1px solid rgba(245,166,35,.35);border-radius:4px;
+            padding:1px 5px;margin-left:6px">ILLUSTRATIVE FIGURES</span></h2></div>
           <div class="kpis" style="grid-template-columns:1fr 1fr;margin:0">
             <div class="kpi"><div class="l">Active subs</div>
               <div class="v mono">1,240</div></div>
