@@ -351,6 +351,9 @@ def test_a_closed_ticket_is_not_closed_twice():
 def test_trailing_is_read_only_for_a_public_token():
     api = open("orders_api.py").read()
     fn = api[api.index("async def demo_trailing("):]
+    # bound the slice to THIS function — reading to end-of-file caught a
+    # later helper's legitimate write
+    fn = fn[:fn.index("\n\n\n")] if "\n\n\n" in fn else fn
     assert '"read_only": True' in fn
     for write in ("insert(", "update(", "os.environ[", "_os.environ["):
         assert write not in fn, write
@@ -669,3 +672,36 @@ def test_the_edit_can_only_reach_the_demo_channel():
     fn = api[api.index("def _lifecycle_edit("):]
     assert 'not in (DEMO_TG_CHAT, "@sklzlabsdemo")' in fn
     assert "policy.validate(text" in fn
+
+
+def test_trailing_edits_the_same_message_when_the_stop_moves():
+    api = open("orders_api.py").read()
+    fn = api[api.index("def _trailing_edit("):]
+    assert "TRAILING ACTIVE" in fn
+    assert "_edit_demo_message(dest, base[\"demo_tg_message_id\"]" in fn
+    assert "sendMessage" not in fn
+
+
+def test_trailing_only_edits_on_an_actual_change():
+    """A post that rewrites itself every 20 seconds is noise."""
+    api = open("orders_api.py").read()
+    fn = api[api.index("def _trailing_edit("):]
+    assert "abs(float(live_sl) - float(shown_sl)) < 1e-9" in fn
+    assert "continue" in fn
+
+
+def test_the_new_stop_is_remembered_after_an_edit():
+    api = open("orders_api.py").read()
+    fn = api[api.index("def _trailing_edit("):]
+    assert '{"sl": float(live_sl)}' in fn
+    assert fn.index("_edit_demo_message") < fn.index('{"sl": float(live_sl)}')
+
+
+def test_all_five_lifecycle_states_reach_telegram():
+    api = open("orders_api.py").read()
+    st = api[api.index("async def demo_run_state("):]
+    assert 'if kind == "market":' in st          # OPEN
+    assert 'elif kind == "positions":' in st     # TRAILING
+    assert '"modify": "UPDATED"' in st
+    assert '"breakeven": "BREAKEVEN"' in st
+    assert '"close": "CLOSED"' in st

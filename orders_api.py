@@ -758,6 +758,14 @@ async def demo_run_state(token: str, command_id: str,
         if kind == "market":
             tg = await offload(_deliver_demo_signal, sb, r,
                                link["provider_name"])
+        elif kind == "positions":
+            # Trailing moves the broker-side stop with no command to
+            # observe. The positions read is the only place that change
+            # becomes visible, so the edit is driven from here.
+            tg = await offload(_trailing_edit, sb, tok, r,
+                               link["provider_name"])
+            if tg:
+                out["telegram"] = tg
         else:
             # A lifecycle event edits the ORIGINAL signal rather than
             # posting a new one, and composes from the MARKET row so the
@@ -766,7 +774,8 @@ async def demo_run_state(token: str, command_id: str,
                       "close": "CLOSED"}.get(kind, "UPDATED")
             tg = await offload(_lifecycle_edit, sb, tok, r, status,
                                link["provider_name"])
-        out["telegram"] = tg
+        if kind != "positions":
+            out["telegram"] = tg
         if tg.get("message_id") and out["latency_ms"] is not None:
             try:
                 sent = r.get("demo_tg_sent_at") or datetime.now(
@@ -1392,3 +1401,52 @@ def _lifecycle_edit(sb: Client, tok: str, event: dict, status: str,
     if not ok:
         return {"error": f"policy:{why}"}
     return _edit_demo_message(dest, mid, text)
+
+
+def _trailing_edit(sb: Client, tok: str, event: dict, provider: str) -> dict:
+    """Edit the post when the broker's stop has moved on its own.
+
+    Compares the stop the broker reports NOW against the one last shown.
+    A difference means trailing acted, so the original message is updated
+    and the new stop remembered. No difference means no edit — Telegram
+    refuses unchanged edits anyway, and a post that rewrites itself every
+    twenty seconds would be noise.
+    """
+    positions = event.get("positions") or []
+    if not positions:
+        return {}
+    out = {}
+    for p in positions:
+        base = _signal_row(sb, tok, p.get("ticket"))
+        if not base or not base.get("demo_tg_message_id"):
+            continue
+        live_sl = p.get("sl") or 0
+        shown_sl = base.get("sl") or 0
+        if not live_sl or abs(float(live_sl) - float(shown_sl)) < 1e-9:
+            continue                      # nothing moved
+
+        dests = resolve_destinations(RoutingScope(purpose="demo_signal"))
+        dest = dests[0] if dests else None
+        if not dest or not dest.enabled:
+            return {"error": "demo delivery disabled"}
+        if str(dest.chat_id) not in (DEMO_TG_CHAT, "@sklzlabsdemo"):
+            return {"error": f"refused: resolver returned {dest.chat_id}"}
+
+        text = _demo_signal_text(base, provider, "TRAILING ACTIVE",
+                                 {"sl": live_sl, "tp": p.get("tp"),
+                                  "volume": p.get("volume"),
+                                  "entry": p.get("entry")})
+        ok, why = policy.validate(text, strict=False)
+        if not ok:
+            return {"error": f"policy:{why}"}
+        res = _edit_demo_message(dest, base["demo_tg_message_id"], text)
+        if res.get("message_id"):
+            # remember what is now shown, so the next read compares
+            # against the truth rather than the original stop
+            try:
+                sb.table("bot_orders").update({"sl": float(live_sl)}) \
+                    .eq("command_id", base["command_id"]).execute()
+            except Exception:  # noqa: BLE001
+                pass
+        out = res
+    return out
