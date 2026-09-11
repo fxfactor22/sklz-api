@@ -753,6 +753,12 @@ async def demo_run_state(token: str, command_id: str,
     # The signal is generated and delivered only once the broker has
     # CONFIRMED the fill. Nothing is announced before it exists.
     if r.get("status") == "succeeded" and r.get("ticket"):
+      # Communication is downstream of trading. A Telegram fault must
+      # never hide a broker result: the trade already happened and the
+      # row already says so. This endpoint once returned 500 for twenty
+      # minutes because a delivery bug propagated out of here while the
+      # order sat filled.
+      try:
         link = await read_demo_link(token, sb)
         kind = r.get("demo_kind")
         if kind == "market":
@@ -776,6 +782,12 @@ async def demo_run_state(token: str, command_id: str,
                                link["provider_name"])
         if kind != "positions":
             out["telegram"] = tg
+      except Exception as exc:  # noqa: BLE001
+        print(f"[demo] telegram step failed for {r.get('command_id')}: "
+              f"{type(exc).__name__}: {str(exc)[:160]}")
+        out["telegram"] = {"error": f"communication failed: "
+                                    f"{type(exc).__name__}",
+                           "trading_unaffected": True}
         if tg.get("message_id") and out["latency_ms"] is not None:
             try:
                 sent = r.get("demo_tg_sent_at") or datetime.now(
