@@ -328,6 +328,31 @@ section{padding:34px 0}
                color:var(--dim2)"></div>
         </div>
 
+        <div class="card" id="aiPanel" style="margin-top:14px">
+          <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+            <b style="font-size:15px">Subscriber communication</b>
+            <span style="font-size:9.5px;color:var(--green);border:1px solid
+              rgba(18,196,139,.35);border-radius:4px;padding:1px 5px">AI</span>
+            <span style="font-size:11px;color:var(--dim2);margin-left:auto">
+              drafted from your verified trades</span>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"
+               id="aiPresets"></div>
+          <textarea id="aiText" rows="6" placeholder="Pick a message above, or
+write your own. Nothing is sent until you press Send."
+            style="width:100%;margin-top:10px;background:var(--panel2);
+            color:var(--ink);border:1px solid var(--line);border-radius:10px;
+            padding:11px;font:inherit;font-size:13px;line-height:1.6"></textarea>
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+            <button class="btn btn-ghost" id="aiDraftBtn" onclick="aiDraft()"
+              style="padding:9px 14px;font-size:13px">Draft with AI</button>
+            <button class="btn btn-gold" id="aiSendBtn" onclick="aiSend()"
+              style="padding:9px 14px;font-size:13px">Send to channel</button>
+          </div>
+          <div id="aiMsg" style="font-size:12px;margin-top:9px;
+               color:var(--dim2)"></div>
+        </div>
+
         <div class="tg" id="tg">
           <div class="h"><b id="tgTitle">Your Signals</b><span>via SKLZ · just now</span></div>
           <pre id="tgtext"></pre>
@@ -976,6 +1001,82 @@ async function refreshPositions(){
     }catch(e){}
   }catch(e){ msg(e.message,false); }
   POLLING=false;
+}
+
+const AI_PRESETS=[
+  ["Explain this trade","explain","Explain this open trade to subscribers."],
+  ["Moved to breakeven","breakeven","Tell subscribers I moved this trade to breakeven."],
+  ["Stop changed","modified","Tell subscribers the stop loss changed."],
+  ["Trade closed","closed","Tell subscribers this trade is closed."],
+  ["Today's summary","summary","Summarise today's trades."],
+  ["Market update","update","Write a professional update for subscribers."]];
+let AI_INTENT="update";
+(function(){
+  const box=document.getElementById("aiPresets"); if(!box) return;
+  box.innerHTML=AI_PRESETS.map((p,i)=>
+    `<button class="btn btn-ghost" onclick="aiPick(${i})"
+      style="padding:7px 11px;font-size:11.5px">${p[0]}</button>`).join("");
+})();
+function aiPick(i){
+  const p=AI_PRESETS[i]; AI_INTENT=p[1];
+  document.getElementById("aiText").dataset.instruction=p[2];
+  aiSay(`"${p[0]}" selected — press Draft with AI`);
+  aiDraft();
+}
+function aiSay(t,good){
+  const m=document.getElementById("aiMsg");
+  m.style.color = good===true?"var(--green)":good===false?"var(--red)"
+                 :"var(--dim2)";
+  m.textContent=t;
+}
+async function aiDraft(){
+  const b=document.getElementById("aiDraftBtn");
+  const ta=document.getElementById("aiText");
+  b.disabled=true; b.textContent="Drafting…"; aiSay("asking the AI…");
+  try{
+    const body={intent:AI_INTENT,
+                instruction:ta.dataset.instruction||""};
+    if(LIVE_TICKET) body.ticket=LIVE_TICKET;
+    const r=await fetch(`${API}/api/demo-links/${TOKEN}/ai-draft`,
+      {method:"POST",headers:{"Content-Type":"application/json"},
+       body:JSON.stringify(body)});
+    const d=await r.json();
+    if(!d.ok){ aiSay(d.reason||"could not draft",false); }
+    else{
+      ta.value=d.draft;
+      aiSay(d.policy_ok ? "draft ready — edit it if you like, then Send"
+                        : `draft ready, but the claim check flagged: `+
+                          `${d.policy_reason}`, d.policy_ok);
+    }
+  }catch(e){ aiSay("could not reach the AI",false); }
+  b.disabled=false; b.textContent="Draft with AI";
+}
+async function aiSend(){
+  const ta=document.getElementById("aiText");
+  const text=(ta.value||"").trim();
+  if(text.length<10){ aiSay("write or draft a message first",false); return; }
+  const b=document.getElementById("aiSendBtn");
+  b.disabled=true; b.textContent="Sending…";
+  try{
+    const r=await fetch(`${API}/api/demo-links/${TOKEN}/ai-send`,
+      {method:"POST",headers:{"Content-Type":"application/json"},
+       body:JSON.stringify({text})});
+    const d=await r.json();
+    if(d.ok && d.message_id){
+      aiSay("sent to the demo channel",true);
+      if(d.url){
+        const a=document.createElement("a");
+        a.href=d.url; a.target="_blank"; a.style.cssText=
+          "display:inline-block;margin-left:8px;color:var(--gold2)";
+        a.textContent="open it →";
+        document.getElementById("aiMsg").appendChild(a);
+      }
+    } else {
+      const why=(d.detail&&d.detail.detail)||d.error||d.detail||"refused";
+      aiSay(String(why),false);
+    }
+  }catch(e){ aiSay("could not send",false); }
+  b.disabled=false; b.textContent="Send to channel";
 }
 
 async function poll(cid){
