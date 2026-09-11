@@ -13,10 +13,11 @@ def test_the_promise_is_the_first_thing_visible():
 def test_all_eight_flow_steps_exist_in_order():
     steps = re.findall(r'data-s="(\d)"', HTML)
     assert steps == ["1","2","3","4","5","6","7","8"], steps
-    for phrase in ("Master trade opened", "SKLZ Runner detected",
-                   "Signal generated", "Telegram message sent",
-                   "Slave account A copied", "Slave account B copied",
-                   "Slave account C skipped", "Journal &amp; analytics"):
+    # step labels now describe REAL backend states rather than a script
+    for phrase in ("Request accepted", "Runner dispatched", "Broker filled",
+                   "sent to Telegram", "Slave account A copied",
+                   "Slave account B copied", "Slave account C skipped",
+                   "Auto-close scheduled"):
         assert phrase in HTML, phrase
 
 
@@ -476,7 +477,7 @@ def test_catalog_map_never_returns_a_credential():
 
 
 # ── D4: private prospect links ───────────────────────────────────────
-GEN = open("tests/fixtures/demo-generator.html").read()
+GEN = open("/mnt/user-data/outputs/demo-generator.html").read()
 
 
 def test_the_link_is_the_credential_so_it_is_unguessable():
@@ -543,11 +544,11 @@ def test_the_generator_page_needs_no_new_admin_system():
 
 def test_opens_are_recorded_for_the_operator():
     assert "opened_count" in API and "last_opened_at" in API
-    sql = open("migrations/D4-migration.sql").read()
+    sql = open("/mnt/user-data/outputs/D4-migration.sql").read()
     assert "opened_count" in sql and "first_opened_at" in sql
 
 
 def test_demo_links_table_is_not_publicly_readable():
-    sql = open("migrations/D4-migration.sql").read()
+    sql = open("/mnt/user-data/outputs/D4-migration.sql").read()
     assert "enable row level security" in sql
     assert "revoke all on public.demo_links from anon, authenticated" in sql

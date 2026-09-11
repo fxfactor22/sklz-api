@@ -231,30 +231,35 @@ section{padding:34px 0}
               id="px">1.08522</span></div>
           </div>
           <div style="margin-left:auto;display:flex;gap:8px">
-            <button class="btn btn-gold" id="btnBuy" onclick="runFlow('buy')">▲ Open EURUSD BUY</button>
-            <button class="btn btn-ghost" onclick="runFlow('sell')">▼ SELL</button>
+            <button class="btn btn-gold" id="btnLive" onclick="runLive()">
+              ⚡ RUN LIVE DEMO</button>
+            <button class="btn btn-ghost" id="btnBuy" onclick="runFlow('buy')">
+              ▶ Replay</button>
           </div>
         </div>
 
         <div class="steps" id="steps">
-          <div class="step" data-s="1"><div class="ic">📈</div>
-            <div><div class="t">Master trade opened</div>
-              <div class="d">EURUSD BUY · 1.00 lot · SL 1.0800 · TP 1.0990</div></div>
+          <div class="step" data-s="1"><div class="ic">📨</div>
+            <div><div class="t" id="s1t">Request accepted</div>
+              <div class="d" id="s1d">queued for the demo desk</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="2"><div class="ic">🛰️</div>
-            <div><div class="t">SKLZ Runner detected the fill</div>
-              <div class="d">broker confirmation read from your terminal</div></div>
+            <div><div class="t">Runner dispatched</div>
+              <div class="d" id="s2d">the demo Runner picked up the command</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="3"><div class="ic">⚡</div>
-            <div><div class="t">Signal generated</div>
-              <div class="d">entry, stop and target taken from the real fill</div></div>
+            <div><div class="t" id="s3t">Broker filled</div>
+              <div class="d" id="s3d">waiting for the broker</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="4"><div class="ic">✈️</div>
-            <div><div class="t">Telegram message sent</div>
-              <div class="d" id="tgDest">your Telegram channel</div></div>
+            <div><div class="t">Signal generated &amp; sent to Telegram</div>
+              <div class="d" id="tgDest">SKLZ demo channel</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="5"><div class="ic">🅰️</div>
-            <div><div class="t">Slave account A copied</div>
+            <div><div class="t">Slave account A copied
+              <span style="font-size:10px;color:var(--gold2);border:1px solid
+              rgba(245,166,35,.35);border-radius:4px;padding:1px 5px;
+              margin-left:6px">SIMULATED COPY PREVIEW</span></div>
               <div class="d">Fixed Lot 0.50 · Exness · #8842119</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="6"><div class="ic">🅱️</div>
@@ -266,8 +271,8 @@ section{padding:34px 0}
               <div class="d">copying paused by the subscriber — respected, not forced</div></div>
             <div class="k" data-k>—</div></div>
           <div class="step" data-s="8"><div class="ic">📒</div>
-            <div><div class="t">Journal &amp; analytics updated</div>
-              <div class="d">open trade recorded against your track record</div></div>
+            <div><div class="t">Auto-close scheduled</div>
+              <div class="d" id="s8d">the demo position closes itself shortly</div></div>
             <div class="k" data-k>—</div></div>
         </div>
 
@@ -744,6 +749,99 @@ Target: ${side==="buy"?"1.09900":"1.07800"}
 Risk 1% max. Not financial advice.`;
 
 let running=false;
+
+/* ---- REAL execution against the demo desk ---- */
+const LIVE={ steps:[...document.querySelectorAll(".step")] };
+function lset(i,mark,detailId,detail){
+  const s=LIVE.steps[i]; if(!s) return;
+  s.classList.add("on");
+  s.querySelector("[data-k]").textContent=mark;
+  if(detailId){ const d=document.getElementById(detailId);
+                if(d&&detail) d.textContent=detail; }
+}
+function lreset(){
+  LIVE.steps.forEach(s=>{s.classList.remove("on");
+    s.querySelector("[data-k]").textContent="—";});
+  document.getElementById("tg").classList.remove("on");
+  const b=document.getElementById("tgLink"); if(b) b.remove();
+}
+async function runLive(){
+  if(running) return; running=true;
+  const btn=document.getElementById("btnLive");
+  btn.disabled=true; btn.textContent="Running…";
+  lreset();
+  try{
+    const r=await fetch(`${API}/api/demo-links/${TOKEN}/run-live`,
+                        {method:"POST"});
+    const d=await r.json();
+    if(!r.ok){
+      const msg=(d.detail&&d.detail.detail)||d.detail||"unavailable";
+      lset(0,"refused","s1d",String(msg));
+      btn.disabled=false; btn.textContent="⚡ RUN LIVE DEMO"; running=false;
+      return;
+    }
+    lset(0,"accepted","s1d",
+         `${d.side.toUpperCase()} ${d.symbol} · ${d.volume} lot · run `+
+         `${d.runs_used}/${d.runs_allowed}`);
+    await poll(d.command_id);
+  }catch(e){
+    lset(0,"error","s1d","could not reach the demo desk");
+  }
+  btn.disabled=false; btn.textContent="⚡ RUN LIVE DEMO"; running=false;
+}
+async function poll(cid){
+  let dispatched=false;
+  for(let i=0;i<40;i++){
+    await new Promise(r=>setTimeout(r,1500));
+    let s;
+    try{
+      const r=await fetch(`${API}/api/demo-links/${TOKEN}/run-live/${cid}`);
+      s=await r.json();
+    }catch(e){ continue; }
+    if(!dispatched && s.timings && s.timings.runner_received){
+      dispatched=true;
+      lset(1,"dispatched","s2d","command collected by the demo Runner");
+    }
+    if(s.state==="failed"){
+      lset(2,"refused","s3d", s.broker_comment||"the order did not fill");
+      return;
+    }
+    if(s.state==="succeeded" && s.ticket){
+      // FILLED is only ever shown once the broker has confirmed it
+      lset(2,"filled","s3d",
+        `${s.symbol} @ ${s.fill_price} · ticket ${s.ticket} · rc ${s.retcode}`
+        + (s.broker_comment?` · ${s.broker_comment}`:""));
+      lset(3,"confirmed","s2d",
+        `account ${s.account} · ${s.latency_ms} ms click→broker`);
+      const tg=s.telegram||{};
+      if(tg.message_id){
+        lset(4,"sent","tgDest","SKLZ demo channel");
+        document.getElementById("tgtext").textContent=
+          `${BRAND.name} — ${s.symbol}\n\n${s.side.toUpperCase()}  ${s.symbol}\n`+
+          `Entry: ${s.fill_price}\nTicket: ${s.ticket}\n\n`+
+          `Executed on a broker DEMO account.`;
+        document.getElementById("tg").classList.add("on");
+        if(tg.url){
+          const a=document.createElement("a");
+          a.id="tgLink"; a.href=tg.url; a.target="_blank";
+          a.className="btn btn-gold";
+          a.style.cssText="display:block;text-align:center;margin-top:12px";
+          a.textContent="OPEN LIVE TELEGRAM SIGNAL →";
+          document.getElementById("tg").appendChild(a);
+        }
+      } else if(tg.error){
+        lset(4,"not sent","tgDest",String(tg.error));
+      }
+      // copy steps remain a labelled preview
+      lset(5,"0.50 lot"); lset(6,"0.36 lot"); lset(7,"skipped");
+      const ac=s.auto_close||{};
+      lset(8,"scheduled","s8d",
+        `closes automatically after ~${ac.after_seconds||90}s`);
+      return;
+    }
+  }
+  lset(2,"timed out","s3d","no confirmation within a minute");
+}
 async function runFlow(side){
   if(running) return; running=true;
   const btn=document.getElementById("btnBuy"); btn.disabled=true;

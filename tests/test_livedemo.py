@@ -118,3 +118,115 @@ def test_latency_comes_from_recorded_timestamps():
 def test_a_prospect_cannot_read_another_tokens_run():
     fn = _fn("async def demo_run_state(")
     assert '.eq("command_id", command_id).eq("demo_token", tok)' in fn
+
+
+# ── D6: auto-close and real demo Telegram ────────────────────────────
+def test_the_signal_waits_for_a_confirmed_fill():
+    fn = _fn("async def demo_run_state(")
+    assert 'if r.get("status") == "succeeded" and r.get("ticket"):' in fn
+    assert fn.index('status") == "succeeded"') < fn.index("_deliver_demo_signal")
+
+
+def test_the_demo_signal_can_only_reach_one_chat():
+    d = _fn("def _deliver_demo_signal(", "def _sweep_demo_closes(")
+    assert 'DEMO_TG_CHAT = "-1004489542294"' in API
+    assert 'str(dest.chat_id) not in (DEMO_TG_CHAT, "@sklzlabsdemo")' in d
+    assert "refused: resolver returned" in d
+    # production destinations are unreachable from this path
+    for bad in ("sklzlabsarabic", "TG_CHANNEL", "SIGNAL_CHANNEL_ID"):
+        assert bad not in d, bad
+
+
+def test_the_signal_is_built_from_the_fill_not_the_request():
+    s = _fn("def _demo_signal_text(", "def _deliver_demo_signal(")
+    assert 'row.get("fill_price")' in s
+    assert "row.get('ticket')" in s
+    assert "SIMULATED DEMO" in s
+    assert "broker DEMO account" in s
+
+
+def test_telegram_delivery_is_idempotent():
+    d = _fn("def _deliver_demo_signal(", "def _sweep_demo_closes(")
+    assert 'if row.get("demo_tg_message_id"):' in d
+    assert '"replay": True' in d
+
+
+def test_the_message_url_is_built_for_a_private_channel():
+    u = _fn("def _tg_message_url(", "def _demo_signal_text(")
+    assert 'cid.startswith("-100")' in u
+    assert "https://t.me/c/" in u
+
+
+def test_auto_close_uses_the_existing_close_command():
+    s = _fn("def _sweep_demo_closes(", "@demo_router.post")
+    assert '"command_type": "close"' in s
+    assert '"ticket": tk' in s
+    assert '"bot_name": DEMO_BOT_NAME' in s
+
+
+def test_auto_close_refuses_a_ticket_from_another_account():
+    s = _fn("def _sweep_demo_closes(", "@demo_router.post")
+    assert 'str(r.get("actual_account") or "") != expected' in s
+    assert "NOT closing ticket" in s
+
+
+def test_auto_close_is_idempotent_and_guarded():
+    s = _fn("def _sweep_demo_closes(", "@demo_router.post")
+    assert 'is_("demo_close_command_id", "null")' in s
+    assert "demo_close_command_id" in s
+    assert s.index("_demo_guard(sb)") < s.index("cutoff")   # guard first
+
+
+def test_the_hold_is_between_60_and_120_seconds():
+    assert "DEMO_HOLD_SECONDS = 90" in API
+
+
+# ── the prospect button ──────────────────────────────────────────────
+PAGE = open("tests/fixtures/signal-desk-demo.html").read()
+
+
+def test_the_button_calls_the_real_backend():
+    assert "RUN LIVE DEMO" in PAGE
+    assert "/run-live" in PAGE and "method:\"POST\"" in PAGE
+    assert "async function runLive()" in PAGE
+
+
+def test_filled_is_never_shown_before_the_broker_confirms():
+    fn = PAGE[PAGE.index("async function poll("):]
+    assert 's.state==="succeeded" && s.ticket' in fn
+    i_guard = fn.index('s.state==="succeeded" && s.ticket')
+    i_filled = fn.index('"filled"')
+    assert i_guard < i_filled
+
+
+def test_it_shows_the_real_broker_values():
+    fn = PAGE[PAGE.index("async function poll("):]
+    for v in ("s.fill_price", "s.ticket", "s.retcode", "s.broker_comment",
+              "s.account", "s.latency_ms"):
+        assert v in fn, v
+
+
+def test_a_failure_is_reported_honestly():
+    fn = PAGE[PAGE.index("async function poll("):]
+    assert 's.state==="failed"' in fn
+    assert "the order did not fill" in fn
+    assert "timed out" in fn
+
+
+def test_the_telegram_link_opens_the_real_post():
+    fn = PAGE[PAGE.index("async function poll("):]
+    assert "OPEN LIVE TELEGRAM SIGNAL" in fn
+    assert "tg.url" in fn
+
+
+def test_the_copier_is_labelled_simulated():
+    assert "SIMULATED COPY PREVIEW" in PAGE
+
+
+def test_the_browser_still_sends_nothing_but_the_token():
+    fn = PAGE[PAGE.index("async function runLive()"):]
+    fn = fn[:fn.index("async function poll(")]
+    assert "TOKEN" in fn
+    assert "body:" not in fn          # no request body at all
+    for forbidden in ("symbol:", "lots", "volume:", "bot_name", "chat"):
+        assert forbidden not in fn, forbidden

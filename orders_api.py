@@ -677,4 +677,168 @@ async def demo_run_state(token: str, command_id: str,
         out["latency_ms"] = int((b - a).total_seconds() * 1000)
     except (TypeError, ValueError, KeyError):
         out["latency_ms"] = None
+
+    # The signal is generated and delivered only once the broker has
+    # CONFIRMED the fill. Nothing is announced before it exists.
+    if r.get("status") == "succeeded" and r.get("ticket"):
+        link = await read_demo_link(token, sb)
+        tg = await offload(_deliver_demo_signal, sb, r, link["provider_name"])
+        out["telegram"] = tg
+        if tg.get("message_id") and out["latency_ms"] is not None:
+            try:
+                sent = r.get("demo_tg_sent_at") or datetime.now(
+                    timezone.utc).isoformat()
+                t2 = datetime.fromisoformat(str(sent).replace("Z", "+00:00"))
+                out["telegram_latency_ms"] = int((t2 - a).total_seconds() * 1000)
+            except (TypeError, ValueError):
+                out["telegram_latency_ms"] = None
+
+    out["auto_close"] = {"state": r.get("demo_close_state"),
+                         "closed_at": r.get("demo_closed_at"),
+                         "after_seconds": DEMO_HOLD_SECONDS}
+    # keep the account tidy without needing a separate scheduler
+    try:
+        await offload(_sweep_demo_closes, sb)
+    except Exception:  # noqa: BLE001
+        pass
     return out
+
+
+# ── auto-close and real demo Telegram ───────────────────────────────
+DEMO_HOLD_SECONDS = 90          # how long a demo position stays open
+DEMO_TG_CHAT = "-1004489542294"  # @sklzlabsdemo — the ONLY demo destination
+
+
+def _tg_message_url(chat_id: str, message_id) -> str:
+    """A t.me link to one post in a private channel."""
+    if not message_id:
+        return ""
+    cid = str(chat_id).strip()
+    if cid.startswith("-100"):
+        return f"https://t.me/c/{cid[4:]}/{message_id}"
+    return ""
+
+
+def _demo_signal_text(row: dict, provider: str) -> str:
+    """Built from the CONFIRMED fill, never from the request."""
+    px = row.get("fill_price")
+    sym = row.get("resolved_symbol") or row.get("symbol") or ""
+    side = str(row.get("side") or "buy").upper()
+    lines = ["\u26a0\ufe0f SIMULATED DEMO — demonstration signal, not a "
+             "live trade", ""]
+    if provider:
+        lines += [f"\U0001F4CA {provider}", ""]
+    lines += [f"{side}  {sym}",
+              f"Entry: {px}" if px else "Entry: —",
+              f"Volume: {row.get('filled_volume') or row.get('lots')}",
+              f"Ticket: {row.get('ticket')}", "",
+              "Executed on a broker DEMO account. Trading leveraged "
+              "products carries risk. Not financial advice."]
+    return "\n".join(lines)
+
+
+def _deliver_demo_signal(sb: Client, row: dict, provider: str) -> dict:
+    """Post the signal to @sklzlabsdemo. Once, and nowhere else."""
+    if row.get("demo_tg_message_id"):
+        return {"message_id": row["demo_tg_message_id"],
+                "url": _tg_message_url(DEMO_TG_CHAT, row["demo_tg_message_id"]),
+                "replay": True}
+
+    text = _demo_signal_text(row, provider)
+    ok, reason = policy.validate(text, strict=False)
+    if not ok:
+        return {"error": f"policy:{reason}"}
+
+    dests = resolve_destinations(RoutingScope(purpose="demo_signal"))
+    dest = dests[0] if dests else None
+    if not dest or not dest.enabled:
+        return {"error": "demo delivery disabled"}
+    # Belt and braces: the demo signal may reach ONE chat id, whatever
+    # routing returns. A production channel must be unreachable from here.
+    if str(dest.chat_id) not in (DEMO_TG_CHAT, "@sklzlabsdemo"):
+        return {"error": f"refused: resolver returned {dest.chat_id}"}
+
+    import urllib.request
+    payload = {"chat_id": dest.chat_id, "text": text,
+               "disable_web_page_preview": True}
+    try:
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{dest.token.reveal()}/sendMessage",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            d = json.loads(r.read().decode())
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"{type(exc).__name__}"}
+    if not d.get("ok"):
+        return {"error": str(d.get("description", "telegram refused"))[:120]}
+
+    mid = (d.get("result") or {}).get("message_id")
+    try:
+        sb.table("bot_orders").update({
+            "demo_tg_message_id": mid,
+            "demo_tg_sent_at": datetime.now(timezone.utc).isoformat()
+        }).eq("command_id", row["command_id"]).execute()
+    except Exception:  # noqa: BLE001
+        pass
+    return {"message_id": mid,
+            "url": _tg_message_url(DEMO_TG_CHAT, mid), "replay": False}
+
+
+def _sweep_demo_closes(sb: Client) -> int:
+    """Queue a close for every demo fill that has been open long enough.
+
+    Uses the existing A3 close command, by exact ticket, against the demo
+    Runner only. Idempotent: `demo_close_command_id` is written once and
+    a row with one is never swept again.
+    """
+    if _demo_guard(sb):
+        return 0                      # the guard also protects the sweep
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(seconds=DEMO_HOLD_SECONDS)).isoformat()
+    try:
+        rows = (sb.table("bot_orders")
+                .select("command_id,ticket,demo_token,executed_at,"
+                        "actual_account,demo_close_command_id")
+                .eq("status", "succeeded").eq("demo_kind", "market")
+                .is_("demo_close_command_id", "null")
+                .lt("executed_at", cutoff).limit(20).execute()).data or []
+    except Exception:
+        return 0
+
+    expected = _demo_login()
+    queued = 0
+    for r in rows:
+        tk = r.get("ticket")
+        if not tk:
+            continue
+        # never close a ticket that was filled on a different account
+        if str(r.get("actual_account") or "") != expected:
+            print(f"[demo] NOT closing ticket {tk}: it was filled on "
+                  f"{r.get('actual_account')}, not {expected}")
+            continue
+        try:
+            res = (sb.table("bot_orders").insert({
+                "bot_name": DEMO_BOT_NAME, "symbol": "", "side": "buy",
+                "note": f"[demo] auto-close {tk}", "lots": 0,
+                "ticket": tk, "command_type": "close", "status": "pending",
+                "demo_token": r.get("demo_token"), "demo_kind": "close",
+                "mode": "execute"}).execute()).data or []
+            cid = (res[0] or {}).get("command_id")
+            sb.table("bot_orders").update(
+                {"demo_close_command_id": cid,
+                 "demo_close_state": "queued"}) \
+                .eq("command_id", r["command_id"]).execute()
+            queued += 1
+        except Exception as exc:  # noqa: BLE001
+            print(f"[demo] close queue failed for {tk}: {str(exc)[:100]}")
+    return queued
+
+
+@demo_router.post("/admin/sweep")
+async def demo_sweep(user=Depends(get_current_user),
+                     sb: Client = Depends(get_supabase)) -> dict:
+    """Run the close sweep now. Also runs opportunistically on each poll."""
+    if not rules.is_platform_admin(user):
+        raise HTTPException(http.HTTP_403_FORBIDDEN, "platform admin only")
+    return {"ok": True, "queued": await offload(_sweep_demo_closes, sb)}
