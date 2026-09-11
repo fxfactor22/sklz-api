@@ -1517,3 +1517,121 @@ async def notify_demo_trailing(sb: Client, ticket: str, new_sl: float) -> dict:
         return res
 
     return await offload(_send)
+
+
+# ── pinned showcase post for the demo channel ───────────────────────
+def _showcase_text() -> str:
+    """The pinned post. Every capability listed is one we have run."""
+    p = _package_config()
+    def money(k, part):
+        try:
+            return p[k][part]["display"]
+        except Exception:  # noqa: BLE001
+            return "—"
+    return "\n".join([
+        "\U0001F4CA SKLZ SIGNAL DESK",
+        "Trade once. Distribute everywhere.", "",
+        "What this channel demonstrates, live:", "",
+        "\u2713 Real MT5 execution",
+        "\u2713 Real broker confirmation \u2014 ticket, fill, retcode",
+        "\u2713 Automated Telegram signals",
+        "\u2713 Live trade management",
+        "\u2713 SL / TP modification",
+        "\u2713 Breakeven",
+        "\u2713 Trailing protection, applied at the broker",
+        "\u2713 Close automation",
+        "\u2713 AI subscriber communication",
+        "\u2713 AI content automation",
+        "\u2713 Multi-account copying", "",
+        "Trading demonstrations use MT5 demo funds.",
+        "The automation infrastructure is real \u2014 every signal here",
+        "came from an actual broker fill.", "",
+        "\u2014\u2014\u2014", "",
+        "PACKAGES", "",
+        f"Signal Desk      {money('signal_desk','setup')} setup + "
+        f"{money('signal_desk','monthly')}/month",
+        f"Signal Desk Pro  {money('signal_desk_pro','setup')} setup + "
+        f"{money('signal_desk_pro','monthly')}/month",
+        f"Pro Trader OS    {money('pro_trader_os','setup')} setup + "
+        f"{money('pro_trader_os','monthly')}/month", "",
+        "Software and automation only. Not financial advice.",
+        "Trading involves risk of loss.",
+    ])
+
+
+@demo_router.post("/admin/showcase")
+async def post_showcase(pin: bool = True,
+                        user=Depends(get_current_user),
+                        sb: Client = Depends(get_supabase)) -> dict:
+    """Post (and pin) the showcase to the demo channel. Admin only."""
+    if not rules.is_platform_admin(user):
+        raise HTTPException(http.HTTP_403_FORBIDDEN, "platform admin only")
+
+    text = _showcase_text()
+    ok, why = policy.validate(text, strict=False)
+    if not ok:
+        raise HTTPException(http.HTTP_400_BAD_REQUEST,
+                            {"error": "policy_refused", "detail": why})
+
+    def _send():
+        import urllib.request
+        dests = resolve_destinations(RoutingScope(purpose="demo_signal"))
+        dest = dests[0] if dests else None
+        if not dest or not dest.enabled:
+            return {"error": "demo delivery disabled"}
+        if str(dest.chat_id) not in (DEMO_TG_CHAT, "@sklzlabsdemo"):
+            return {"error": f"refused: resolver returned {dest.chat_id}"}
+        base = f"https://api.telegram.org/bot{dest.token.reveal()}"
+        site = _os.environ.get("SITE_URL", "https://www.sklzlabs.com")
+        bot = _os.environ.get("TG_FUNNEL_BOT", "sklzlabsnew_bot")
+        kb = {"inline_keyboard": [
+            [{"text": "\u26a1 TRY LIVE DEMO",
+              "url": f"{site}/signal-desk.html#demo"}],
+            [{"text": "\U0001F4AC TALK TO AI",
+              "url": f"https://t.me/{bot}?start=demo_channel"}],
+            [{"text": "\U0001F4E6 VIEW PACKAGES",
+              "url": f"{site}/signal-desk.html#packages"},
+             {"text": "\u2705 ACTIVATE",
+              "url": f"{site}/signal-desk.html#packages"}]]}
+        try:
+            req = urllib.request.Request(
+                base + "/sendMessage",
+                data=json.dumps({"chat_id": dest.chat_id, "text": text,
+                                 "disable_web_page_preview": True,
+                                 "reply_markup": kb}).encode(),
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=12) as r:
+                d = json.loads(r.read().decode())
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"{type(exc).__name__}"}
+        if not d.get("ok"):
+            return {"error": str(d.get("description", ""))[:140]}
+        mid = (d.get("result") or {}).get("message_id")
+        out = {"message_id": mid,
+               "url": _tg_message_url(DEMO_TG_CHAT, mid), "pinned": False}
+        if pin and mid:
+            try:
+                req = urllib.request.Request(
+                    base + "/pinChatMessage",
+                    data=json.dumps({"chat_id": dest.chat_id,
+                                     "message_id": mid,
+                                     "disable_notification": True}).encode(),
+                    headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=12) as r:
+                    out["pinned"] = bool(json.loads(r.read().decode()).get("ok"))
+            except Exception:  # noqa: BLE001
+                pass
+        return out
+
+    return {"ok": True, **(await offload(_send))}
+
+
+@demo_router.get("/admin/showcase/preview")
+async def preview_showcase(user=Depends(get_current_user)) -> dict:
+    """See the post before it goes out. Sends nothing."""
+    if not rules.is_platform_admin(user):
+        raise HTTPException(http.HTTP_403_FORBIDDEN, "platform admin only")
+    text = _showcase_text()
+    ok, why = policy.validate(text, strict=False)
+    return {"ok": True, "text": text, "policy_ok": ok,
+            "policy_reason": "" if ok else why}

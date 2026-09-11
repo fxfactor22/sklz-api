@@ -656,6 +656,7 @@ def test_lifecycle_events_edit_rather_than_repost():
     api = open("orders_api.py").read()
     assert "editMessageText" in api
     fn = api[api.index("def _lifecycle_edit("):]
+    fn = fn[:fn.index("\n\n\n")] if "\n\n\n" in fn else fn
     assert "demo_tg_message_id" in fn
     assert "sendMessage" not in fn          # never a second post
 
@@ -677,6 +678,7 @@ def test_the_edit_can_only_reach_the_demo_channel():
 def test_trailing_edits_the_same_message_when_the_stop_moves():
     api = open("orders_api.py").read()
     fn = api[api.index("def _trailing_edit("):]
+    fn = fn[:fn.index("\n\n\n")] if "\n\n\n" in fn else fn
     assert "TRAILING ACTIVE" in fn
     assert "_edit_demo_message(dest, base[\"demo_tg_message_id\"]" in fn
     assert "sendMessage" not in fn
@@ -759,3 +761,60 @@ def test_a_non_demo_ticket_is_ignored():
     fn = api[api.index("async def notify_demo_trailing("):]
     assert '"skipped": "not a demo trade"' in fn
     assert '"skipped": "not the demo runner"' in fn
+
+
+# ── pinned showcase ──────────────────────────────────────────────────
+def _showcase():
+    import ast as _a
+    src = open("orders_api.py").read()
+    tree = _a.parse(src)
+    keep = [n for n in tree.body
+            if (isinstance(n, _a.ImportFrom) and n.module == "__future__")
+            or (isinstance(n, _a.FunctionDef)
+                and n.name in ("_showcase_text", "_package_config", "_num_env"))
+            or (isinstance(n, _a.Assign)
+                and getattr(n.targets[0], "id", "") == "PACKAGE_DEFS")
+            or (isinstance(n, _a.Import) and n.names[0].asname == "_os")]
+    ns = {}
+    exec(compile(_a.Module(body=keep, type_ignores=[]), "x", "exec"), ns)
+    return ns["_showcase_text"]()
+
+
+def test_the_showcase_claims_only_what_we_have_run():
+    t = _showcase()
+    for claim in ("Real MT5 execution", "Real broker confirmation",
+                  "SL / TP modification", "Breakeven",
+                  "Trailing protection", "Close automation",
+                  "AI subscriber communication", "Multi-account copying"):
+        assert claim in t, claim
+
+
+def test_the_showcase_is_honest_about_demo_funds():
+    t = _showcase()
+    assert "MT5 demo funds" in t
+    assert "automation infrastructure is real" in t
+    assert "Not financial advice" in t and "risk of loss" in t
+
+
+def test_showcase_pricing_comes_from_config_not_the_text():
+    t = _showcase()
+    assert "$499 setup + $49/month" in t
+    src = open("orders_api.py").read()
+    fn = src[src.index("def _showcase_text("):src.index('@demo_router.post("/admin/showcase")')]
+    assert "_package_config()" in fn
+    assert "499" not in fn          # never hard-coded in the post
+
+
+def test_the_showcase_makes_no_performance_claim():
+    low = _showcase().lower()
+    for banned in ("profit", "win rate", "guaranteed", "returns", "%"):
+        assert banned not in low, banned
+
+
+def test_posting_the_showcase_is_admin_only_and_demo_pinned():
+    src = open("orders_api.py").read()
+    fn = src[src.index("async def post_showcase("):]
+    assert "rules.is_platform_admin(user)" in fn
+    assert 'not in (DEMO_TG_CHAT, "@sklzlabsdemo")' in fn
+    assert "pinChatMessage" in fn
+    assert "policy.validate(text" in fn
