@@ -818,3 +818,34 @@ def test_posting_the_showcase_is_admin_only_and_demo_pinned():
     assert 'not in (DEMO_TG_CHAT, "@sklzlabsdemo")' in fn
     assert "pinChatMessage" in fn
     assert "policy.validate(text" in fn
+
+
+def test_a_telegram_fault_cannot_hide_a_broker_result():
+    """The trade already happened and the row already says so. This
+    endpoint once 500'd for twenty minutes while an order sat filled."""
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def demo_run_state("):]
+    fn = fn[:fn.index("\n\n\n")] if "\n\n\n" in fn else fn
+    i_try = fn.index("try:")
+    i_deliver = fn.index("_deliver_demo_signal")
+    i_catch = fn.index("except Exception as exc")
+    i_return = fn.rindex("return out")
+    assert i_try < i_deliver < i_catch < i_return
+    assert '"trading_unaffected": True' in fn
+    assert "telegram step failed" in fn      # recorded, not raised
+
+
+def test_the_opening_post_happens_once():
+    api = open("orders_api.py").read()
+    fn = api[api.index("def _deliver_demo_signal("):]
+    assert 'if row.get("demo_tg_message_id"):' in fn
+    assert '"replay": True' in fn
+
+
+def test_the_message_reference_lives_on_the_existing_row():
+    """No new subsystem: bot_orders already carries the association."""
+    api = open("orders_api.py").read()
+    assert "demo_tg_message_id" in api
+    sql = open("migrations/D6-migration.sql").read()
+    assert "demo_tg_message_id" in sql
+    assert "demo_token" in open("migrations/D5-migration.sql").read()
