@@ -696,9 +696,11 @@ async def demo_run_state(token: str, command_id: str,
             except (TypeError, ValueError):
                 out["telegram_latency_ms"] = None
 
-    out["auto_close"] = {"state": r.get("demo_close_state"),
-                         "closed_at": r.get("demo_closed_at"),
-                         "after_seconds": DEMO_HOLD_SECONDS}
+    # The close result lives on ITS OWN row. The parent was written once
+    # at queue time and never updated, so it reported "queued" forever
+    # while the position had actually closed. Read the truth from the
+    # close command and persist it back.
+    out["auto_close"] = await offload(_close_state, sb, r)
     # keep the account tidy without needing a separate scheduler
     try:
         await offload(_sweep_demo_closes, sb)
@@ -836,6 +838,43 @@ def _sweep_demo_closes(sb: Client) -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"[demo] close queue failed for {tk}: {str(exc)[:100]}")
     return queued
+
+
+def _close_state(sb: Client, parent: dict) -> dict:
+    """What actually happened to the auto-close, from the close row."""
+    out = {"state": parent.get("demo_close_state"),
+           "closed_at": parent.get("demo_closed_at"),
+           "after_seconds": DEMO_HOLD_SECONDS,
+           "command_id": parent.get("demo_close_command_id")}
+    cid = parent.get("demo_close_command_id")
+    if not cid:
+        out["state"] = out["state"] or "not_scheduled"
+        return out
+    try:
+        rows = (sb.table("bot_orders").select(
+            "status,executed_at,retcode,broker_comment,resolved_symbol,"
+            "actual_account").eq("command_id", cid).limit(1).execute()).data or []
+    except Exception:
+        return out
+    if not rows:
+        return out
+    row = rows[0]
+    out.update({"state": row.get("status"),
+                "closed_at": row.get("executed_at"),
+                "retcode": row.get("retcode"),
+                "broker_comment": row.get("broker_comment"),
+                "closed_on_account": row.get("actual_account")})
+    # persist once, so the parent stops lying to every later reader
+    if row.get("status") in ("succeeded", "failed") and \
+            not parent.get("demo_closed_at"):
+        try:
+            sb.table("bot_orders").update({
+                "demo_close_state": row.get("status"),
+                "demo_closed_at": row.get("executed_at")
+            }).eq("command_id", parent["command_id"]).execute()
+        except Exception:  # noqa: BLE001
+            pass
+    return out
 
 
 @demo_router.post("/admin/sweep")

@@ -141,3 +141,33 @@ def test_sweep_refuses_a_ticket_from_another_account():
     assert oa._sweep_demo_closes(sb) == 0
     assert not [r for (t, r) in store.get("inserts", [])
                 if r.get("command_type") == "close"]
+
+
+def test_auto_close_state_comes_from_the_close_row(monkeypatch):
+    """The parent row is written once at queue time and never updated,
+    so it reported 'queued' while the position had already closed."""
+    store = {}
+    parent = {"command_id": "cmd-1", "ticket": 1925357543,
+              "demo_close_command_id": "close-1",
+              "demo_close_state": "queued", "demo_closed_at": None}
+    closed = {"status": "succeeded",
+              "executed_at": "2026-09-11T04:16:09.158073+00:00",
+              "retcode": None, "broker_comment": None,
+              "actual_account": "52952532"}
+    sb = _SB(store, {"bot_orders": [closed]})
+
+    out = oa._close_state(sb, parent)
+    assert out["state"] == "succeeded", out
+    assert out["closed_at"].startswith("2026-09-11T04:16:09"), out
+    assert out["closed_on_account"] == "52952532"
+
+    # and it writes the truth back so later readers are not misled
+    updates = [p for (t, p) in store.get("updates", [])
+               if "demo_close_state" in p]
+    assert updates and updates[0]["demo_close_state"] == "succeeded"
+    assert updates[0]["demo_closed_at"].startswith("2026-09-11T04:16:09")
+
+
+def test_close_state_without_a_close_command_says_so():
+    out = oa._close_state(_SB({}, {}), {"command_id": "x"})
+    assert out["state"] == "not_scheduled"
