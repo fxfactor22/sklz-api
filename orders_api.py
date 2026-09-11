@@ -797,21 +797,51 @@ def _tg_message_url(chat_id: str, message_id) -> str:
     return ""
 
 
-def _demo_signal_text(row: dict, provider: str) -> str:
-    """Built from the CONFIRMED fill, never from the request."""
-    px = row.get("fill_price")
-    sym = row.get("resolved_symbol") or row.get("symbol") or ""
+def _demo_signal_text(row: dict, provider: str, status: str = "OPEN",
+                      live: dict | None = None) -> str:
+    """Compose from the CONFIRMED broker state.
+
+    This previously said "SIMULATED DEMO" for a trade the broker really
+    filled. The EXECUTION is real — a live MT5 order on a demo account
+    with a real ticket and retcode. Only the money is virtual, and
+    calling a real fill simulated is both wrong and weaker than the
+    truth: automation is live, funds are not.
+    """
+    live = live or {}
+    sym = (live.get("symbol") or row.get("resolved_symbol")
+           or row.get("symbol") or "")
     side = str(row.get("side") or "buy").upper()
-    lines = ["\u26a0\ufe0f SIMULATED DEMO — demonstration signal, not a "
-             "live trade", ""]
-    if provider:
-        lines += [f"\U0001F4CA {provider}", ""]
-    lines += [f"{side}  {sym}",
-              f"Entry: {px}" if px else "Entry: —",
-              f"Volume: {row.get('filled_volume') or row.get('lots')}",
+    entry = live.get("entry") or row.get("fill_price")
+    # Volume, in order of authority: what the broker reports for the OPEN
+    # position, then what the Runner said it filled, then what we asked
+    # for. A zero is never printed — an unknown line is omitted instead.
+    vol = (live.get("volume") or row.get("filled_volume")
+           or row.get("lots") or 0)
+    sl = live.get("sl") if live.get("sl") is not None else row.get("sl")
+    tp = live.get("tp") if live.get("tp") is not None else row.get("tp")
+
+    badge = {"OPEN": "\U0001F7E2", "UPDATED": "\U0001F504",
+             "BREAKEVEN": "\U0001F6E1", "TRAILING ACTIVE": "\U0001F4C8",
+             "CLOSED": "\u2705"}.get(status, "\U0001F7E2")
+
+    lines = [f"\U0001F4CA {provider} — LIVE DEMO SIGNAL", "",
+             f"{sym} {side}", ""]
+    if entry:
+        lines.append(f"Entry: {entry}")
+    if vol:
+        lines.append(f"Volume: {vol}")
+    if sl:
+        lines.append(("Current SL: " if status == "TRAILING ACTIVE"
+                      else "SL: ") + str(sl))
+    if tp:
+        lines.append(f"TP: {tp}")
+    if status == "CLOSED" and row.get("close_price"):
+        lines.append(f"Exit: {row['close_price']}")
+    lines += ["", f"{badge} STATUS: {status}", "",
               f"Ticket: {row.get('ticket')}", "",
-              "Executed on a broker DEMO account. Trading leveraged "
-              "products carries risk. Not financial advice."]
+              "Executed on an MT5 broker DEMO account.",
+              "Automation is live; funds are virtual.", "",
+              "Not financial advice."]
     return "\n".join(lines)
 
 

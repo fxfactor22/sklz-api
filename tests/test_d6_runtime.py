@@ -111,7 +111,10 @@ def test_succeeded_branch_executes_without_nameerror(monkeypatch):
     # 1 — composition runs
     text = oa._demo_signal_text(filled, "Falcon FX")
     assert "1.16011" in text and "1925280358" in text
-    assert "SIMULATED DEMO" in text
+    # a real broker fill is no longer called simulated — only the money is
+    assert "LIVE DEMO SIGNAL" in text
+    assert "SIMULATED" not in text.upper()
+    assert "funds are virtual" in text
 
     # 2 — routing + policy + delivery run for real
     out = oa._deliver_demo_signal(sb, filled, "Falcon FX")

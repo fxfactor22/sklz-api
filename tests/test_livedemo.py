@@ -574,3 +574,65 @@ def test_the_fields_start_from_the_live_values():
     assert "si.value = mine.sl" in h and "ti.value = mine.tp" in h
     # and never overwrite what the trader is typing
     assert "document.activeElement!==si" in h
+
+
+def _compose():
+    import ast as _a
+    src = open("orders_api.py").read()
+    tree = _a.parse(src)
+    keep = [n for n in tree.body
+            if (isinstance(n, _a.ImportFrom) and n.module == "__future__")
+            or (isinstance(n, _a.FunctionDef) and n.name == "_demo_signal_text")]
+    ns = {}
+    exec(compile(_a.Module(body=keep, type_ignores=[]), "x", "exec"), ns)
+    return ns["_demo_signal_text"]
+
+
+ROW = {"symbol": "EURUSD", "side": "buy", "fill_price": 1.15927,
+       "filled_volume": 0.01, "ticket": 1926681563,
+       "sl": 1.155, "tp": 1.17}
+
+
+def test_a_real_fill_is_never_called_simulated():
+    """The execution is a real MT5 order with a real ticket. Only the
+    money is virtual."""
+    t = _compose()(ROW, "SKLZ QA", "OPEN")
+    assert "SIMULATED" not in t.upper()
+    assert "LIVE DEMO SIGNAL" in t
+    assert "Automation is live; funds are virtual." in t
+    assert "MT5 broker DEMO account" in t
+
+
+def test_volume_is_never_printed_as_zero():
+    """'Volume: 0' was worse than no line at all."""
+    c = _compose()
+    assert "Volume: 0.01" in c(ROW, "P", "OPEN")
+    blank = dict(ROW, filled_volume=None, lots=None)
+    assert "Volume:" not in c(blank, "P", "OPEN")
+    zero = dict(ROW, filled_volume=0, lots=0)
+    assert "Volume: 0" not in c(zero, "P", "OPEN")
+
+
+def test_the_broker_position_outranks_the_stored_row():
+    c = _compose()
+    t = c(ROW, "P", "TRAILING ACTIVE", {"sl": 1.1598, "volume": 0.02})
+    assert "Current SL: 1.1598" in t      # live value, not the stored 1.155
+    assert "Volume: 0.02" in t
+
+
+def test_every_lifecycle_status_renders():
+    c = _compose()
+    for s, badge in (("OPEN", "\U0001F7E2"), ("UPDATED", "\U0001F504"),
+                     ("BREAKEVEN", "\U0001F6E1"),
+                     ("TRAILING ACTIVE", "\U0001F4C8"),
+                     ("CLOSED", "\u2705")):
+        t = c(ROW, "P", s)
+        assert f"STATUS: {s}" in t and badge in t
+
+
+def test_no_pnl_is_claimed():
+    c = _compose()
+    for s in ("OPEN", "CLOSED", "TRAILING ACTIVE"):
+        t = c(ROW, "P", s).lower()
+        for banned in ("profit", "p/l", "pnl", "pips gained", "%"):
+            assert banned not in t, (s, banned)
