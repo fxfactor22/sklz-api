@@ -138,7 +138,7 @@ def _verified_summary(sb: Client) -> dict:
     try:
         rows = (sb.table("bot_orders")
                 .select("symbol,side,ticket,fill_price,demo_kind,status,"
-                        "executed_at,demo_closed_at")
+                        "executed_at,demo_closed_at,demo_close_state")
                 .eq("demo_kind", "market").eq("status", "succeeded")
                 .gte("executed_at", since).limit(50).execute()).data or []
     except Exception:  # noqa: BLE001
@@ -146,7 +146,12 @@ def _verified_summary(sb: Client) -> dict:
     if not rows:
         return {}
     symbols = sorted({r.get("symbol") or "" for r in rows if r.get("symbol")})
-    closed = len([r for r in rows if r.get("demo_closed_at")])
+    # A market row succeeding proves the position OPENED, nothing more.
+    # And demo_closed_at is stamped when a close command settles either
+    # way — including a close the broker REFUSED — so its presence is not
+    # evidence of closure. Only a close that itself succeeded is.
+    closed = len([r for r in rows
+                  if r.get("demo_close_state") == "succeeded"])
     return {"trades": len(rows), "symbols": symbols, "closed": closed}
 
 

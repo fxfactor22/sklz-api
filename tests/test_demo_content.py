@@ -161,3 +161,22 @@ def test_status_lists_the_controls():
               "SKLZ_DEMO_CONTENT_MAX_PER_DAY"):
         assert k in src, k
     assert '"allowed_categories"' in src
+
+
+def test_closed_count_requires_a_succeeded_close():
+    """A market row succeeding proves the position OPENED. And
+    demo_closed_at is stamped even when the broker REFUSED the close, so
+    its presence is not evidence of closure."""
+    fn = SRC[SRC.index("def _verified_summary("):SRC.index("def _ai(")]
+    assert 'r.get("demo_close_state") == "succeeded"' in fn
+    assert 'if r.get("demo_closed_at")]' not in fn
+
+
+def test_closed_count_logic_in_isolation():
+    rows = [{"demo_close_state": "succeeded"},      # really closed
+            {"demo_close_state": "failed"},         # broker refused
+            {"demo_closed_at": "2026-09-11T00:00:00Z"},  # stamped, refused
+            {}]                                      # still open
+    closed = len([r for r in rows
+                  if r.get("demo_close_state") == "succeeded"])
+    assert closed == 1
