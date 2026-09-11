@@ -407,3 +407,64 @@ def test_every_ai_message_is_marked_demo():
     fn = api[api.index("async def demo_ai_send("):]
     assert 'if "DEMO" in text.upper()' in fn
     assert "DEMO ACCOUNT" in fn
+
+
+# ── symbol choice, bounded by an allowlist ───────────────────────────
+def _sym_fn():
+    import ast as _a
+    src = open("orders_api.py").read()
+    tree = _a.parse(src)
+    keep = [n for n in tree.body
+            if (isinstance(n, _a.FunctionDef) and n.name == "_demo_symbol")
+            or (isinstance(n, _a.Assign)
+                and getattr(n.targets[0], "id", "") in ("DEMO_SYMBOL", "DEMO_LOT"))
+            or (isinstance(n, _a.AnnAssign)
+                and getattr(n.target, "id", "") == "DEMO_SYMBOLS")]
+    ns = {}
+    exec(compile(_a.Module(body=keep, type_ignores=[]), "x", "exec"), ns)
+    return ns
+
+
+def test_an_unlisted_symbol_never_reaches_the_broker():
+    """The list is the permission. Anything else falls back rather than
+    trading an instrument nobody sized."""
+    ns = _sym_fn()
+    f = ns["_demo_symbol"]
+    for bad in ("US30", "TSLA", "'; DROP TABLE bot_orders;--", "", None,
+                "EURUSD.nx", "XAUUSD "):
+        sym, lot = f(bad)
+        assert sym in ns["DEMO_SYMBOLS"], (bad, sym)
+    assert f("US30")[0] == "EURUSD"
+
+
+def test_a_listed_symbol_is_accepted_case_insensitively():
+    f = _sym_fn()["_demo_symbol"]
+    assert f("btcusd")[0] == "BTCUSD"
+    assert f(" XAUUSD ")[0] == "XAUUSD"
+
+
+def test_lot_size_is_per_symbol_and_server_chosen():
+    """0.01 means very different money across instruments."""
+    ns = _sym_fn()
+    f, table = ns["_demo_symbol"], ns["DEMO_SYMBOLS"]
+    for sym in table:
+        assert f(sym)[1] == table[sym]["lot"]
+    # and the browser cannot ask for a lot at all
+    api = open("orders_api.py").read()
+    fn = api[api.index("class ControlIn"):]
+    fn = fn[:fn.index("\n\n")]
+    for forbidden in ("lot", "volume", "size"):
+        assert forbidden not in fn, forbidden
+
+
+def test_crypto_is_offered_so_a_weekend_click_can_trade():
+    table = _sym_fn()["DEMO_SYMBOLS"]
+    always = [k for k, v in table.items() if v.get("always_open")]
+    assert "BTCUSD" in always
+
+
+def test_the_symbol_list_is_readable_by_the_demo():
+    api = open("orders_api.py").read()
+    assert 'async def demo_symbols(' in api
+    fn = api[api.index("async def demo_symbols("):]
+    assert "read_demo_link(token, sb)" in fn      # token still required

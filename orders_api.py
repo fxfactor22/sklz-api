@@ -546,8 +546,39 @@ async def revoke_demo_link(token: str, user=Depends(get_current_user),
 # account. A label cannot satisfy it, and neither can a request body.
 
 DEMO_BOT_NAME = "sklz-demo"
-DEMO_SYMBOL = "EURUSD"
+DEMO_SYMBOL = "EURUSD"          # the default when none is chosen
 DEMO_LOT = 0.01
+
+# A prospect may CHOOSE from this list and nothing else. The browser
+# still names no account, no Runner and no lot — it picks a row here.
+#
+# Lots are per symbol because 0.01 means wildly different money across
+# instruments: 0.01 BTCUSD is ~$770 of exposure, 0.01 XAUUSD ~$43, and
+# 0.01 EURUSD ~$1,160. A single lot size would make some picks trivial
+# and others reckless on a $20k demo account.
+DEMO_SYMBOLS: dict[str, dict] = {
+    "EURUSD": {"lot": 0.01, "label": "EUR/USD", "class": "forex"},
+    "GBPUSD": {"lot": 0.01, "label": "GBP/USD", "class": "forex"},
+    "USDJPY": {"lot": 0.01, "label": "USD/JPY", "class": "forex"},
+    "XAUUSD": {"lot": 0.01, "label": "Gold", "class": "metal"},
+    "BTCUSD": {"lot": 0.01, "label": "Bitcoin", "class": "crypto",
+               "always_open": True},
+    "ETHUSD": {"lot": 0.10, "label": "Ethereum", "class": "crypto",
+               "always_open": True},
+}
+
+
+def _demo_symbol(choice: str | None) -> tuple[str, float]:
+    """Resolve a chosen symbol to (symbol, lot). Unknown → the default.
+
+    Never trusts the string: an unlisted symbol falls back rather than
+    reaching the broker, so a crafted request cannot trade something we
+    never sized.
+    """
+    key = (choice or "").strip().upper()
+    if key in DEMO_SYMBOLS:
+        return key, float(DEMO_SYMBOLS[key]["lot"])
+    return DEMO_SYMBOL, DEMO_LOT
 DEMO_SL_PIPS = 150
 DEMO_TP_PIPS = 220
 DEMO_RUNS_PER_TOKEN = 3
@@ -936,6 +967,7 @@ class ControlIn(BaseModel):
     ticket: int | None = None
     sl: float | None = None
     tp: float | None = None
+    symbol: str | None = None        # chosen from DEMO_SYMBOLS, or ignored
 
 
 async def _owned_ticket(sb: Client, tok: str, ticket: int) -> dict:
@@ -1001,9 +1033,10 @@ async def demo_control(token: str, body: ControlIn,
             raise HTTPException(http.HTTP_429_TOO_MANY_REQUESTS,
                                 {"error": "demo_runs_exhausted",
                                  "used": used})
-        row.update({"symbol": DEMO_SYMBOL, "side": action, "lots": DEMO_LOT,
+        sym, lot = _demo_symbol(body.symbol)
+        row.update({"symbol": sym, "side": action, "lots": lot,
                     "command_type": "market", "demo_kind": "market",
-                    "note": f"[demo] {link['provider_name']}"[:300]})
+                    "note": f"[demo] {link['provider_name']} {sym}"[:300]})
     else:
         if not body.ticket:
             raise HTTPException(http.HTTP_400_BAD_REQUEST,
@@ -1228,3 +1261,14 @@ def _deliver_demo_signal_text(sb: Client, text: str) -> dict:
         return {"error": str(d.get("description", "refused"))[:120]}
     mid = (d.get("result") or {}).get("message_id")
     return {"message_id": mid, "url": _tg_message_url(DEMO_TG_CHAT, mid)}
+
+
+@demo_router.get("/{token}/symbols")
+async def demo_symbols(token: str,
+                       sb: Client = Depends(get_supabase)) -> dict:
+    """What this demo may trade. The list is the permission."""
+    await read_demo_link(token, sb)
+    return {"ok": True, "default": DEMO_SYMBOL,
+            "symbols": [{"symbol": k, **v} for k, v in DEMO_SYMBOLS.items()],
+            "note": ("Lot size is set per instrument so the exposure is "
+                     "comparable. It is not chosen by the browser.")}
