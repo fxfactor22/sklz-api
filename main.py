@@ -37,6 +37,7 @@ import copy_api
 import copy_scheduler
 import providers
 import diagnostics
+import demo_content
 import orders_api
 import provisioning
 import demo_api
@@ -106,6 +107,8 @@ app.include_router(providers.router)
 app.include_router(provisioning.router)
 app.include_router(diagnostics.router)
 app.include_router(orders_api.router)
+app.include_router(demo_content.router)
+demo_content.start(app)
 app.include_router(orders_api.leads_router)
 app.include_router(orders_api.demo_router)
 copy_scheduler.start(app)
