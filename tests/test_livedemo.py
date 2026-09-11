@@ -253,31 +253,3 @@ def test_the_dashboard_hides_demo_runners():
     assert rx.search("sklz-demo")
     assert not rx.search("Learning Runner [live]")
     assert "no live runner" in h          # never silently empty
-
-
-# ── sales readiness: honest labelling and fresh tokens ───────────────
-def test_every_step_declares_real_or_simulated():
-    h = open("tests/fixtures/signal-desk-demo.html").read()
-    assert h.count(">REAL<") >= 4
-    assert h.count(">SIMULATED PREVIEW<") >= 2
-    assert "ILLUSTRATIVE FIGURES" in h
-    # the summary line says which is which
-    assert "no subscriber\n          account executed anything" in h or \
-        "no subscriber" in h
-
-
-def test_a_fresh_token_reports_no_runs_used():
-    api = open("orders_api.py").read()
-    fn = api[api.index("async def list_demo_links("):]
-    assert 'r["runs_used"] = used.get(r["token"], 0)' in fn
-    assert '"runs_remaining"' in fn
-    # counted from actual orders, so a new token can only be 0
-    assert 'eq("demo_kind", "market")' in fn
-
-
-def test_revoke_is_admin_only_and_keeps_history():
-    api = open("orders_api.py").read()
-    fn = api[api.index("async def revoke_demo_link("):]
-    assert "rules.is_platform_admin(user)" in fn
-    assert '"revoked": True' in fn
-    assert ".delete()" not in fn

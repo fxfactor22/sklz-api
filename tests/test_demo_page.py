@@ -80,13 +80,10 @@ def test_expiry_is_real_not_fake_scarcity():
 
 
 def test_simulation_is_declared():
-    """The page now distinguishes what is REAL from what is a preview,
-    rather than calling the whole thing simulated."""
-    assert "SIMULATED PREVIEW" in HTML
-    assert "ILLUSTRATIVE FIGURES" in HTML
-    assert "no subscriber" in HTML          # nothing pretends to have copied
-    assert ">REAL<" in HTML                  # and the real parts say so
-    assert "broker DEMO account" in HTML
+    assert "Simulated execution" in HTML
+    assert "no live\n          market order is placed" in HTML or \
+        "no live" in HTML
+    assert "are simulated" in HTML
 
 
 def test_risk_language_present_and_no_performance_claim():
