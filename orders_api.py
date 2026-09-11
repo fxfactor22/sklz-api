@@ -494,9 +494,46 @@ async def list_demo_links(user=Depends(get_current_user),
 
     rows = await offload(_q)
     site = _os.environ.get("SITE_URL", "https://www.sklzlabs.com").rstrip("/")
+
+    def _runs():
+        try:
+            return (sb.table("bot_orders").select("demo_token")
+                    .eq("demo_kind", "market").execute()).data or []
+        except Exception:
+            return []
+
+    used: dict = {}
+    for row in await offload(_runs):
+        t = row.get("demo_token")
+        if t:
+            used[t] = used.get(t, 0) + 1
+
     for r in rows:
         r["url"] = f"{site}/demo/signal-desk.html?t={r['token']}"
-    return {"ok": True, "links": rows}
+        # A prospect link must start unused. This is the number that says so.
+        r["runs_used"] = used.get(r["token"], 0)
+        r["runs_allowed"] = DEMO_RUNS_PER_TOKEN
+        r["runs_remaining"] = max(0, DEMO_RUNS_PER_TOKEN - r["runs_used"])
+    return {"ok": True, "links": rows,
+            "live_demo_enabled": _demo_enabled(),
+            "runs_allowed": DEMO_RUNS_PER_TOKEN}
+
+
+@demo_router.post("/{token}/revoke")
+async def revoke_demo_link(token: str, user=Depends(get_current_user),
+                           sb: Client = Depends(get_supabase)) -> dict:
+    """Close a demo immediately, without deleting its history."""
+    if not rules.is_platform_admin(user):
+        raise HTTPException(http.HTTP_403_FORBIDDEN, "platform admin only")
+    tok = (token or "").strip().lower()
+
+    def _upd():
+        return (sb.table("demo_links").update({"revoked": True})
+                .eq("token", tok).execute()).data or []
+
+    rows = await offload(_upd)
+    return {"ok": True, "token": tok, "revoked": True,
+            "note": "the link now shows the closed page"}
 
 
 # ── live demo execution ─────────────────────────────────────────────

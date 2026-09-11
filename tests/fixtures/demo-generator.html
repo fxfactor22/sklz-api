@@ -72,12 +72,17 @@ a{color:var(--gold2)}
       <button class="btn ghost" onclick="window.open(document.getElementById('url').textContent,'_blank')">Open it</button>
     </div>
     <div class="msg" id="exp" style="color:var(--dim)"></div>
+    <div class="msg" style="color:var(--green)">New link — 3 of 3 live demo
+      runs available.</div>
   </div>
 </div>
 
 <div class="card">
-  <div style="font-size:13px;color:var(--dim2);text-transform:uppercase;
-    letter-spacing:.09em">Recent demos</div>
+  <div style="display:flex;gap:12px;align-items:baseline">
+    <div style="font-size:13px;color:var(--dim2);text-transform:uppercase;
+      letter-spacing:.09em">Recent demos</div>
+    <span id="liveflag" style="font-size:11px;color:var(--gold2)"></span>
+  </div>
   <div id="list"><div class="msg" style="color:var(--dim2)">Refresh to load.</div></div>
 </div>
 
@@ -122,20 +127,42 @@ function cp(){
   document.getElementById("msg").style.color="var(--green)";
   document.getElementById("msg").textContent="Copied.";
 }
+async function revoke(tok){
+  if(!confirm("Close this demo now? The prospect will see the ended page."))
+    return;
+  const t=tok2(); if(!t) return;
+  try{
+    await fetch(API+"/api/demo-links/"+tok+"/revoke",
+      {method:"POST",headers:{"Authorization":"Bearer "+t}});
+    load();
+  }catch(e){ alert("Could not revoke."); }
+}
+function tok2(){return tok();}
 async function load(){
   const t=tok(); if(!t) return;
   try{
     const r=await fetch(API+"/api/demo-links",{headers:{"Authorization":"Bearer "+t}});
     const d=await r.json(); const rows=(d.links||[]);
+    const lv=document.getElementById("liveflag");
+    if(lv) lv.textContent = d.live_demo_enabled
+      ? "live demo execution: ON" : "live demo execution: OFF";
     document.getElementById("list").innerHTML = rows.length ? (
-      '<table><tr><th>Provider</th><th>Channel</th><th>Expires</th><th>Opens</th><th></th></tr>'+
+      '<table><tr><th>Provider</th><th>Channel</th><th>Expires</th>'+
+      '<th>Runs</th><th>Opens</th><th></th></tr>'+
       rows.map(x=>{
         const left=(new Date(x.expires_at)-Date.now())/3600000;
         const st = x.revoked ? "closed" : left<=0 ? "expired"
                  : left.toFixed(0)+"h left";
+        const runs = (x.runs_used||0)+"/"+(x.runs_allowed||3);
+        const fresh = (x.runs_used||0)===0;
         return `<tr><td>${x.provider_name}</td><td>${x.telegram_channel}</td>`+
-          `<td>${st}</td><td>${x.opened_count||0}</td>`+
-          `<td><a href="${x.url}" target="_blank">open</a></td></tr>`;
+          `<td>${st}</td>`+
+          `<td style="color:${fresh?'var(--green)':'var(--gold2)'}">${runs}`+
+          `${fresh?' fresh':''}</td>`+
+          `<td>${x.opened_count||0}</td>`+
+          `<td><a href="${x.url}" target="_blank">open</a>`+
+          (x.revoked?'':` · <a href="#" onclick="revoke('${x.token}');`+
+           `return false">revoke</a>`)+`</td></tr>`;
       }).join("")+"</table>"
     ) : '<div class="msg" style="color:var(--dim2)">No demos yet.</div>';
   }catch(e){}
