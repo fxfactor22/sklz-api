@@ -544,11 +544,11 @@ def test_the_generator_page_needs_no_new_admin_system():
 
 def test_opens_are_recorded_for_the_operator():
     assert "opened_count" in API and "last_opened_at" in API
-    sql = open("/mnt/user-data/outputs/D4-migration.sql").read()
+    sql = open("migrations/D4-migration.sql").read()
     assert "opened_count" in sql and "first_opened_at" in sql
 
 
 def test_demo_links_table_is_not_publicly_readable():
-    sql = open("/mnt/user-data/outputs/D4-migration.sql").read()
+    sql = open("migrations/D4-migration.sql").read()
     assert "enable row level security" in sql
     assert "revoke all on public.demo_links from anon, authenticated" in sql

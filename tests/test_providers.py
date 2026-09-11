@@ -110,7 +110,7 @@ def test_a_closed_provider_cannot_be_linked():
 
 def test_two_providers_cannot_share_one_tenant():
     """Enforced by a partial unique index; asserted here as intent."""
-    sql = open("/mnt/user-data/outputs/P0-migration.sql").read()
+    sql = open("migrations/P0-migration.sql").read()
     assert "providers_iskra_tenant_uniq" in sql
     assert "unique index" in sql.lower()
     assert "where iskra_tenant_id is not null" in sql.lower()
@@ -118,21 +118,21 @@ def test_two_providers_cannot_share_one_tenant():
 
 # ── safety posture ───────────────────────────────────────────────────
 def test_providers_table_is_not_reachable_by_a_public_key():
-    sql = open("/mnt/user-data/outputs/P0-migration.sql").read().lower()
+    sql = open("migrations/P0-migration.sql").read().lower()
     assert "enable row level security" in sql
     assert "revoke all on public.providers from anon, authenticated" in sql
     assert "create policy" not in sql       # no policy = no public access
 
 
 def test_nothing_existing_is_rekeyed_in_this_migration():
-    sql = open("/mnt/user-data/outputs/P0-migration.sql").read().lower()
+    sql = open("migrations/P0-migration.sql").read().lower()
     for table in ("subscriptions", "copy_slaves", "journal_trades",
                   "signals", "bot_orders", "tg_leads"):
         assert f"alter table public.{table}" not in sql, table
 
 
 def test_status_is_independent_of_subscription_state():
-    sql = open("/mnt/user-data/outputs/P0-migration.sql").read()
+    sql = open("migrations/P0-migration.sql").read()
     assert "'draft', 'active', 'suspended', 'closed'" in sql
     assert "subscription" not in sql.split("check (status")[1][:200]
 

@@ -75,7 +75,7 @@ def test_sender_does_not_rediscover_credentials():
     is that the code CANNOT rediscover a token, not merely that it did not
     on one input.
     """
-    src = open("signals_engine.py").read()
+    src = open("./signals_engine.py").read()
     body = src[src.index("def _post_telegram("):]
     body = body[:body.index("\ndef ", 1)]
     assert "os.environ" not in body, "sender still reads the environment"
@@ -83,7 +83,7 @@ def test_sender_does_not_rediscover_credentials():
 
 def test_no_direct_routing_lookups_remain_in_the_engine():
     """After the refactor the engine resolves nothing itself."""
-    src = open("signals_engine.py").read()
+    src = open("./signals_engine.py").read()
     for needle in ('os.environ.get("TG_CHANNEL_',
                    'os.environ.get(f"TG_CHANNEL_',
                    'os.environ.get(f"{prefix}_CHAT'):
