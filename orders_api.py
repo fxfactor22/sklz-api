@@ -827,7 +827,13 @@ async def demo_run_state(token: str, command_id: str,
 
     # The signal is generated and delivered only once the broker has
     # CONFIRMED the fill. Nothing is announced before it exists.
-    if r.get("status") == "succeeded" and r.get("ticket"):
+    # A positions read carries no ticket — it answers "what is open?",
+    # not "what did this order do". Gating the whole block on a ticket
+    # meant settlement, reconciliation and trailing never ran on the one
+    # poll a token actually repeats, which is where all three live.
+    _kind = r.get("demo_kind")
+    if r.get("status") == "succeeded" and (r.get("ticket")
+                                           or _kind == "positions"):
       # Communication is downstream of trading. A Telegram fault must
       # never hide a broker result: the trade already happened and the
       # row already says so. This endpoint once returned 500 for twenty
@@ -847,16 +853,20 @@ async def demo_run_state(token: str, command_id: str,
             # outcome, so settle those first; only then may confirmed
             # disappearance speak for a ticket nothing else settled; and
             # trailing last, since it concerns positions still open.
-            settled = await offload(_settle_linked_closes, sb, tok,
-                                    link["provider_name"])
+            cid = r.get("command_id")
+            settled = await _positions_stage(
+                "settlement", cid, _settle_linked_closes, sb, tok,
+                link["provider_name"])
             if settled:
                 out["settled"] = settled
-            rec = await offload(_reconcile_vanished, sb, tok, r,
-                                link["provider_name"])
+            rec = await _positions_stage(
+                "reconciliation", cid, _reconcile_vanished, sb, tok, r,
+                link["provider_name"])
             if rec:
                 out["reconciled"] = rec
-            tg = await offload(_trailing_edit, sb, tok, r,
-                               link["provider_name"])
+            tg = await _positions_stage(
+                "trailing", cid, _trailing_edit, sb, tok, r,
+                link["provider_name"]) or {}
             if tg:
                 out["telegram"] = tg
         else:
@@ -1584,6 +1594,25 @@ def _vanished_at_broker(history: list, ticket: int) -> bool:
     return (len(history) - 1 - last_seen) >= 2
 
 
+async def _positions_stage(stage: str, cid, fn, *args):
+    """Run one positions-read side effect behind its own boundary.
+
+    These three steps used to share the outer handler, and settlement ran
+    first — so any exception it raised was swallowed up there and
+    reconciliation and trailing never ran at all. One failing step must
+    never silence the ones after it.
+
+    The command_id identifies the work; the demo token is the link's
+    credential and is never logged.
+    """
+    try:
+        return await offload(fn, *args)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[demo] {stage} failed for command {cid}: "
+              f"{type(exc).__name__}: {str(exc)[:200]}")
+        return None
+
+
 def _owned_market_rows(sb: Client, tok: str) -> list:
     """The token's successful market rows, with their close bookkeeping."""
     try:
@@ -1624,6 +1653,8 @@ def _settle_linked_closes(sb: Client, tok: str, provider: str) -> list:
     """
     out = []
     for row in _owned_market_rows(sb, tok):
+      # One ticket's delivery fault must not strand the rest.
+      try:
         cid = row.get("demo_close_command_id")
         if not cid or row.get("demo_closed_at"):
             continue
@@ -1657,6 +1688,10 @@ def _settle_linked_closes(sb: Client, tok: str, provider: str) -> list:
                 except Exception:  # noqa: BLE001
                     pass
             out.append({"ticket": row.get("ticket"), "state": "failed"})
+      except Exception as exc:  # noqa: BLE001
+        print(f"[demo] settlement failed for ticket {row.get('ticket')}: "
+              f"{type(exc).__name__}: {str(exc)[:160]}")
+        continue
     return out
 
 
@@ -1689,6 +1724,8 @@ def _reconcile_vanished(sb: Client, tok: str, event: dict,
 
     done = []
     for tk in missing:
+      # One ticket's delivery fault must not strand the rest.
+      try:
         base = _signal_row(sb, tok, tk)
         if not base:
             continue
@@ -1722,6 +1759,10 @@ def _reconcile_vanished(sb: Client, tok: str, event: dict,
             pass
         done.append({"ticket": tk, "state": "closed_at_broker",
                      "message_id": base.get("demo_tg_message_id")})
+      except Exception as exc:  # noqa: BLE001
+        print(f"[demo] reconciliation failed for ticket {tk}: "
+              f"{type(exc).__name__}: {str(exc)[:160]}")
+        continue
     return done
 
 
@@ -1739,6 +1780,8 @@ def _trailing_edit(sb: Client, tok: str, event: dict, provider: str) -> dict:
         return {}
     out = {}
     for p in positions:
+      # One ticket's delivery fault must not strand the rest.
+      try:
         base = _signal_row(sb, tok, p.get("ticket"))
         if not base or not base.get("demo_tg_message_id"):
             continue
@@ -1771,6 +1814,10 @@ def _trailing_edit(sb: Client, tok: str, event: dict, provider: str) -> dict:
             except Exception:  # noqa: BLE001
                 pass
         out = res
+      except Exception as exc:  # noqa: BLE001
+        print(f"[demo] trailing failed for ticket {(p or {}).get('ticket')}: "
+              f"{type(exc).__name__}: {str(exc)[:160]}")
+        continue
     return out
 
 

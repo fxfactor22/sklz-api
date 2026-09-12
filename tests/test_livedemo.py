@@ -122,9 +122,17 @@ def test_a_prospect_cannot_read_another_tokens_run():
 
 # ── D6: auto-close and real demo Telegram ────────────────────────────
 def test_the_signal_waits_for_a_confirmed_fill():
+    """A market signal still needs a confirmed fill AND a ticket. A
+    positions read legitimately has neither — it answers "what is open?"
+    — and gating it on a ticket kept settlement, reconciliation and
+    trailing from ever running."""
     fn = _fn("async def demo_run_state(")
-    assert 'if r.get("status") == "succeeded" and r.get("ticket"):' in fn
+    assert 'r.get("status") == "succeeded" and (r.get("ticket")' in fn
+    assert '_kind == "positions")' in fn
     assert fn.index('status") == "succeeded"') < fn.index("_deliver_demo_signal")
+    # the market branch is still reached only with a ticket
+    market = fn[fn.index('if kind == "market":'):]
+    assert market.index("_deliver_demo_signal") < market.index("elif kind ==")
 
 
 def test_the_demo_signal_can_only_reach_one_chat():
@@ -1624,3 +1632,182 @@ def test_convergence_sends_no_broker_command():
         fn = fn[:fn.index("\ndef ", 10)]
         assert "insert(" not in fn, name
         assert "command_type" not in fn, name
+
+
+# ── positions-read failure isolation ─────────────────────────────────
+import asyncio
+
+
+def _positions_row():
+    return {"command_id": "pos1", "demo_token": "t", "demo_kind": "positions",
+            "status": "succeeded", "ticket": None, "positions": [],
+            "created_at": "2026-09-12T04:00:00Z",
+            "broker_confirmed_at": "2026-09-12T04:00:01Z",
+            "actual_account": "52952532", "symbol": "", "side": "",
+            "lots": 0, "fill_price": None, "retcode": None,
+            "broker_comment": None, "demo_close_command_id": None,
+            "demo_closed_at": None}
+
+
+def _run_positions_branch(monkeypatch, *, settle, reconcile, trailing):
+    """Drive the REAL demo_run_state positions branch."""
+    import orders_api
+
+    row = _positions_row()
+    calls = []
+
+    class _SB:
+        def table(self, _n):
+            return self
+
+        def select(self, *a, **k):
+            return self
+
+        def eq(self, *a, **k):
+            return self
+
+        def limit(self, *a, **k):
+            return self
+
+        def execute(self):
+            return type("R", (), {"data": [row]})()
+
+    async def fake_read_link(_tok, _sb):
+        return {"provider_name": "SKLZ Final QA"}
+
+    def wrap(name, behaviour):
+        def fn(*_a, **_k):
+            calls.append(name)
+            if isinstance(behaviour, Exception):
+                raise behaviour
+            return behaviour
+        return fn
+
+    monkeypatch.setattr(orders_api, "read_demo_link", fake_read_link)
+    monkeypatch.setattr(orders_api, "_settle_linked_closes",
+                        wrap("settle", settle))
+    monkeypatch.setattr(orders_api, "_reconcile_vanished",
+                        wrap("reconcile", reconcile))
+    monkeypatch.setattr(orders_api, "_trailing_edit",
+                        wrap("trailing", trailing))
+    monkeypatch.setattr(orders_api, "_close_state", lambda _sb, _r: {})
+    monkeypatch.setattr(orders_api, "_sweep_demo_closes", lambda _sb: 0)
+
+    out = asyncio.run(orders_api.demo_run_state("t", "pos1", _SB()))
+    return out, calls
+
+
+def test_settlement_failure_does_not_suppress_the_other_steps(monkeypatch):
+    """The defect: settlement ran first inside one shared try, so its
+    exception silently cancelled reconciliation and trailing."""
+    out, calls = _run_positions_branch(
+        monkeypatch,
+        settle=RuntimeError("telegram exploded"),
+        reconcile=[{"ticket": 1928027035, "state": "closed_at_broker"}],
+        trailing={"ok": True, "message_id": 41})
+
+    assert out["ok"] is True                      # response still succeeds
+    assert calls == ["settle", "reconcile", "trailing"]
+    assert out["reconciled"][0]["state"] == "closed_at_broker"
+    assert out["telegram"] == {"ok": True, "message_id": 41}
+    assert "settled" not in out
+
+
+def test_reconciliation_failure_does_not_suppress_trailing(monkeypatch):
+    out, calls = _run_positions_branch(
+        monkeypatch,
+        settle=[{"ticket": 1, "state": "succeeded"}],
+        reconcile=RuntimeError("db blew up"),
+        trailing={"ok": True, "message_id": 41})
+
+    assert out["ok"] is True
+    assert calls == ["settle", "reconcile", "trailing"]
+    assert out["settled"][0]["state"] == "succeeded"
+    assert out["telegram"] == {"ok": True, "message_id": 41}
+    assert "reconciled" not in out
+
+
+def test_trailing_failure_leaves_the_earlier_results_intact(monkeypatch):
+    out, calls = _run_positions_branch(
+        monkeypatch,
+        settle=[{"ticket": 1, "state": "succeeded"}],
+        reconcile=[{"ticket": 2, "state": "closed_at_broker"}],
+        trailing=RuntimeError("edit failed"))
+
+    assert out["ok"] is True
+    assert calls == ["settle", "reconcile", "trailing"]
+    assert out["settled"] and out["reconciled"]
+    assert out.get("telegram") in (None, {}, )
+
+
+def test_every_stage_can_fail_and_the_read_still_answers(monkeypatch):
+    out, calls = _run_positions_branch(
+        monkeypatch,
+        settle=RuntimeError("a"), reconcile=RuntimeError("b"),
+        trailing=RuntimeError("c"))
+
+    assert out["ok"] is True and out["state"] == "succeeded"
+    assert calls == ["settle", "reconcile", "trailing"]
+    assert "settled" not in out and "reconciled" not in out
+
+
+def test_the_happy_path_still_runs_all_three_in_order(monkeypatch):
+    out, calls = _run_positions_branch(
+        monkeypatch,
+        settle=[{"ticket": 1, "state": "succeeded"}],
+        reconcile=[], trailing={})
+
+    assert calls == ["settle", "reconcile", "trailing"]
+    assert out["settled"][0]["state"] == "succeeded"
+
+
+def test_one_tickets_failure_does_not_strand_the_next(monkeypatch):
+    """Settlement and reconciliation both loop; an edit that throws on
+    the first ticket must not abandon the second."""
+    import orders_api
+
+    seen = []
+
+    def flaky(sb, tok, event, status, provider, reason=""):
+        tk = event.get("ticket")
+        seen.append(tk)
+        if tk == 1:
+            raise RuntimeError("telegram down for this one")
+        return {"ok": True, "message_id": 99}
+
+    monkeypatch.setattr(orders_api, "_lifecycle_edit", flaky)
+
+    rows = []
+    for tk, cid in ((1, "clA"), (2, "clB")):
+        rows.append({"command_id": f"m{tk}", "demo_token": "t",
+                     "demo_kind": "market", "status": "succeeded",
+                     "ticket": tk, "demo_tg_message_id": 40 + tk,
+                     "demo_closed_at": None, "demo_close_state": "queued",
+                     "demo_close_command_id": cid})
+        rows.append({"command_id": cid, "demo_token": "t",
+                     "demo_kind": "close", "status": "succeeded",
+                     "ticket": tk, "executed_at": "2026-09-12T05:00:00Z"})
+
+    out = orders_api._settle_linked_closes(_ConvSB(rows), "t", "p")
+    assert seen == [1, 2]                      # both attempted
+    assert [o["ticket"] for o in out] == [2]   # the healthy one still settled
+
+
+def test_the_stage_helper_never_logs_the_demo_token():
+    """The token IS the link's credential."""
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def _positions_stage("):]
+    fn = fn[:fn.index("def _owned_market_rows(")]
+    assert "command" in fn and "{tok" not in fn
+    assert "stage" in fn and "type(exc).__name__" in fn
+
+
+def test_each_positions_stage_has_its_own_boundary():
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def demo_run_state("):]
+    fn = fn[:fn.index("@demo_router.post")]
+    for stage in ('"settlement"', '"reconciliation"', '"trailing"'):
+        assert f"_positions_stage(\n                {stage}" in fn \
+            or stage in fn, stage
+    assert fn.index('"settlement"') < fn.index('"reconciliation"') \
+        < fn.index('"trailing"')
