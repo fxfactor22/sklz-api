@@ -734,6 +734,48 @@ async def run_live_demo(token: str, request: Request,
             "note": "The demo Runner polls every few seconds."}
 
 
+def _owned_tickets(sb: Client, tok: str) -> set:
+    """Broker tickets this demo token actually opened.
+
+    A ticket counts only when the ledger says this token placed a market
+    order that SUCCEEDED and the broker gave it that ticket. Fail closed:
+    if the lookup errors, nothing is owned.
+    """
+    try:
+        rows = (sb.table("bot_orders").select("ticket")
+                .eq("demo_token", tok).eq("demo_kind", "market")
+                .eq("status", "succeeded").execute()).data or []
+    except Exception:  # noqa: BLE001
+        return set()
+    out = set()
+    for row in rows:
+        try:
+            t = int(row.get("ticket") or 0)
+        except (TypeError, ValueError):
+            continue
+        if t:
+            out.add(t)
+    return out
+
+
+def _owned_positions(sb: Client, tok: str, positions) -> list:
+    """The broker's open positions, narrowed to the ones this token owns."""
+    if not positions:
+        return []
+    owned = _owned_tickets(sb, tok)
+    if not owned:
+        return []
+    keep = []
+    for p in positions:
+        try:
+            t = int((p or {}).get("ticket") or 0)
+        except (TypeError, ValueError):
+            continue
+        if t in owned:
+            keep.append(p)
+    return keep
+
+
 @demo_router.get("/{token}/run-live/{command_id}")
 async def demo_run_state(token: str, command_id: str,
                          sb: Client = Depends(get_supabase)) -> dict:
@@ -761,7 +803,15 @@ async def demo_run_state(token: str, command_id: str,
            "retcode": r.get("retcode"),
            "broker_comment": r.get("broker_comment"),
            "account": r.get("actual_account"),
-           "positions": r.get("positions") or [],
+           # Only this token's OWN positions leave here. The Runner reads
+           # every position on the account, and the demo master is not
+           # guaranteed to be free of orders this link did not place —
+           # an untracked EURJPY sitting there was presented to a
+           # prospect as their own trade, because the page binds to the
+           # first row it is handed. Ownership is the ledger's answer,
+           # never the list order, the symbol, the bot or the account.
+           "positions": await offload(_owned_positions, sb, tok,
+                                      r.get("positions")),
            "timings": {"queued": r.get("created_at"),
                        "runner_received": r.get("runner_received_at"),
                        "mt5_requested": r.get("mt5_requested_at"),

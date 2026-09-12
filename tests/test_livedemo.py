@@ -507,9 +507,72 @@ def test_a_positions_read_survives_the_result_ingest():
     assert "positions: list = []" in bi
     assert '"positions": (body.positions or None)' in bi
     api = open("orders_api.py").read()
-    assert '"positions": r.get("positions") or []' in api
+    # The list still leaves the endpoint — it is now narrowed to the
+    # positions this token owns on the way out, which is a filter on the
+    # same value, not a drop of it.
+    assert '"positions": await offload(_owned_positions, sb, tok,' in api
+    assert "def _owned_positions(" in api
     sql = open("migrations/D7-migration.sql").read()
     assert "add column if not exists positions jsonb" in sql
+
+
+class _FakeQ:
+    def __init__(self, rows, boom=False):
+        self.rows, self.boom = rows, boom
+
+    def select(self, *a, **k):
+        return self
+
+    def eq(self, *a, **k):
+        return self
+
+    def execute(self):
+        if self.boom:
+            raise RuntimeError("db unavailable")
+        return type("R", (), {"data": self.rows})()
+
+
+class _FakeSB:
+    def __init__(self, rows, boom=False):
+        self.rows, self.boom = rows, boom
+
+    def table(self, _name):
+        return _FakeQ(self.rows, self.boom)
+
+
+_FOREIGN = {"ticket": 1927969355, "symbol": "EURJPY", "side": "sell"}
+_OWNED = {"ticket": 1928013968, "symbol": "BTCUSD", "side": "sell"}
+
+
+def test_a_position_this_token_did_not_open_is_never_returned():
+    """A foreign position on the demo master was shown to the prospect as
+    their own trade, because the page binds to the first row it is given.
+    Ownership is the ledger's answer, not the list order."""
+    import orders_api
+
+    sb = _FakeSB([])                      # this token owns nothing
+    assert orders_api._owned_positions(sb, "tok", [_FOREIGN]) == []
+
+    sb = _FakeSB([{"ticket": 1928013968}])
+    # foreign listed FIRST — order must not confer ownership
+    assert orders_api._owned_positions(
+        sb, "tok", [_FOREIGN, _OWNED]) == [_OWNED]
+
+
+def test_ownership_fails_closed_when_the_ledger_cannot_be_read():
+    """An unreadable ledger means nothing is proven owned, so nothing is
+    actionable. It must not fall back to showing everything."""
+    import orders_api
+
+    sb = _FakeSB([], boom=True)
+    assert orders_api._owned_positions(sb, "tok", [_FOREIGN, _OWNED]) == []
+
+
+def test_a_null_ticket_in_the_ledger_owns_nothing():
+    import orders_api
+
+    sb = _FakeSB([{"ticket": None}])
+    assert orders_api._owned_positions(sb, "tok", [_FOREIGN]) == []
 
 
 # ── control desk UI ──────────────────────────────────────────────────
