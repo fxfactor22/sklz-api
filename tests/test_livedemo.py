@@ -610,7 +610,7 @@ def test_a_positions_read_survives_the_result_ingest():
     it, so a successful read returned nothing."""
     bi = open("bot_ingest.py").read()
     assert "positions: list = []" in bi
-    assert '"positions": (body.positions or None)' in bi
+    assert '"positions" in body.model_fields_set' in bi
     api = open("orders_api.py").read()
     # The list still leaves the endpoint — it is now narrowed to the
     # positions this token owns on the way out, which is a filter on the
@@ -986,3 +986,273 @@ def test_posting_the_showcase_is_admin_only_and_demo_pinned():
     assert 'not in (DEMO_TG_CHAT, "@sklzlabsdemo")' in fn
     assert "pinChatMessage" in fn
     assert "policy.validate(text" in fn
+
+
+# ── ingest: snapshot presence, not truthiness ────────────────────────
+def test_an_omitted_positions_field_is_not_a_snapshot():
+    """`positions or None` made an empty broker answer and a result that
+    carried no answer indistinguishable. Reconciliation needs them apart."""
+    from bot_ingest import ResultIn
+
+    body = ResultIn.model_validate_json('{"command_id":"c"}')
+    assert "positions" not in body.model_fields_set
+    stored = (body.positions
+              if "positions" in body.model_fields_set else None)
+    assert stored is None
+
+
+def test_an_explicit_empty_snapshot_is_stored_as_empty():
+    from bot_ingest import ResultIn
+
+    body = ResultIn.model_validate_json('{"command_id":"c","positions":[]}')
+    assert "positions" in body.model_fields_set
+    stored = (body.positions
+              if "positions" in body.model_fields_set else None)
+    assert stored == []
+
+
+def test_a_populated_snapshot_is_retained():
+    from bot_ingest import ResultIn
+
+    body = ResultIn.model_validate_json(
+        '{"command_id":"c","positions":[{"ticket":1928027035}]}')
+    stored = (body.positions
+              if "positions" in body.model_fields_set else None)
+    assert stored == [{"ticket": 1928027035}]
+
+
+def test_the_ingest_uses_field_presence_not_truthiness():
+    src = open("bot_ingest.py").read()
+    assert '"positions" in body.model_fields_set' in src
+    assert '"positions": (body.positions or None)' not in src
+
+
+# ── reconciliation: a ticket the broker stopped reporting ────────────
+OWNED = 1928027035
+FOREIGN = 1927969355
+
+
+def _snap(*tickets):
+    return [{"ticket": t} for t in tickets]
+
+
+def _history(*snapshots):
+    return [{"created_at": i, "positions": s} for i, s in enumerate(snapshots)]
+
+
+def test_a_ticket_still_present_is_not_vanished():
+    import orders_api
+
+    h = _history(_snap(OWNED), _snap(OWNED), _snap(OWNED))
+    assert orders_api._vanished_at_broker(h, OWNED) is False
+
+
+def test_one_missing_snapshot_is_not_enough_to_close():
+    import orders_api
+
+    h = _history(_snap(OWNED), _snap())
+    assert orders_api._vanished_at_broker(h, OWNED) is False
+
+
+def test_two_consecutive_missing_snapshots_confirm_the_close():
+    import orders_api
+
+    h = _history(_snap(OWNED), _snap(), _snap())
+    assert orders_api._vanished_at_broker(h, OWNED) is True
+
+
+def test_explicit_empty_snapshots_can_close_the_only_position():
+    """The last owned position leaves an empty list, not a missing one."""
+    import orders_api
+
+    h = _history(_snap(OWNED), [], [])
+    assert orders_api._vanished_at_broker(h, OWNED) is True
+
+
+def test_a_null_snapshot_never_counts_as_a_confirmation():
+    """NULL rows are dropped by _snapshot_history, so a pair of them
+    cannot confirm a disappearance."""
+    import orders_api
+
+    rows = [{"created_at": 0, "positions": _snap(OWNED)},
+            {"created_at": 1, "positions": None},
+            {"created_at": 2, "positions": None}]
+    kept = [r for r in rows if r.get("positions") is not None]
+    assert orders_api._vanished_at_broker(kept, OWNED) is False
+
+
+def test_a_ticket_never_observed_open_is_never_reconciled():
+    import orders_api
+
+    h = _history(_snap(), _snap(), _snap())
+    assert orders_api._vanished_at_broker(h, OWNED) is False
+
+
+class _RecQ:
+    def __init__(self, store, table):
+        self.store, self.table_name, self.f = store, table, {}
+        self.updated = None
+
+    def select(self, *a, **k):
+        return self
+
+    def eq(self, col, val):
+        self.f[col] = val
+        return self
+
+    def order(self, col="created_at", **k):
+        self.order_col, self.order_desc = col, bool(k.get("desc"))
+        return self
+
+    def limit(self, n):
+        return self
+
+    def update(self, patch):
+        self.store["updates"].append(patch)
+        return self
+
+    def execute(self):
+        if "updates" in self.f or self.store.get("_updating"):
+            return type("R", (), {"data": []})()
+        rows = self.store["rows"]
+        keep = [r for r in rows
+                if all(r.get(k) == v for k, v in self.f.items())]
+        col = getattr(self, "order_col", None)
+        if col:
+            keep = sorted(keep, key=lambda r: r.get(col) or 0,
+                          reverse=getattr(self, "order_desc", False))
+        return type("R", (), {"data": keep})()
+
+
+class _RecSB:
+    def __init__(self, rows):
+        self.store = {"rows": rows, "updates": []}
+
+    def table(self, name):
+        return _RecQ(self.store, name)
+
+
+def _ledger_rows(**overrides):
+    market = {"demo_token": "t", "demo_kind": "market", "status": "succeeded",
+              "ticket": OWNED, "command_id": "m1",
+              "demo_tg_message_id": 41, "demo_closed_at": None,
+              "demo_close_command_id": None, "symbol": "BTCUSD",
+              "side": "sell", "lots": 0.01, "fill_price": 77183.5}
+    market.update(overrides)
+    return [market,
+            {"demo_token": "t", "demo_kind": "positions",
+             "status": "succeeded", "created_at": 0,
+             "positions": _snap(OWNED)},
+            {"demo_token": "t", "demo_kind": "positions",
+             "status": "succeeded", "created_at": 1, "positions": []},
+            {"demo_token": "t", "demo_kind": "positions",
+             "status": "succeeded", "created_at": 2, "positions": []}]
+
+
+def _run_reconcile(monkeypatch, rows, edit_result, snap=None):
+    import orders_api
+
+    calls = []
+
+    def fake_edit(sb, tok, event, status, provider, reason=""):
+        calls.append({"ticket": event.get("ticket"), "status": status,
+                      "reason": reason})
+        return edit_result
+
+    monkeypatch.setattr(orders_api, "_lifecycle_edit", fake_edit)
+    sb = _RecSB(rows)
+    done = orders_api._reconcile_vanished(
+        sb, "t", {"positions": [] if snap is None else snap}, "SKLZ Final QA")
+    return done, calls, sb.store["updates"]
+
+
+def test_a_vanished_owned_ticket_closes_the_same_message(monkeypatch):
+    done, calls, updates = _run_reconcile(
+        monkeypatch, _ledger_rows(), {"ok": True, "message_id": 41})
+    assert [c["status"] for c in calls] == ["CLOSED"]
+    assert calls[0]["reason"] == "Closed at broker"
+    assert calls[0]["ticket"] == OWNED
+    assert done and done[0]["state"] == "closed_at_broker"
+    assert updates and updates[0]["demo_close_state"] == "closed_at_broker"
+
+
+def test_a_foreign_ticket_disappearing_is_ignored(monkeypatch):
+    """EURJPY has no market row under this token, so it is never owned."""
+    rows = _ledger_rows()
+    done, calls, _ = _run_reconcile(monkeypatch, rows, {"ok": True},
+                                    snap=_snap(OWNED))
+    assert calls == [] and done == []
+
+
+def test_an_already_closed_ticket_is_not_reconciled_again(monkeypatch):
+    rows = _ledger_rows(demo_closed_at="2026-09-12T00:00:00Z")
+    done, calls, updates = _run_reconcile(monkeypatch, rows, {"ok": True})
+    assert calls == [] and done == [] and updates == []
+
+
+def test_a_close_command_in_flight_is_left_alone(monkeypatch):
+    rows = _ledger_rows(demo_close_command_id="c9")
+    done, calls, updates = _run_reconcile(monkeypatch, rows, {"ok": True})
+    assert calls == [] and done == [] and updates == []
+
+
+def test_a_trade_that_was_never_posted_is_not_edited(monkeypatch):
+    rows = _ledger_rows(demo_tg_message_id=None)
+    done, calls, _ = _run_reconcile(monkeypatch, rows, {"ok": True})
+    assert calls == [] and done == []
+
+
+def test_a_telegram_failure_leaves_the_row_eligible(monkeypatch):
+    """No stamp on failure, and the positions read still returns."""
+    done, calls, updates = _run_reconcile(
+        monkeypatch, _ledger_rows(), {"error": "telegram down"})
+    assert len(calls) == 1          # it tried
+    assert done == []               # but reported nothing closed
+    assert updates == []            # and stamped nothing
+
+
+def test_reconciliation_is_idempotent(monkeypatch):
+    """Second pass sees the stamp the first pass wrote and does nothing."""
+    rows = _ledger_rows()
+    done1, calls1, _ = _run_reconcile(monkeypatch, rows, {"ok": True})
+    assert len(calls1) == 1 and done1
+
+    rows2 = _ledger_rows(demo_closed_at="2026-09-12T00:00:00Z",
+                         demo_close_state="closed_at_broker")
+    done2, calls2, updates2 = _run_reconcile(monkeypatch, rows2, {"ok": True})
+    assert calls2 == [] and done2 == [] and updates2 == []
+
+
+def test_a_result_carrying_no_snapshot_reconciles_nothing(monkeypatch):
+    import orders_api
+
+    called = []
+    monkeypatch.setattr(orders_api, "_lifecycle_edit",
+                        lambda *a, **k: called.append(1) or {"ok": True})
+    out = orders_api._reconcile_vanished(
+        _RecSB(_ledger_rows()), "t", {"positions": None}, "p")
+    assert out == [] and called == []
+
+
+def test_the_close_text_states_only_a_reason_we_can_prove():
+    import orders_api
+
+    row = {"ticket": OWNED, "symbol": "BTCUSD", "side": "sell",
+           "lots": 0.01, "fill_price": 77183.5}
+    text = orders_api._demo_signal_text(row, "SKLZ Final QA", "CLOSED",
+                                        None, "Closed at broker")
+    assert "STATUS: CLOSED" in text
+    assert "Reason: Closed at broker" in text
+    assert "Exit:" not in text          # no exit price is known
+    assert "SL hit" not in text and "TP hit" not in text
+    assert "Executed on an MT5 broker DEMO account." in text
+    assert "Automation is live; funds are virtual." in text
+
+
+def test_no_broker_command_is_ever_sent_by_reconciliation():
+    src = open("orders_api.py").read()
+    fn = src[src.index("def _reconcile_vanished("):]
+    fn = fn[:fn.index("def _trailing_edit(")]
+    assert "command_type" not in fn
+    assert '"close"' not in fn
+    assert "insert(" not in fn

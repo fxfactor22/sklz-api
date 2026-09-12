@@ -422,7 +422,14 @@ async def post_result(body: ResultIn,
         "uncertainty_reason": (body.broker_comment or
                                "runner could not confirm the outcome"
                                )[:300] if state == "unknown" else None,
-        "positions": (body.positions or None),
+        # Presence, not truthiness. `positions or None` collapsed an
+        # explicit empty snapshot — the broker saying "nothing is open" —
+        # into the same NULL as a result that carried no snapshot at all,
+        # and a reader could not tell them apart. Disappearance
+        # reconciliation depends on exactly that difference, so an
+        # omitted field stays NULL and an explicit [] is stored as [].
+        "positions": (body.positions
+                      if "positions" in body.model_fields_set else None),
         "actual_account": actual[:64] or None,
         "account_server": (body.server or "")[:96] or None,
         "account_mismatch": mismatch,

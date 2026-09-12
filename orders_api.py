@@ -847,6 +847,14 @@ async def demo_run_state(token: str, command_id: str,
                                link["provider_name"])
             if tg:
                 out["telegram"] = tg
+            # A position can end without any command of ours. The
+            # snapshot is the only place that becomes visible, so the
+            # same read that drives trailing also reconciles a ticket
+            # the broker has stopped reporting.
+            rec = await offload(_reconcile_vanished, sb, tok, r,
+                                link["provider_name"])
+            if rec:
+                out["reconciled"] = rec
         else:
             # A lifecycle event edits the ORIGINAL signal rather than
             # posting a new one, and composes from the MARKET row so the
@@ -905,7 +913,7 @@ def _tg_message_url(chat_id: str, message_id) -> str:
 
 
 def _demo_signal_text(row: dict, provider: str, status: str = "OPEN",
-                      live: dict | None = None) -> str:
+                      live: dict | None = None, reason: str = "") -> str:
     """Compose from the CONFIRMED broker state.
 
     This previously said "SIMULATED DEMO" for a trade the broker really
@@ -944,7 +952,13 @@ def _demo_signal_text(row: dict, provider: str, status: str = "OPEN",
         lines.append(f"TP: {tp}")
     if status == "CLOSED" and row.get("close_price"):
         lines.append(f"Exit: {row['close_price']}")
-    lines += ["", f"{badge} STATUS: {status}", "",
+    lines += ["", f"{badge} STATUS: {status}"]
+    # Only ever a reason we can actually prove. A position that vanished
+    # from the broker's own list is "closed at broker" and nothing more
+    # specific — claiming SL or TP would be inventing the cause.
+    if reason:
+        lines.append(f"Reason: {reason}")
+    lines += ["",
               f"Ticket: {row.get('ticket')}", "",
               "Executed on an MT5 broker DEMO account.",
               "Automation is live; funds are virtual.", "",
@@ -1469,7 +1483,7 @@ async def demo_symbols(token: str,
 
 
 def _lifecycle_edit(sb: Client, tok: str, event: dict, status: str,
-                    provider: str) -> dict:
+                    provider: str, reason: str = "") -> dict:
     """Edit the trade's original post to show its new state."""
     base = _signal_row(sb, tok, event.get("ticket"))
     if not base:
@@ -1491,11 +1505,118 @@ def _lifecycle_edit(sb: Client, tok: str, event: dict, status: str,
         live["sl"] = event["sl"]
     if event.get("tp"):
         live["tp"] = event["tp"]
-    text = _demo_signal_text(base, provider, status, live)
+    text = _demo_signal_text(base, provider, status, live, reason)
     ok, why = policy.validate(text, strict=False)
     if not ok:
         return {"error": f"policy:{why}"}
     return _edit_demo_message(dest, mid, text)
+
+
+def _snapshot_history(sb: Client, tok: str, limit: int = 60) -> list:
+    """This token's positions snapshots, oldest first.
+
+    A row whose `positions` is NULL carried no broker answer at all — an
+    omitted field, or a result that was never a positions read. It is not
+    a snapshot and is skipped entirely, so it can neither confirm nor
+    break a disappearance.
+    """
+    try:
+        rows = (sb.table("bot_orders").select("created_at,positions")
+                .eq("demo_token", tok).eq("demo_kind", "positions")
+                .eq("status", "succeeded")
+                .order("created_at", desc=True).limit(limit).execute()).data or []
+    except Exception:  # noqa: BLE001
+        return []
+    out = [r for r in rows if r.get("positions") is not None]
+    out.reverse()
+    return out
+
+
+def _snapshot_has(snapshot, ticket: int) -> bool:
+    for p in snapshot or []:
+        try:
+            if int((p or {}).get("ticket") or 0) == ticket:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _vanished_at_broker(history: list, ticket: int) -> bool:
+    """True when the broker showed this ticket open and then stopped.
+
+    Requires the ticket to have been OBSERVED open, then absent from the
+    next TWO real snapshots. One missing read is not enough: the Runner
+    is external and nothing in the ingest promises a snapshot is complete
+    or fresh, so a single gap must not close a live trade's post.
+    """
+    last_seen = -1
+    for i, row in enumerate(history):
+        if _snapshot_has(row.get("positions"), ticket):
+            last_seen = i
+    if last_seen < 0:
+        return False                  # never proven open — nothing to close
+    return (len(history) - 1 - last_seen) >= 2
+
+
+def _reconcile_vanished(sb: Client, tok: str, event: dict,
+                        provider: str) -> list:
+    """Reflect a broker-side ending the platform never commanded.
+
+    A trade can end without any close command of ours — a stop, a manual
+    close in the terminal, anything. CLOSED was only ever emitted from a
+    close row we created, so such a trade's post stayed OPEN forever
+    while subscribers looked at a position that no longer existed.
+
+    This reads the broker's own answer and edits the SAME message. It
+    sends no command and never claims a cause it cannot prove.
+    """
+    snap = event.get("positions")
+    if snap is None:
+        return []                     # this result carried no snapshot
+    present = set()
+    for p in snap:
+        try:
+            present.add(int((p or {}).get("ticket") or 0))
+        except (TypeError, ValueError):
+            continue
+
+    missing = sorted(t for t in _owned_tickets(sb, tok) if t not in present)
+    if not missing:
+        return []
+    history = _snapshot_history(sb, tok)
+
+    done = []
+    for tk in missing:
+        base = _signal_row(sb, tok, tk)
+        if not base:
+            continue
+        if not base.get("demo_tg_message_id"):
+            continue                  # nothing was ever posted to edit
+        if base.get("demo_closed_at"):
+            continue                  # already closed or reconciled
+        if base.get("demo_close_command_id"):
+            continue                  # an explicit/auto close owns this one
+        if not _vanished_at_broker(history, tk):
+            continue
+
+        res = _lifecycle_edit(sb, tok, {"ticket": tk}, "CLOSED", provider,
+                              "Closed at broker")
+        if not res or res.get("error"):
+            continue                  # no stamp — a later poll may retry
+
+        # Stamped only after the edit landed, so a Telegram fault leaves
+        # the row eligible instead of silently marking it closed.
+        try:
+            sb.table("bot_orders").update({
+                "demo_closed_at": datetime.now(timezone.utc).isoformat(),
+                "demo_close_state": "closed_at_broker",
+            }).eq("command_id", base["command_id"]).execute()
+        except Exception:  # noqa: BLE001
+            pass
+        done.append({"ticket": tk, "state": "closed_at_broker",
+                     "message_id": base.get("demo_tg_message_id")})
+    return done
 
 
 def _trailing_edit(sb: Client, tok: str, event: dict, provider: str) -> dict:
