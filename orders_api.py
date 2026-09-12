@@ -1305,20 +1305,28 @@ class AIDraftIn(BaseModel):
 
 def _verified_facts(sb: Client, tok: str, ticket: int | None) -> dict:
     """Everything the AI is allowed to know, straight from the ledger."""
-    def _q():
-        q = (sb.table("bot_orders")
-             .select("ticket,symbol,side,lots,fill_price,retcode,"
-                     "broker_comment,status,demo_kind,sl,tp,executed_at,"
-                     "demo_closed_at,demo_close_state,actual_account")
-             .eq("demo_token", tok).order("created_at", desc=True).limit(25))
+    # Narrow in the DATABASE, before the limit. This once fetched the
+    # newest 25 rows of any kind and filtered afterwards, so a token that
+    # had been polled enough — every positions read writes a row too —
+    # pushed its real fills out of the window and the desk reported no
+    # verified trades while two successful executions sat in the ledger.
+    # Trades and lifecycle events are asked for separately so neither can
+    # crowd the other out.
+    _COLS = ("ticket,symbol,side,lots,fill_price,retcode,"
+             "broker_comment,status,demo_kind,sl,tp,executed_at,"
+             "demo_closed_at,demo_close_state,actual_account")
+
+    def _q(kinds):
+        q = (sb.table("bot_orders").select(_COLS)
+             .eq("demo_token", tok).eq("status", "succeeded")
+             .in_("demo_kind", list(kinds))
+             .order("created_at", desc=True).limit(25))
         return (q.execute()).data or []
 
-    rows = [r for r in (sb and _q() or []) if r.get("status") == "succeeded"]
-    trades = [r for r in rows if r.get("demo_kind") == "market"]
+    trades = list(_q(("market",)) if sb else [])
     if ticket:
         trades = [r for r in trades if int(r.get("ticket") or 0) == ticket]
-    events = [r for r in rows if r.get("demo_kind") in
-              ("modify", "breakeven", "close")]
+    events = list(_q(("modify", "breakeven", "close")) if sb else [])
     return {"trades": trades[:5], "events": events[:8],
             "account_type": "broker demo account"}
 

@@ -395,8 +395,113 @@ def test_facts_come_from_the_ledger_not_the_request():
     fn = api[api.index("def _verified_facts("):]
     fn = fn[:fn.index("def _ai_draft(")]
     assert 'eq("demo_token", tok)' in fn
-    assert '"status") == "succeeded"' in fn
+    # succeeded-only is now enforced by the query, not after the limit
+    assert 'eq("status", "succeeded")' in fn
     assert "fill_price" in fn and "retcode" in fn
+
+
+def test_the_status_and_kind_filters_run_before_the_limit():
+    """Filtering after .limit(25) let positions reads evict real fills."""
+    api = open("orders_api.py").read()
+    fn = api[api.index("def _verified_facts("):]
+    fn = fn[:fn.index("def _ai_draft(")]
+    i_status = fn.index('eq("status", "succeeded")')
+    i_kind = fn.index('in_("demo_kind"')
+    i_limit = fn.index(".limit(25)")
+    assert i_status < i_limit, "status must be filtered before the limit"
+    assert i_kind < i_limit, "demo_kind must be filtered before the limit"
+
+
+class _FactsQ:
+    def __init__(self, rows):
+        self.rows, self.f, self.n = rows, {}, 25
+
+    def select(self, *a, **k):
+        return self
+
+    def eq(self, col, val):
+        self.f[col] = val
+        return self
+
+    def in_(self, col, vals):
+        self.f[col] = set(vals)
+        return self
+
+    def order(self, *a, **k):
+        return self
+
+    def limit(self, n):
+        self.n = n
+        return self
+
+    def execute(self):
+        keep = [r for r in self.rows
+                if r.get("demo_token") == self.f.get("demo_token")
+                and r.get("status") == self.f.get("status")
+                and r.get("demo_kind") in self.f.get("demo_kind", set())]
+        keep.sort(key=lambda r: r["created_at"], reverse=True)
+        return type("R", (), {"data": keep[:self.n]})()
+
+
+class _FactsSB:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def table(self, _name):
+        return _FactsQ(self.rows)
+
+
+def _ledger():
+    """Two old fills, a failed and a pending attempt, one lifecycle event,
+    then far more recent positions reads than the 25-row window holds."""
+    rows = [
+        {"created_at": 1, "demo_token": "qa", "demo_kind": "market",
+         "status": "succeeded", "ticket": 1928008716, "symbol": "BTCUSD"},
+        {"created_at": 2, "demo_token": "qa", "demo_kind": "market",
+         "status": "succeeded", "ticket": 1928013968, "symbol": "BTCUSD"},
+        {"created_at": 3, "demo_token": "qa", "demo_kind": "market",
+         "status": "failed", "ticket": None},
+        {"created_at": 4, "demo_token": "qa", "demo_kind": "market",
+         "status": "pending", "ticket": None},
+        {"created_at": 5, "demo_token": "qa", "demo_kind": "modify",
+         "status": "succeeded", "ticket": 1928013968},
+    ]
+    rows += [{"created_at": 100 + i, "demo_token": "qa",
+              "demo_kind": "positions", "status": "succeeded"}
+             for i in range(60)]
+    return rows
+
+
+def test_positions_polling_cannot_hide_a_real_fill():
+    """60 newer positions reads must not evict the trades."""
+    import orders_api
+
+    facts = orders_api._verified_facts(_FactsSB(_ledger()), "qa", None)
+    assert {r["ticket"] for r in facts["trades"]} == {1928008716, 1928013968}
+
+
+def test_a_failed_or_pending_market_row_is_not_a_verified_trade():
+    import orders_api
+
+    facts = orders_api._verified_facts(_FactsSB(_ledger()), "qa", None)
+    assert all(r["status"] == "succeeded" for r in facts["trades"])
+    assert None not in [r["ticket"] for r in facts["trades"]]
+
+
+def test_lifecycle_events_survive_the_narrowed_query():
+    """Trades and events are fetched separately so neither evicts the
+    other — filtering the one query to market would have emptied this."""
+    import orders_api
+
+    facts = orders_api._verified_facts(_FactsSB(_ledger()), "qa", None)
+    assert [r["demo_kind"] for r in facts["events"]] == ["modify"]
+
+
+def test_a_ticket_filter_still_narrows_to_that_trade():
+    import orders_api
+
+    facts = orders_api._verified_facts(_FactsSB(_ledger()), "qa", 1928013968)
+    assert [r["ticket"] for r in facts["trades"]] == [1928013968]
 
 
 def test_policy_gates_the_draft_and_the_edited_text():
