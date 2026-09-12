@@ -1107,7 +1107,7 @@ def _sweep_demo_closes(sb: Client) -> int:
         # then absent from two real snapshots. One gap is not enough, and
         # a NULL snapshot is not evidence of anything.
         tok_r = r.get("demo_token")
-        if tok_r and _vanished_at_broker(_snapshot_history(sb, tok_r), tk):
+        if tok_r and _vanished_at_broker(sb, tok_r, tk):
             print(f"[demo] NOT closing ticket {tk}: the broker already "
                   f"stopped reporting it")
             continue
@@ -1547,27 +1547,9 @@ def _lifecycle_edit(sb: Client, tok: str, event: dict, status: str,
     return _edit_demo_message(dest, mid, text)
 
 
-def _snapshot_history(sb: Client, tok: str, limit: int = 60) -> list:
-    """This token's positions snapshots, oldest first.
-
-    A row whose `positions` is NULL carried no broker answer at all — an
-    omitted field, or a result that was never a positions read. It is not
-    a snapshot and is skipped entirely, so it can neither confirm nor
-    break a disappearance.
-    """
-    try:
-        rows = (sb.table("bot_orders").select("created_at,positions")
-                .eq("demo_token", tok).eq("demo_kind", "positions")
-                .eq("status", "succeeded")
-                .order("created_at", desc=True).limit(limit).execute()).data or []
-    except Exception:  # noqa: BLE001
-        return []
-    out = [r for r in rows if r.get("positions") is not None]
-    out.reverse()
-    return out
-
-
 def _snapshot_has(snapshot, ticket: int) -> bool:
+    """Exact membership. Never a text match — 192802 must not match
+    1928027035, and a substring test would say it does."""
     for p in snapshot or []:
         try:
             if int((p or {}).get("ticket") or 0) == ticket:
@@ -1577,7 +1559,62 @@ def _snapshot_has(snapshot, ticket: int) -> bool:
     return False
 
 
-def _vanished_at_broker(history: list, ticket: int) -> bool:
+def _last_containing_snapshot(sb: Client, tok: str, ticket: int) -> dict:
+    """The newest snapshot that actually showed this ticket open.
+
+    Asked of the database by containment, so proof survives however many
+    later reads pile up. Paging the newest N rows could not see past the
+    window: this token's proof sat at rank 87 while every one of the 86
+    newer snapshots correctly omitted the ticket, and the evidence was
+    unreachable. A NULL `positions` cannot satisfy containment, so NULL
+    rows are excluded by the operator itself.
+    """
+    try:
+        rows = (sb.table("bot_orders")
+                .select("created_at,command_id,positions")
+                .eq("demo_token", tok).eq("demo_kind", "positions")
+                .eq("status", "succeeded")
+                .contains("positions", [{"ticket": ticket}])
+                .order("created_at", desc=True)
+                .order("command_id", desc=True)
+                .limit(1).execute()).data or []
+    except Exception:  # noqa: BLE001
+        return {}
+    for r in rows:
+        # containment did the filtering; this re-checks it exactly
+        if _snapshot_has(r.get("positions"), ticket):
+            return r
+    return {}
+
+
+def _snapshots_after(sb: Client, tok: str, after, limit: int = 2) -> list:
+    """The first authoritative snapshots taken after a given one.
+
+    Only rows the Runner actually answered with a list. NULL is not a
+    snapshot and must never count toward a confirmation.
+
+    created_at carries no uniqueness guarantee in this schema, so
+    command_id is the deterministic tiebreak on both bounds. The `>`
+    boundary also skips anything sharing the containing snapshot's exact
+    timestamp — one fewer confirmation, never a false one.
+    """
+    if after is None:
+        return []                     # no boundary means nothing to measure
+    try:
+        return (sb.table("bot_orders")
+                .select("created_at,command_id,positions")
+                .eq("demo_token", tok).eq("demo_kind", "positions")
+                .eq("status", "succeeded")
+                .not_.is_("positions", "null")
+                .gt("created_at", after)
+                .order("created_at", desc=False)
+                .order("command_id", desc=False)
+                .limit(limit).execute()).data or []
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _vanished_at_broker(sb: Client, tok: str, ticket: int) -> bool:
     """True when the broker showed this ticket open and then stopped.
 
     Requires the ticket to have been OBSERVED open, then absent from the
@@ -1585,13 +1622,14 @@ def _vanished_at_broker(history: list, ticket: int) -> bool:
     is external and nothing in the ingest promises a snapshot is complete
     or fresh, so a single gap must not close a live trade's post.
     """
-    last_seen = -1
-    for i, row in enumerate(history):
-        if _snapshot_has(row.get("positions"), ticket):
-            last_seen = i
-    if last_seen < 0:
+    base = _last_containing_snapshot(sb, tok, ticket)
+    if not base:
         return False                  # never proven open — nothing to close
-    return (len(history) - 1 - last_seen) >= 2
+    following = _snapshots_after(sb, tok, base.get("created_at"), 2)
+    if len(following) < 2:
+        return False                  # not yet confirmed
+    return not any(_snapshot_has(r.get("positions"), ticket)
+                   for r in following)
 
 
 async def _positions_stage(stage: str, cid, fn, *args):
@@ -1720,7 +1758,6 @@ def _reconcile_vanished(sb: Client, tok: str, event: dict,
     missing = sorted(t for t in _owned_tickets(sb, tok) if t not in present)
     if not missing:
         return []
-    history = _snapshot_history(sb, tok)
 
     done = []
     for tk in missing:
@@ -1740,7 +1777,7 @@ def _reconcile_vanished(sb: Client, tok: str, event: dict,
         linked = _linked_close(sb, base.get("demo_close_command_id"))
         if (linked.get("status") or "").lower() == "succeeded":
             continue                  # the real close owns this one
-        if not _vanished_at_broker(history, tk):
+        if not _vanished_at_broker(sb, tok, tk):
             continue
 
         res = _lifecycle_edit(sb, tok, {"ticket": tk}, "CLOSED", provider,

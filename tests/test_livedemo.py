@@ -1048,58 +1048,13 @@ def _history(*snapshots):
     return [{"created_at": i, "positions": s} for i, s in enumerate(snapshots)]
 
 
-def test_a_ticket_still_present_is_not_vanished():
-    import orders_api
+class _SnapQ:
+    """bot_orders stand-in for the ticket-targeted snapshot queries."""
 
-    h = _history(_snap(OWNED), _snap(OWNED), _snap(OWNED))
-    assert orders_api._vanished_at_broker(h, OWNED) is False
-
-
-def test_one_missing_snapshot_is_not_enough_to_close():
-    import orders_api
-
-    h = _history(_snap(OWNED), _snap())
-    assert orders_api._vanished_at_broker(h, OWNED) is False
-
-
-def test_two_consecutive_missing_snapshots_confirm_the_close():
-    import orders_api
-
-    h = _history(_snap(OWNED), _snap(), _snap())
-    assert orders_api._vanished_at_broker(h, OWNED) is True
-
-
-def test_explicit_empty_snapshots_can_close_the_only_position():
-    """The last owned position leaves an empty list, not a missing one."""
-    import orders_api
-
-    h = _history(_snap(OWNED), [], [])
-    assert orders_api._vanished_at_broker(h, OWNED) is True
-
-
-def test_a_null_snapshot_never_counts_as_a_confirmation():
-    """NULL rows are dropped by _snapshot_history, so a pair of them
-    cannot confirm a disappearance."""
-    import orders_api
-
-    rows = [{"created_at": 0, "positions": _snap(OWNED)},
-            {"created_at": 1, "positions": None},
-            {"created_at": 2, "positions": None}]
-    kept = [r for r in rows if r.get("positions") is not None]
-    assert orders_api._vanished_at_broker(kept, OWNED) is False
-
-
-def test_a_ticket_never_observed_open_is_never_reconciled():
-    import orders_api
-
-    h = _history(_snap(), _snap(), _snap())
-    assert orders_api._vanished_at_broker(h, OWNED) is False
-
-
-class _RecQ:
-    def __init__(self, store, table):
-        self.store, self.table_name, self.f = store, table, {}
-        self.updated = None
+    def __init__(self, rows):
+        self.rows, self.f, self.n = rows, {}, None
+        self._negate = False
+        self.orders = []
 
     def select(self, *a, **k):
         return self
@@ -1108,11 +1063,238 @@ class _RecQ:
         self.f[col] = val
         return self
 
+    def contains(self, col, val):
+        want = None
+        for item in (val or []):
+            want = (item or {}).get("ticket")
+        self.f.setdefault("_contains", []).append((col, want))
+        return self
+
+    def gt(self, col, val):
+        self.f.setdefault("_gt", []).append((col, val))
+        return self
+
+    @property
+    def not_(self):
+        self._negate = True
+        return self
+
+    def is_(self, col, _val):
+        key = "_notnull" if self._negate else "_null"
+        self.f.setdefault(key, []).append(col)
+        self._negate = False
+        return self
+
     def order(self, col="created_at", **k):
-        self.order_col, self.order_desc = col, bool(k.get("desc"))
+        self.orders.append((col, bool(k.get("desc"))))
         return self
 
     def limit(self, n):
+        self.n = n
+        return self
+
+    def execute(self):
+        plain = {k: v for k, v in self.f.items() if not k.startswith("_")}
+        keep = [r for r in self.rows
+                if all(r.get(k) == v for k, v in plain.items())]
+        for col, want in self.f.get("_contains", []):
+            keep = [r for r in keep
+                    if isinstance(r.get(col), list)
+                    and any((p or {}).get("ticket") == want for p in r[col])]
+        for col in self.f.get("_notnull", []):
+            keep = [r for r in keep if r.get(col) is not None]
+        for col, val in self.f.get("_gt", []):
+            keep = [r for r in keep if r.get(col) is not None and r[col] > val]
+        for col, desc in reversed(self.orders):
+            keep = sorted(keep, key=lambda r: r.get(col) or "", reverse=desc)
+        return type("R", (), {"data": keep[:self.n] if self.n else keep})()
+
+
+class _SnapSB:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def table(self, _n):
+        return _SnapQ(self.rows)
+
+
+def _snapshot_rows(*kinds, ticket=1928027035, foreign=1927969355):
+    """Build a snapshot ledger. 'open' contains the ticket, 'gone' holds
+    only the foreign position, 'empty' is an authoritative [], 'null' is
+    a row that carried no snapshot at all."""
+    rows = []
+    for i, kind in enumerate(kinds):
+        pos = {"open": [{"ticket": ticket}, {"ticket": foreign}],
+               "gone": [{"ticket": foreign}],
+               "empty": [],
+               "null": None}[kind]
+        rows.append({"command_id": f"p{i:04d}", "demo_token": "t",
+                     "demo_kind": "positions", "status": "succeeded",
+                     "created_at": f"2026-09-12T{i // 60:02d}:{i % 60:02d}:00Z",
+                     "positions": pos})
+    return rows
+
+
+def test_a_ticket_still_present_is_not_vanished():
+    import orders_api
+
+    sb = _SnapSB(_snapshot_rows("open", "open", "open"))
+    assert orders_api._vanished_at_broker(sb, "t", 1928027035) is False
+
+
+def test_one_missing_snapshot_is_not_enough_to_close():
+    import orders_api
+
+    sb = _SnapSB(_snapshot_rows("open", "gone"))
+    assert orders_api._vanished_at_broker(sb, "t", 1928027035) is False
+
+
+def test_two_consecutive_missing_snapshots_confirm_the_close():
+    import orders_api
+
+    sb = _SnapSB(_snapshot_rows("open", "gone", "gone"))
+    assert orders_api._vanished_at_broker(sb, "t", 1928027035) is True
+
+
+def test_explicit_empty_snapshots_can_close_the_only_position():
+    import orders_api
+
+    sb = _SnapSB(_snapshot_rows("open", "empty", "empty"))
+    assert orders_api._vanished_at_broker(sb, "t", 1928027035) is True
+
+
+def test_a_null_snapshot_never_counts_as_a_confirmation():
+    import orders_api
+
+    sb = _SnapSB(_snapshot_rows("open", "null", "null"))
+    assert orders_api._vanished_at_broker(sb, "t", 1928027035) is False
+    # one real confirmation among the nulls is still only one
+    sb = _SnapSB(_snapshot_rows("open", "null", "gone", "null"))
+    assert orders_api._vanished_at_broker(sb, "t", 1928027035) is False
+
+
+def test_a_ticket_never_observed_open_is_never_reconciled():
+    import orders_api
+
+    sb = _SnapSB(_snapshot_rows("gone", "gone", "gone"))
+    assert orders_api._vanished_at_broker(sb, "t", 1928027035) is False
+
+
+def test_a_reappearing_ticket_is_not_vanished():
+    """The FIRST two snapshots after the last containing one decide it."""
+    import orders_api
+
+    sb = _SnapSB(_snapshot_rows("open", "gone", "open", "gone", "gone"))
+    # the newest containing snapshot is rank 3; only one follows it... plus
+    # one more, and both omit it, so this IS vanished
+    assert orders_api._vanished_at_broker(sb, "t", 1928027035) is True
+    sb = _SnapSB(_snapshot_rows("open", "gone", "open", "gone"))
+    assert orders_api._vanished_at_broker(sb, "t", 1928027035) is False
+
+
+def test_prior_open_proof_survives_a_saturated_window():
+    """Ticket 1928027035's shape: the containing snapshot sat at rank 87
+    while 86 newer authoritative snapshots omitted it, and a newest-60
+    page could not see the proof at all."""
+    import orders_api
+
+    kinds = ["open"] * 13 + ["gone"] * 86      # oldest first: 99 rows
+    sb = _SnapSB(_snapshot_rows(*kinds))
+    assert orders_api._vanished_at_broker(sb, "t", 1928027035) is True
+
+
+def test_a_hundred_later_snapshots_cannot_erase_the_proof():
+    import orders_api
+
+    kinds = ["open"] + ["gone"] * 150
+    sb = _SnapSB(_snapshot_rows(*kinds))
+    assert orders_api._vanished_at_broker(sb, "t", 1928027035) is True
+
+
+def test_a_foreign_ticket_is_never_proven_vanished():
+    """EURJPY is in every snapshot and never leaves — and it is not owned
+    anyway, which is enforced a layer up."""
+    import orders_api
+
+    sb = _SnapSB(_snapshot_rows("open", "gone", "gone"))
+    assert orders_api._vanished_at_broker(sb, "t", 1927969355) is False
+
+
+def test_membership_is_exact_not_a_text_match():
+    import orders_api
+
+    assert orders_api._snapshot_has([{"ticket": 192802}], 1928027035) is False
+    assert orders_api._snapshot_has([{"ticket": 1928027035}], 192802) is False
+    assert orders_api._snapshot_has([{"ticket": "1928027035"}], 1928027035)
+
+
+def test_the_query_orders_deterministically_on_both_bounds():
+    """created_at carries no uniqueness guarantee here, so command_id is
+    the tiebreak on the containing lookup and on the two that follow."""
+    api = open("orders_api.py").read()
+    for name in ("def _last_containing_snapshot(", "def _snapshots_after("):
+        fn = api[api.index(name):]
+        fn = fn[:fn.index("\ndef ", 10)]
+        assert 'order("created_at"' in fn, name
+        assert 'order("command_id"' in fn, name
+    after = api[api.index("def _snapshots_after("):]
+    after = after[:after.index("\ndef ", 10)]
+    assert 'not_.is_("positions", "null")' in after
+    assert 'gt("created_at"' in after
+
+
+def test_the_history_is_never_paged_blind():
+    api = open("orders_api.py").read()
+    assert "_snapshot_history" not in api        # the windowed reader is gone
+    fn = api[api.index("def _vanished_at_broker("):]
+    fn = fn[:fn.index("\ndef ", 10)]
+    assert "_last_containing_snapshot(" in fn
+    assert "_snapshots_after(" in fn
+
+
+class _RecQ:
+    def __init__(self, store, table):
+        self.store, self.table_name, self.f = store, table, {}
+        self.updated = None
+
+    def contains(self, col, val):
+        want = None
+        for item in (val or []):
+            want = (item or {}).get("ticket")
+        self.f.setdefault("_contains", []).append((col, want))
+        return self
+
+    def gt(self, col, val):
+        self.f.setdefault("_gt", []).append((col, val))
+        return self
+
+    @property
+    def not_(self):
+        self._negate = True
+        return self
+
+    def select(self, *a, **k):
+        return self
+
+    def eq(self, col, val):
+        self.f[col] = val
+        return self
+
+    def is_(self, col, _val):
+        if getattr(self, "_negate", False):
+            self.f.setdefault("_notnull", []).append(col)
+            self._negate = False
+        else:
+            self.f.setdefault("_null", []).append(col)
+        return self
+
+    def order(self, col="created_at", **k):
+        if not hasattr(self, "order_col"):
+            self.order_col, self.order_desc = col, bool(k.get("desc"))
+        return self
+
+    def limit(self, n):
+        self.n = n
         return self
 
     def update(self, patch):
@@ -1123,13 +1305,24 @@ class _RecQ:
         if "updates" in self.f or self.store.get("_updating"):
             return type("R", (), {"data": []})()
         rows = self.store["rows"]
-        keep = [r for r in rows
-                if all(r.get(k) == v for k, v in self.f.items())]
+        plain = {k: v for k, v in self.f.items() if not k.startswith("_")}
+        keep = [r for r in rows if all(r.get(k) == v for k, v in plain.items())]
+        for col, want in self.f.get("_contains", []):
+            keep = [r for r in keep
+                    if isinstance(r.get(col), list)
+                    and any((p or {}).get("ticket") == want for p in r[col])]
+        for col in self.f.get("_notnull", []):
+            keep = [r for r in keep if r.get(col) is not None]
+        for col in self.f.get("_null", []):
+            keep = [r for r in keep if r.get(col) is None]
+        for col, val in self.f.get("_gt", []):
+            keep = [r for r in keep if r.get(col) is not None and r[col] > val]
         col = getattr(self, "order_col", None)
         if col:
             keep = sorted(keep, key=lambda r: r.get(col) or 0,
                           reverse=getattr(self, "order_desc", False))
-        return type("R", (), {"data": keep})()
+        n = getattr(self, "n", None)
+        return type("R", (), {"data": keep[:n] if n else keep})()
 
 
 class _RecSB:
@@ -1285,6 +1478,22 @@ class _ConvQ:
     def __init__(self, store):
         self.store, self.f, self.nulls, self.patch = store, {}, [], None
 
+    def contains(self, col, val):
+        want = None
+        for item in (val or []):
+            want = (item or {}).get("ticket")
+        self.f.setdefault("_contains", []).append((col, want))
+        return self
+
+    def gt(self, col, val):
+        self.f.setdefault("_gt", []).append((col, val))
+        return self
+
+    @property
+    def not_(self):
+        self._negate = True
+        return self
+
     def select(self, *a, **k):
         return self
 
@@ -1293,7 +1502,11 @@ class _ConvQ:
         return self
 
     def is_(self, col, _val):
-        self.nulls.append(col)
+        if getattr(self, "_negate", False):
+            self.f.setdefault("_notnull", []).append(col)
+            self._negate = False
+        else:
+            self.nulls.append(col)
         return self
 
     def lt(self, col, val):
@@ -1301,10 +1514,12 @@ class _ConvQ:
         return self
 
     def order(self, col="created_at", **k):
-        self.order_col, self.order_desc = col, bool(k.get("desc"))
+        if not hasattr(self, "order_col"):
+            self.order_col, self.order_desc = col, bool(k.get("desc"))
         return self
 
     def limit(self, n):
+        self.n = n
         return self
 
     def update(self, patch):
@@ -1313,7 +1528,7 @@ class _ConvQ:
 
     def _match(self, r):
         for k, v in self.f.items():
-            if k == "_lt":
+            if k.startswith("_"):
                 continue
             if r.get(k) != v:
                 return False
@@ -1322,6 +1537,17 @@ class _ConvQ:
                 return False
         for col, val in self.f.get("_lt", []):
             if not (r.get(col) is not None and r[col] < val):
+                return False
+        for col, val in self.f.get("_gt", []):
+            if not (r.get(col) is not None and r[col] > val):
+                return False
+        for col in self.f.get("_notnull", []):
+            if r.get(col) is None:
+                return False
+        for col, want in self.f.get("_contains", []):
+            v = r.get(col)
+            if not isinstance(v, list) or not any(
+                    (p or {}).get("ticket") == want for p in v):
                 return False
         return True
 
@@ -1552,7 +1778,7 @@ def test_the_closed_guard_lives_in_the_one_edit_path():
     through _lifecycle_edit, so the guard belongs there once."""
     api = open("orders_api.py").read()
     fn = api[api.index("def _lifecycle_edit("):]
-    fn = fn[:fn.index("def _snapshot_history(")]
+    fn = fn[:fn.index("def _snapshot_has(")]
     assert 'status == "CLOSED" and base.get("demo_closed_at")' in fn
     assert '"skipped": "already closed"' in fn
 
