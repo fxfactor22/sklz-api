@@ -423,8 +423,6 @@ def _final_buttons(lang: str) -> list:
             [{"text": t(lang, "cta_broker"), "url": BROKER}]]
 
 
-@router.post("/webhook/{secret}")
-
 async def _asend(*args, **kwargs) -> dict:
     """`send` on a worker thread. Awaited in place, so the reply order of
     a funnel conversation is exactly what it was."""
@@ -435,6 +433,7 @@ async def _aapi(method: str, payload: dict) -> dict:
     return await offload(_api, method, payload)
 
 
+@router.post("/webhook/{secret}")
 async def webhook(secret: str, request: Request,
                   sb: Client = Depends(get_supabase)) -> dict:
     """Telegram posts every update here."""
