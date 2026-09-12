@@ -843,18 +843,22 @@ async def demo_run_state(token: str, command_id: str,
             # Trailing moves the broker-side stop with no command to
             # observe. The positions read is the only place that change
             # becomes visible, so the edit is driven from here.
-            tg = await offload(_trailing_edit, sb, tok, r,
-                               link["provider_name"])
-            if tg:
-                out["telegram"] = tg
-            # A position can end without any command of ours. The
-            # snapshot is the only place that becomes visible, so the
-            # same read that drives trailing also reconciles a ticket
-            # the broker has stopped reporting.
+            # Order matters. A close that actually SUCCEEDED owns the
+            # outcome, so settle those first; only then may confirmed
+            # disappearance speak for a ticket nothing else settled; and
+            # trailing last, since it concerns positions still open.
+            settled = await offload(_settle_linked_closes, sb, tok,
+                                    link["provider_name"])
+            if settled:
+                out["settled"] = settled
             rec = await offload(_reconcile_vanished, sb, tok, r,
                                 link["provider_name"])
             if rec:
                 out["reconciled"] = rec
+            tg = await offload(_trailing_edit, sb, tok, r,
+                               link["provider_name"])
+            if tg:
+                out["telegram"] = tg
         else:
             # A lifecycle event edits the ORIGINAL signal rather than
             # posting a new one, and composes from the MARKET row so the
@@ -1072,9 +1076,10 @@ def _sweep_demo_closes(sb: Client) -> int:
     try:
         rows = (sb.table("bot_orders")
                 .select("command_id,ticket,demo_token,executed_at,"
-                        "actual_account,demo_close_command_id")
+                        "actual_account,demo_close_command_id,demo_closed_at")
                 .eq("status", "succeeded").eq("demo_kind", "market")
                 .is_("demo_close_command_id", "null")
+                .is_("demo_closed_at", "null")
                 .lt("executed_at", cutoff).limit(20).execute()).data or []
     except Exception:
         return 0
@@ -1084,6 +1089,17 @@ def _sweep_demo_closes(sb: Client) -> int:
     for r in rows:
         tk = r.get("ticket")
         if not tk:
+            continue
+        # Do not raise a close for a position the broker has already
+        # stopped reporting. It cannot succeed, and the command it leaves
+        # behind used to block that ticket's post from ever being
+        # reconciled. Same evidence bar as reconciliation: observed open,
+        # then absent from two real snapshots. One gap is not enough, and
+        # a NULL snapshot is not evidence of anything.
+        tok_r = r.get("demo_token")
+        if tok_r and _vanished_at_broker(_snapshot_history(sb, tok_r), tk):
+            print(f"[demo] NOT closing ticket {tk}: the broker already "
+                  f"stopped reporting it")
             continue
         # never close a ticket that was filled on a different account
         if str(r.get("actual_account") or "") != expected:
@@ -1491,6 +1507,15 @@ def _lifecycle_edit(sb: Client, tok: str, event: dict, status: str,
     mid = base.get("demo_tg_message_id")
     if not mid:
         return {"error": "the original signal was never posted"}
+    # One trade closes once. Explicit close, auto-close, positions-driven
+    # settlement and broker-disappearance reconciliation all arrive here,
+    # and whichever got there first already told the truth. A later close
+    # result carries no deal history the Runner could add, so it has
+    # nothing better to say and must not overwrite "closed at broker".
+    if status == "CLOSED" and base.get("demo_closed_at"):
+        return {"skipped": "already closed",
+                "state": base.get("demo_close_state"),
+                "message_id": mid}
 
     dests = resolve_destinations(RoutingScope(purpose="demo_signal"))
     dest = dests[0] if dests else None
@@ -1559,6 +1584,82 @@ def _vanished_at_broker(history: list, ticket: int) -> bool:
     return (len(history) - 1 - last_seen) >= 2
 
 
+def _owned_market_rows(sb: Client, tok: str) -> list:
+    """The token's successful market rows, with their close bookkeeping."""
+    try:
+        return (sb.table("bot_orders").select(
+            "command_id,ticket,demo_tg_message_id,demo_closed_at,"
+            "demo_close_state,demo_close_command_id")
+            .eq("demo_token", tok).eq("demo_kind", "market")
+            .eq("status", "succeeded").execute()).data or []
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _linked_close(sb: Client, cid) -> dict:
+    """The close command a market row points at, if it can be read."""
+    if not cid:
+        return {}
+    try:
+        rows = (sb.table("bot_orders")
+                .select("command_id,status,retcode,broker_comment,executed_at")
+                .eq("command_id", cid).limit(1).execute()).data or []
+    except Exception:  # noqa: BLE001
+        return {}
+    return rows[0] if rows else {}
+
+
+def _settle_linked_closes(sb: Client, tok: str, provider: str) -> list:
+    """Finish auto-closes nobody is watching.
+
+    A swept close is queued against a command_id the browser is never
+    told about, and `_close_state` only runs when that exact command is
+    polled — which nothing does. So a close could succeed at the broker
+    and its post would stay OPEN forever. A positions read is the one
+    recurring poll a token actually makes, so settlement rides on it.
+
+    A FAILED close proves nothing about the position: the close did not
+    happen, so the trade may well still be open. It records the failure
+    and stops — only broker truth may decide the position is gone.
+    """
+    out = []
+    for row in _owned_market_rows(sb, tok):
+        cid = row.get("demo_close_command_id")
+        if not cid or row.get("demo_closed_at"):
+            continue
+        close = _linked_close(sb, cid)
+        state = (close.get("status") or "").lower()
+
+        if state == "succeeded":
+            res = _lifecycle_edit(sb, tok, {"ticket": row.get("ticket")},
+                                  "CLOSED", provider)
+            if not res or res.get("error"):
+                continue              # no stamp — a later poll may retry
+            try:
+                sb.table("bot_orders").update({
+                    "demo_close_state": "succeeded",
+                    "demo_closed_at": (close.get("executed_at")
+                                       or datetime.now(timezone.utc).isoformat()),
+                }).eq("command_id", row["command_id"]).execute()
+            except Exception:  # noqa: BLE001
+                pass
+            out.append({"ticket": row.get("ticket"), "state": "succeeded"})
+
+        elif state == "failed":
+            # Record it, close nothing. demo_closed_at stays null so the
+            # disappearance rule can still speak if the position really
+            # did end, and so a still-open trade is not declared closed.
+            if row.get("demo_close_state") != "failed":
+                try:
+                    sb.table("bot_orders").update(
+                        {"demo_close_state": "failed"}) \
+                        .eq("command_id", row["command_id"]).execute()
+                except Exception:  # noqa: BLE001
+                    pass
+            out.append({"ticket": row.get("ticket"), "state": "failed"})
+    return out
+
+
 def _reconcile_vanished(sb: Client, tok: str, event: dict,
                         provider: str) -> list:
     """Reflect a broker-side ending the platform never commanded.
@@ -1595,8 +1696,13 @@ def _reconcile_vanished(sb: Client, tok: str, event: dict,
             continue                  # nothing was ever posted to edit
         if base.get("demo_closed_at"):
             continue                  # already closed or reconciled
-        if base.get("demo_close_command_id"):
-            continue                  # an explicit/auto close owns this one
+        # A close command only owns the outcome once it has SUCCEEDED.
+        # Queued, pending or failed, it has settled nothing, and a close
+        # that can never resolve — the position was already gone when it
+        # was raised — used to block this ticket's post forever.
+        linked = _linked_close(sb, base.get("demo_close_command_id"))
+        if (linked.get("status") or "").lower() == "succeeded":
+            continue                  # the real close owns this one
         if not _vanished_at_broker(history, tk):
             continue
 

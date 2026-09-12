@@ -1190,10 +1190,21 @@ def test_an_already_closed_ticket_is_not_reconciled_again(monkeypatch):
     assert calls == [] and done == [] and updates == []
 
 
-def test_a_close_command_in_flight_is_left_alone(monkeypatch):
+def test_only_a_succeeded_close_owns_the_outcome(monkeypatch):
+    """A close command used to block reconciliation merely by existing.
+    One that was queued against an already-vanished position can never
+    resolve, and it deadlocked that ticket's post forever. Now only a
+    close that actually SUCCEEDED takes precedence."""
+    rows = _ledger_rows(demo_close_command_id="c9")   # no close row: unresolved
+    done, calls, _ = _run_reconcile(monkeypatch, rows, {"ok": True})
+    assert [c["reason"] for c in calls] == ["Closed at broker"]
+    assert done and done[0]["state"] == "closed_at_broker"
+
     rows = _ledger_rows(demo_close_command_id="c9")
-    done, calls, updates = _run_reconcile(monkeypatch, rows, {"ok": True})
-    assert calls == [] and done == [] and updates == []
+    rows.append({"command_id": "c9", "demo_token": "t", "demo_kind": "close",
+                 "status": "succeeded", "ticket": OWNED})
+    done2, calls2, _ = _run_reconcile(monkeypatch, rows, {"ok": True})
+    assert calls2 == [] and done2 == []
 
 
 def test_a_trade_that_was_never_posted_is_not_edited(monkeypatch):
@@ -1256,3 +1267,360 @@ def test_no_broker_command_is_ever_sent_by_reconciliation():
     assert "command_type" not in fn
     assert '"close"' not in fn
     assert "insert(" not in fn
+
+
+# ── close-state convergence ──────────────────────────────────────────
+class _ConvQ:
+    """A bot_orders stand-in that honours eq/is_/lt/order and records
+    updates against the row they targeted."""
+
+    def __init__(self, store):
+        self.store, self.f, self.nulls, self.patch = store, {}, [], None
+
+    def select(self, *a, **k):
+        return self
+
+    def eq(self, col, val):
+        self.f[col] = val
+        return self
+
+    def is_(self, col, _val):
+        self.nulls.append(col)
+        return self
+
+    def lt(self, col, val):
+        self.f.setdefault("_lt", []).append((col, val))
+        return self
+
+    def order(self, col="created_at", **k):
+        self.order_col, self.order_desc = col, bool(k.get("desc"))
+        return self
+
+    def limit(self, n):
+        return self
+
+    def update(self, patch):
+        self.patch = patch
+        return self
+
+    def _match(self, r):
+        for k, v in self.f.items():
+            if k == "_lt":
+                continue
+            if r.get(k) != v:
+                return False
+        for col in self.nulls:
+            if r.get(col) is not None:
+                return False
+        for col, val in self.f.get("_lt", []):
+            if not (r.get(col) is not None and r[col] < val):
+                return False
+        return True
+
+    def execute(self):
+        rows = [r for r in self.store["rows"] if self._match(r)]
+        if self.patch is not None:
+            for r in rows:
+                r.update(self.patch)
+                self.store["updates"].append(
+                    {"command_id": r.get("command_id"), **self.patch})
+            return type("R", (), {"data": rows})()
+        col = getattr(self, "order_col", None)
+        if col:
+            rows = sorted(rows, key=lambda r: r.get(col) or 0,
+                          reverse=getattr(self, "order_desc", False))
+        return type("R", (), {"data": rows})()
+
+
+class _ConvSB:
+    def __init__(self, rows):
+        self.store = {"rows": rows, "updates": [], "inserts": []}
+
+    def table(self, _name):
+        q = _ConvQ(self.store)
+        q.insert = self._insert
+        return q
+
+    def _insert(self, row):
+        self.store["inserts"].append(row)
+        outer = self
+
+        class _I:
+            def execute(self_inner):
+                return type("R", (), {"data": [{"command_id": "newclose"}]})()
+        return _I()
+
+
+TK = 1928027035
+
+
+def _conv_rows(close_status=None, close_cid="cl1", closed_at=None,
+               snapshots=("open", "gone", "gone")):
+    rows = [{"command_id": "m1", "demo_token": "t", "demo_kind": "market",
+             "status": "succeeded", "ticket": TK, "symbol": "BTCUSD",
+             "side": "sell", "lots": 0.01, "fill_price": 77183.5,
+             "demo_tg_message_id": 41, "demo_closed_at": closed_at,
+             "demo_close_state": "queued" if close_cid else None,
+             "demo_close_command_id": close_cid,
+             "actual_account": "52952532",
+             "executed_at": "2026-09-12T02:00:00Z"}]
+    if close_cid and close_status:
+        rows.append({"command_id": close_cid, "demo_token": "t",
+                     "demo_kind": "close", "status": close_status,
+                     "ticket": TK, "executed_at": "2026-09-12T03:00:00Z"})
+    for i, kind in enumerate(snapshots):
+        pos = ([{"ticket": TK}] if kind == "open"
+               else None if kind == "null" else [])
+        rows.append({"command_id": f"p{i}", "demo_token": "t",
+                     "demo_kind": "positions", "status": "succeeded",
+                     "created_at": i, "positions": pos})
+    return rows
+
+
+def _edits(monkeypatch, result=None):
+    import orders_api
+    seen = []
+
+    def fake(sb, tok, event, status, provider, reason=""):
+        base = orders_api._signal_row(sb, tok, event.get("ticket"))
+        if status == "CLOSED" and base.get("demo_closed_at"):
+            return {"skipped": "already closed"}
+        seen.append({"ticket": event.get("ticket"), "status": status,
+                     "reason": reason})
+        return result or {"ok": True, "message_id": 41}
+
+    monkeypatch.setattr(orders_api, "_lifecycle_edit", fake)
+    return seen
+
+
+def test_a_succeeded_autoclose_finally_reaches_telegram(monkeypatch):
+    import orders_api
+
+    sb = _ConvSB(_conv_rows(close_status="succeeded"))
+    seen = _edits(monkeypatch)
+    out = orders_api._settle_linked_closes(sb, "t", "p")
+    assert [e["status"] for e in seen] == ["CLOSED"]
+    assert seen[0]["reason"] == ""            # normal close formatting
+    assert out and out[0]["state"] == "succeeded"
+    m = [r for r in sb.store["rows"] if r["command_id"] == "m1"][0]
+    assert m["demo_closed_at"] == "2026-09-12T03:00:00Z"
+    assert m["demo_close_state"] == "succeeded"
+
+
+def test_a_succeeded_autoclose_stamps_exactly_once(monkeypatch):
+    import orders_api
+
+    sb = _ConvSB(_conv_rows(close_status="succeeded"))
+    seen = _edits(monkeypatch)
+    orders_api._settle_linked_closes(sb, "t", "p")
+    orders_api._settle_linked_closes(sb, "t", "p")
+    assert len(seen) == 1
+    assert len([u for u in sb.store["updates"]
+                if u.get("demo_close_state") == "succeeded"]) == 1
+
+
+def test_a_failed_close_with_the_ticket_still_open_is_not_closed(monkeypatch):
+    """A close that failed proves the close did not happen — nothing more."""
+    import orders_api
+
+    rows = _conv_rows(close_status="failed", snapshots=("open", "open"))
+    sb = _ConvSB(rows)
+    seen = _edits(monkeypatch)
+    orders_api._settle_linked_closes(sb, "t", "p")
+    orders_api._reconcile_vanished(sb, "t", {"positions": [{"ticket": TK}]}, "p")
+    assert seen == []
+    m = [r for r in sb.store["rows"] if r["command_id"] == "m1"][0]
+    assert m["demo_closed_at"] is None
+    assert m["demo_close_state"] == "failed"
+
+
+def test_a_failed_close_never_sets_demo_closed_at(monkeypatch):
+    import orders_api
+
+    sb = _ConvSB(_conv_rows(close_status="failed", snapshots=("open", "open")))
+    _edits(monkeypatch)
+    orders_api._settle_linked_closes(sb, "t", "p")
+    assert all(u.get("demo_closed_at") is None
+               for u in sb.store["updates"])
+
+
+def test_the_sweep_does_not_close_what_the_broker_already_dropped():
+    import orders_api
+
+    rows = _conv_rows(close_cid=None, snapshots=("open", "gone", "gone"))
+    sb = _ConvSB(rows)
+    orders_api._demo_enabled = lambda: True
+    queued = orders_api._sweep_demo_closes(sb)
+    assert queued == 0
+    assert sb.store["inserts"] == []
+
+
+def test_one_missing_snapshot_does_not_stop_the_sweep(monkeypatch):
+    import orders_api
+
+    rows = _conv_rows(close_cid=None, snapshots=("open", "gone"))
+    sb = _ConvSB(rows)
+    monkeypatch.setattr(orders_api, "_demo_guard", lambda _sb: "")
+    monkeypatch.setattr(orders_api, "_demo_login", lambda: "52952532")
+    queued = orders_api._sweep_demo_closes(sb)
+    assert queued == 1 and len(sb.store["inserts"]) == 1
+
+
+def test_a_queued_close_on_a_present_ticket_is_left_alone(monkeypatch):
+    import orders_api
+
+    sb = _ConvSB(_conv_rows(snapshots=("open", "open")))
+    seen = _edits(monkeypatch)
+    orders_api._settle_linked_closes(sb, "t", "p")
+    out = orders_api._reconcile_vanished(
+        sb, "t", {"positions": [{"ticket": TK}]}, "p")
+    assert seen == [] and out == []
+
+
+def test_a_queued_close_no_longer_blocks_a_confirmed_disappearance(monkeypatch):
+    """The 1928027035 deadlock: a close that can never resolve."""
+    import orders_api
+
+    sb = _ConvSB(_conv_rows(close_status="pending"))
+    seen = _edits(monkeypatch)
+    out = orders_api._reconcile_vanished(sb, "t", {"positions": []}, "p")
+    assert [e["reason"] for e in seen] == ["Closed at broker"]
+    assert out and out[0]["state"] == "closed_at_broker"
+
+
+def test_a_failed_close_plus_confirmed_absence_reconciles(monkeypatch):
+    import orders_api
+
+    sb = _ConvSB(_conv_rows(close_status="failed"))
+    seen = _edits(monkeypatch)
+    out = orders_api._reconcile_vanished(sb, "t", {"positions": []}, "p")
+    assert [e["reason"] for e in seen] == ["Closed at broker"]
+    assert out and out[0]["state"] == "closed_at_broker"
+
+
+def test_a_succeeded_close_outranks_the_disappearance_fallback(monkeypatch):
+    """The real close owns the outcome; no 'Closed at broker' fallback."""
+    import orders_api
+
+    sb = _ConvSB(_conv_rows(close_status="succeeded"))
+    seen = _edits(monkeypatch)
+    out = orders_api._reconcile_vanished(sb, "t", {"positions": []}, "p")
+    assert seen == [] and out == []
+
+
+def test_a_late_succeeded_close_does_not_re_edit(monkeypatch):
+    import orders_api
+
+    sb = _ConvSB(_conv_rows(close_status="pending"))
+    seen = _edits(monkeypatch)
+    orders_api._reconcile_vanished(sb, "t", {"positions": []}, "p")
+    assert len(seen) == 1
+    for r in sb.store["rows"]:              # the close now lands
+        if r["command_id"] == "cl1":
+            r["status"] = "succeeded"
+    orders_api._settle_linked_closes(sb, "t", "p")
+    assert len(seen) == 1                   # still one edit
+    m = [r for r in sb.store["rows"] if r["command_id"] == "m1"][0]
+    assert m["demo_close_state"] == "closed_at_broker"
+
+
+def test_a_late_failed_close_does_not_re_edit(monkeypatch):
+    import orders_api
+
+    sb = _ConvSB(_conv_rows(close_status="pending"))
+    seen = _edits(monkeypatch)
+    orders_api._reconcile_vanished(sb, "t", {"positions": []}, "p")
+    for r in sb.store["rows"]:
+        if r["command_id"] == "cl1":
+            r["status"] = "failed"
+    orders_api._settle_linked_closes(sb, "t", "p")
+    assert len(seen) == 1
+    m = [r for r in sb.store["rows"] if r["command_id"] == "m1"][0]
+    assert m["demo_close_state"] == "closed_at_broker"
+
+
+def test_the_closed_guard_lives_in_the_one_edit_path():
+    """Explicit close, auto-close, settlement and reconciliation all go
+    through _lifecycle_edit, so the guard belongs there once."""
+    api = open("orders_api.py").read()
+    fn = api[api.index("def _lifecycle_edit("):]
+    fn = fn[:fn.index("def _snapshot_history(")]
+    assert 'status == "CLOSED" and base.get("demo_closed_at")' in fn
+    assert '"skipped": "already closed"' in fn
+
+
+def test_a_foreign_ticket_is_never_settled_or_reconciled(monkeypatch):
+    import orders_api
+
+    rows = _conv_rows(close_status="succeeded")
+    rows.append({"command_id": "x", "demo_token": "other",
+                 "demo_kind": "market", "status": "succeeded",
+                 "ticket": 1927969355, "demo_tg_message_id": 99,
+                 "demo_closed_at": None, "demo_close_command_id": None})
+    sb = _ConvSB(rows)
+    seen = _edits(monkeypatch)
+    orders_api._settle_linked_closes(sb, "t", "p")
+    orders_api._reconcile_vanished(sb, "t", {"positions": []}, "p")
+    assert all(e["ticket"] == TK for e in seen)
+
+
+def test_null_snapshots_cannot_confirm_a_convergence_close(monkeypatch):
+    import orders_api
+
+    sb = _ConvSB(_conv_rows(close_status="pending",
+                            snapshots=("open", "null", "null")))
+    seen = _edits(monkeypatch)
+    out = orders_api._reconcile_vanished(sb, "t", {"positions": []}, "p")
+    assert seen == [] and out == []
+
+
+def test_a_telegram_failure_during_settlement_stamps_nothing(monkeypatch):
+    import orders_api
+
+    sb = _ConvSB(_conv_rows(close_status="succeeded"))
+    _edits(monkeypatch, result={"error": "telegram down"})
+    out = orders_api._settle_linked_closes(sb, "t", "p")
+    assert out == []
+    m = [r for r in sb.store["rows"] if r["command_id"] == "m1"][0]
+    assert m["demo_closed_at"] is None
+
+
+def test_convergence_is_idempotent_across_repeated_polls(monkeypatch):
+    import orders_api
+
+    sb = _ConvSB(_conv_rows(close_status="pending"))
+    seen = _edits(monkeypatch)
+    for _ in range(4):
+        orders_api._settle_linked_closes(sb, "t", "p")
+        orders_api._reconcile_vanished(sb, "t", {"positions": []}, "p")
+    assert len(seen) == 1
+
+
+def test_a_broken_linked_close_lookup_does_not_break_the_read(monkeypatch):
+    import orders_api
+
+    class Boom(_ConvSB):
+        def table(self, name):
+            raise RuntimeError("db down")
+
+    assert orders_api._linked_close(Boom([]), "cl1") == {}
+    assert orders_api._owned_market_rows(Boom([]), "t") == []
+    assert orders_api._settle_linked_closes(Boom([]), "t", "p") == []
+
+
+def test_the_positions_read_settles_before_it_reconciles():
+    api = open("orders_api.py").read()
+    fn = api[api.index("async def demo_run_state("):]
+    fn = fn[:fn.index("@demo_router.post")]
+    assert (fn.index("_settle_linked_closes")
+            < fn.index("_reconcile_vanished")
+            < fn.index("_trailing_edit"))
+
+
+def test_convergence_sends_no_broker_command():
+    api = open("orders_api.py").read()
+    for name in ("def _settle_linked_closes(", "def _reconcile_vanished("):
+        fn = api[api.index(name):]
+        fn = fn[:fn.index("\ndef ", 10)]
+        assert "insert(" not in fn, name
+        assert "command_type" not in fn, name
