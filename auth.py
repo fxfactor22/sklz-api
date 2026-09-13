@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 from supabase import Client
 
+import provider_rules as rules
 from db import get_supabase, admin_client  # SESSIONS-OFF-SHARED-CLIENT
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -67,6 +68,14 @@ class ProfileOut(BaseModel):
     email: str
     display_name: str | None
     role: str
+    # Server-derived capability, not a second rule. `role` above is
+    # profiles.role; platform-admin authority is decided by
+    # rules.is_platform_admin() against the AUTH user — a different object
+    # with a different role field, plus the ADMIN_EMAILS allowlist. A
+    # browser cannot reproduce that and must not try, so the answer is
+    # computed here and sent. Additive with a default: existing consumers
+    # of this model are unaffected.
+    is_platform_admin: bool = False
 
 
 # --- helpers -------------------------------------------------------------
@@ -306,6 +315,10 @@ async def me(user=Depends(get_current_user), sb: Client = Depends(get_supabase))
     return ProfileOut(
         id=profile["id"], email=profile["email"],
         display_name=profile.get("display_name"), role=profile.get("role", "user"),
+        # The SAME call every protected admin route makes, on the same
+        # user object. One definition of platform admin, evaluated once,
+        # here — never re-derived in the browser.
+        is_platform_admin=rules.is_platform_admin(user),
     )
 
 

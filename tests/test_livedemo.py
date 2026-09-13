@@ -95,8 +95,15 @@ def test_expiry_is_checked_before_anything_executes():
 def test_runs_are_capped_per_token():
     assert "DEMO_RUNS_PER_TOKEN = 3" in API
     fn = _fn("async def run_live_demo(", "@demo_router.get")
-    assert "demo_runs_exhausted" in fn
-    assert fn.index("used >= DEMO_RUNS_PER_TOKEN") < fn.index("def _insert")
+    # D9 moved the refusal body into one shared helper so the showcase
+    # could say something different. The private cap and its wording are
+    # unchanged: _runs_exhausted() still returns demo_runs_exhausted for
+    # a private_demo (see tests/test_showcase.py).
+    assert "_runs_exhausted(purpose" in fn
+    assert "_run_budget(purpose)" in fn
+    assert '"error": "demo_runs_exhausted"' in API
+    # the refusal still happens BEFORE anything is queued to the broker
+    assert fn.index("used >= allowed") < fn.index("def _insert")
 
 
 # ── honesty about what happened ──────────────────────────────────────
@@ -1919,7 +1926,10 @@ def _run_positions_branch(monkeypatch, *, settle, reconcile, trailing):
     monkeypatch.setattr(orders_api, "_close_state", lambda _sb, _r: {})
     monkeypatch.setattr(orders_api, "_sweep_demo_closes", lambda _sb: 0)
 
-    out = asyncio.run(orders_api.demo_run_state("t", "pos1", _SB()))
+    # a real uuid: command_id is a uuid column, and the handler refuses a
+    # malformed id before querying (D9)
+    out = asyncio.run(orders_api.demo_run_state(
+        "t", "3f1c2f8e-0f4a-4a5e-9d9b-2b6d5f0a11c7", _SB()))
     return out, calls
 
 

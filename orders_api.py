@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import secrets
+import uuid as _uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status as http
@@ -388,7 +389,44 @@ async def list_leads(user=Depends(get_current_user),
 demo_router = APIRouter(prefix="/api/demo-links", tags=["demo-links"])
 
 DEMO_HOURS = 48
+DEMO_MAX_HOURS = 168
+
+# A demo link is exactly one of two things and the SERVER says which.
+# Purpose is never inferred from a provider name, a note, the token text
+# or the page that opened it — only from this column.
+PURPOSE_PRIVATE = "private_demo"
+PURPOSE_SHOWCASE = "showcase"
+PURPOSES = {PURPOSE_PRIVATE, PURPOSE_SHOWCASE}
+
 LANGS = {"en", "ar", "ru"}
+
+
+def _purpose_of(row: dict) -> str:
+    """The purpose of a stored link.
+
+    Rows written before the column existed have no value, and an unknown
+    value is not a licence: anything that is not exactly "showcase" is a
+    private demo, so the permissive path is never reached by accident.
+    """
+    p = str((row or {}).get("purpose") or "").strip().lower()
+    return p if p in PURPOSES else PURPOSE_PRIVATE
+
+
+def _clamp_hours(purpose: str, hours) -> int | None:
+    """Lifetime for a new link, in hours, or None for "does not expire".
+
+    The 168-hour ceiling is what keeps a prospect link short-lived, and it
+    stays exactly as it was for private demos. A showcase is public and
+    permanent by design, so it carries no expiry at all rather than a fake
+    one far in the future.
+    """
+    if purpose == PURPOSE_SHOWCASE:
+        return None
+    try:
+        want = int(hours or DEMO_HOURS)
+    except (TypeError, ValueError):
+        want = DEMO_HOURS
+    return max(1, min(want, DEMO_MAX_HOURS))
 
 
 class DemoLinkIn(BaseModel):
@@ -400,6 +438,7 @@ class DemoLinkIn(BaseModel):
     logo_url: str = ""
     note: str = ""
     hours: int = DEMO_HOURS
+    purpose: str = PURPOSE_PRIVATE
 
 
 @demo_router.post("")
@@ -417,18 +456,44 @@ async def create_demo_link(body: DemoLinkIn,
     lang = (body.language or "en").lower()[:2]
     if lang not in LANGS:
         lang = "en"
-    hours = max(1, min(int(body.hours or DEMO_HOURS), 168))
+    purpose = (body.purpose or PURPOSE_PRIVATE).strip().lower()
+    if purpose not in PURPOSES:
+        raise HTTPException(http.HTTP_400_BAD_REQUEST,
+                            f"purpose must be one of {sorted(PURPOSES)}")
+    hours = _clamp_hours(purpose, body.hours)
+
+    # One live showcase at a time. A unique partial index is the real
+    # guard — this check exists so an admin gets a useful answer with the
+    # existing link in it instead of a database error.
+    if purpose == PURPOSE_SHOWCASE:
+        def _active():
+            return (sb.table("demo_links").select("token,created_at")
+                    .eq("purpose", PURPOSE_SHOWCASE).eq("revoked", False)
+                    .limit(1).execute()).data or []
+        try:
+            live = await offload(_active)
+        except Exception:  # noqa: BLE001
+            live = []
+        if live:
+            raise HTTPException(
+                http.HTTP_409_CONFLICT,
+                {"error": "showcase_exists",
+                 "detail": "an active showcase already exists — revoke it "
+                           "first if you mean to replace it",
+                 "token": live[0].get("token")})
 
     # 32 hex chars of CSPRNG. The link IS the credential, so it has to be
     # unguessable rather than merely unlisted.
     token = secrets.token_hex(16)
-    expires = datetime.now(timezone.utc) + timedelta(hours=hours)
+    expires = (None if hours is None
+               else datetime.now(timezone.utc) + timedelta(hours=hours))
     row = {"token": token, "provider_name": name, "telegram_channel": chan,
            "language": lang, "contact_name": _clean(body.contact_name, 80),
            "contact_email": _clean(body.contact_email, 160).lower(),
            "logo_url": _clean(body.logo_url, 400),
            "note": _clean(body.note, 500),
-           "expires_at": expires.isoformat(),
+           "purpose": purpose,
+           "expires_at": None if expires is None else expires.isoformat(),
            "created_by": str(getattr(user, "id", "")) or None}
 
     def _insert():
@@ -444,8 +509,15 @@ async def create_demo_link(body: DemoLinkIn,
     return {"ok": True, "token": token,
             "url": f"{site}/demo/signal-desk.html?t={token}",
             "provider_name": name, "telegram_channel": chan,
-            "language": lang, "expires_at": expires.isoformat(),
-            "hours": hours}
+            "language": lang, "purpose": purpose,
+            "expires_at": None if expires is None else expires.isoformat(),
+            "hours": hours,
+            "runs_allowed": (SHOWCASE_RUNS_PER_HOUR
+                             if purpose == PURPOSE_SHOWCASE
+                             else DEMO_RUNS_PER_TOKEN),
+            "runs_window_minutes": (SHOWCASE_RUN_WINDOW_MINUTES
+                                    if purpose == PURPOSE_SHOWCASE else None),
+            "ai_send_enabled": purpose != PURPOSE_SHOWCASE}
 
 
 @demo_router.get("/{token}")
@@ -473,18 +545,28 @@ async def read_demo_link(token: str,
         raise HTTPException(http.HTTP_404_NOT_FOUND, "unknown link")
     row = rows[0]
 
+    # Revocation closes EVERY link, whatever its purpose. It is the one
+    # switch that must work on the public showcase too.
     if row.get("revoked"):
         raise HTTPException(http.HTTP_410_GONE, "this demo has been closed")
-    try:
-        exp = datetime.fromisoformat(
-            str(row["expires_at"]).replace("Z", "+00:00"))
-    except (TypeError, ValueError, KeyError):
-        raise HTTPException(http.HTTP_410_GONE, "this demo has expired") from None
+
+    purpose = _purpose_of(row)
     now = datetime.now(timezone.utc)
-    if exp <= now:
-        # The server decides expiry. A countdown in the browser is a
-        # display, not a lock.
-        raise HTTPException(http.HTTP_410_GONE, "this demo has expired")
+    if purpose == PURPOSE_SHOWCASE:
+        # The public showcase does not expire. It carries no expires_at at
+        # all, so there is no timestamp to check and none to invent.
+        exp = None
+    else:
+        try:
+            exp = datetime.fromisoformat(
+                str(row["expires_at"]).replace("Z", "+00:00"))
+        except (TypeError, ValueError, KeyError):
+            raise HTTPException(http.HTTP_410_GONE,
+                                "this demo has expired") from None
+        if exp <= now:
+            # The server decides expiry. A countdown in the browser is a
+            # display, not a lock.
+            raise HTTPException(http.HTTP_410_GONE, "this demo has expired")
 
     def _touch():
         patch = {"opened_count": int(row.get("opened_count") or 0) + 1,
@@ -498,13 +580,17 @@ async def read_demo_link(token: str,
     except Exception:  # noqa: BLE001
         pass
 
+    # A non-expiring link reports null, not a very large number. The page
+    # can then say "public demo" instead of counting down from a lie.
     return {"ok": True, "provider_name": row["provider_name"],
             "telegram_channel": row["telegram_channel"],
             "language": row.get("language") or "en",
             "logo_url": row.get("logo_url") or "",
             "contact_name": row.get("contact_name") or "",
-            "expires_at": row["expires_at"],
-            "seconds_remaining": int((exp - now).total_seconds())}
+            "purpose": purpose,
+            "expires_at": row.get("expires_at"),
+            "seconds_remaining": (None if exp is None
+                                  else int((exp - now).total_seconds()))}
 
 
 @demo_router.get("")
@@ -535,13 +621,24 @@ async def list_demo_links(user=Depends(get_current_user),
 
     for r in rows:
         r["url"] = f"{site}/demo/signal-desk.html?t={r['token']}"
+        purpose = _purpose_of(r)
+        allowed, window = _run_budget(purpose)
+        r["purpose"] = purpose
         # A prospect link must start unused. This is the number that says so.
+        # For a showcase the same number is "used in the last window", which
+        # this listing cannot compute per row without a query each — it is
+        # reported as the allowance and the window instead of a false total.
         r["runs_used"] = used.get(r["token"], 0)
-        r["runs_allowed"] = DEMO_RUNS_PER_TOKEN
-        r["runs_remaining"] = max(0, DEMO_RUNS_PER_TOKEN - r["runs_used"])
+        r["runs_allowed"] = allowed
+        r["runs_window_minutes"] = window
+        r["ai_send_enabled"] = purpose != PURPOSE_SHOWCASE
+        r["runs_remaining"] = (None if window
+                               else max(0, allowed - r["runs_used"]))
     return {"ok": True, "links": rows,
             "live_demo_enabled": _demo_enabled(),
-            "runs_allowed": DEMO_RUNS_PER_TOKEN}
+            "runs_allowed": DEMO_RUNS_PER_TOKEN,
+            "showcase_runs_per_hour": SHOWCASE_RUNS_PER_HOUR,
+            "purposes": sorted(PURPOSES)}
 
 
 @demo_router.post("/{token}/revoke")
@@ -607,7 +704,65 @@ def _demo_symbol(choice: str | None) -> tuple[str, float]:
 DEMO_SL_PIPS = 150
 DEMO_TP_PIPS = 220
 DEMO_RUNS_PER_TOKEN = 3
+
+# The public showcase is open to the internet, so a cumulative allowance
+# would be spent by the first few visitors and every prospect after them
+# would meet a dead demo. It gets a rolling budget instead: busy for a
+# while, never permanently used up.
+SHOWCASE_RUNS_PER_HOUR = 6
+SHOWCASE_RUN_WINDOW_MINUTES = 60
+
 DEMO_STALE_POLL_SECONDS = 90
+
+
+def _run_budget(purpose: str) -> tuple[int, int | None]:
+    """(allowed, window_minutes). A window of None means cumulative."""
+    if purpose == PURPOSE_SHOWCASE:
+        return SHOWCASE_RUNS_PER_HOUR, SHOWCASE_RUN_WINDOW_MINUTES
+    return DEMO_RUNS_PER_TOKEN, None
+
+
+def _window_start(window_minutes: int | None, now: datetime | None = None):
+    """The oldest moment that still counts, or None for "all of history"."""
+    if not window_minutes:
+        return None
+    return (now or datetime.now(timezone.utc)) - timedelta(
+        minutes=window_minutes)
+
+
+def _runs_exhausted(purpose: str, used: int, allowed: int,
+                    window_minutes: int | None) -> dict:
+    """The refusal a prospect actually reads.
+
+    A showcase is never "used up" — it is busy — and saying so is the
+    difference between a visitor waiting a few minutes and a visitor
+    concluding the product is broken.
+    """
+    if purpose == PURPOSE_SHOWCASE:
+        return {"error": "showcase_busy",
+                "detail": "the public showcase is busy — try again shortly, "
+                          "or ask us for a private demo",
+                "used": used, "allowed": allowed,
+                "window_minutes": window_minutes}
+    return {"error": "demo_runs_exhausted",
+            "detail": f"this demo has placed its {allowed} trades. "
+                      f"Message us for a fresh link.",
+            "used": used, "allowed": allowed}
+
+
+def _market_runs(sb: Client, tok: str, since=None,
+                 market_only: bool = True) -> int:
+    """Market orders this token has placed, optionally within a window.
+
+    `created_at` is the column bot_orders already records and already has
+    an index on, paired with demo_token (D5).
+    """
+    q = sb.table("bot_orders").select("id").eq("demo_token", tok)
+    if market_only:
+        q = q.eq("demo_kind", "market")
+    if since is not None:
+        q = q.gte("created_at", since.isoformat())
+    return len((q.execute()).data or [])
 
 
 def _demo_login() -> str:
@@ -690,22 +845,27 @@ async def run_live_demo(token: str, request: Request,
                             {"error": "live_demo_unavailable", "detail": why})
 
     tok = token.strip().lower()
+    purpose = link.get("purpose") or PURPOSE_PRIVATE
+    allowed, window = _run_budget(purpose)
+    since = _window_start(window)
 
+    # A private demo keeps the counting rule it has always had, including
+    # which rows it counts; only the showcase asks the narrower, windowed
+    # question. Changing the private query here would quietly hand every
+    # existing prospect link more runs than it was sold with.
     def _count():
-        return (sb.table("bot_orders").select("id")
-                .eq("demo_token", tok).execute()).data or []
+        if purpose == PURPOSE_SHOWCASE:
+            return _market_runs(sb, tok, since, market_only=True)
+        return len((sb.table("bot_orders").select("id")
+                    .eq("demo_token", tok).execute()).data or [])
 
     try:
-        used = len(await offload(_count))
+        used = await offload(_count)
     except Exception:
         used = 0
-    if used >= DEMO_RUNS_PER_TOKEN:
-        raise HTTPException(
-            http.HTTP_429_TOO_MANY_REQUESTS,
-            {"error": "demo_runs_exhausted",
-             "detail": f"this demo has placed its {DEMO_RUNS_PER_TOKEN} "
-                       f"trades. Message us for a fresh link.",
-             "used": used})
+    if used >= allowed:
+        raise HTTPException(http.HTTP_429_TOO_MANY_REQUESTS,
+                            _runs_exhausted(purpose, used, allowed, window))
 
     # Everything below is decided here, not requested.
     row = {"bot_name": DEMO_BOT_NAME, "symbol": DEMO_SYMBOL, "side": "buy",
@@ -729,7 +889,7 @@ async def run_live_demo(token: str, request: Request,
           f"command={created.get('command_id')} provider={link['provider_name']}")
     return {"ok": True, "command_id": created.get("command_id"),
             "symbol": DEMO_SYMBOL, "side": "buy", "volume": DEMO_LOT,
-            "runs_used": used + 1, "runs_allowed": DEMO_RUNS_PER_TOKEN,
+            "runs_used": used + 1, "runs_allowed": allowed,
             "state": "queued",
             "note": "The demo Runner polls every few seconds."}
 
@@ -785,6 +945,15 @@ async def demo_run_state(token: str, command_id: str,
     """
     await read_demo_link(token, sb)
     tok = token.strip().lower()
+
+    # command_id is a uuid column. Handing Postgres a string that is not a
+    # uuid raises there rather than here, which surfaced as a 500 on a
+    # public URL. An unparseable id is simply not a command we have.
+    try:
+        _uuid.UUID(str(command_id))
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(http.HTTP_404_NOT_FOUND,
+                            "unknown command") from None
 
     def _get():
         return (sb.table("bot_orders").select("*")
@@ -1246,15 +1415,17 @@ async def demo_control(token: str, body: ControlIn,
                  "symbol": "", "side": "buy"}
 
     if action in ("buy", "sell"):
-        def _count():
-            return (sb.table("bot_orders").select("id")
-                    .eq("demo_token", tok).eq("demo_kind", "market")
-                    .execute()).data or []
-        used = len(await offload(_count))
-        if used >= DEMO_RUNS_PER_TOKEN:
+        # Only opening a new market position spends the budget. Modify,
+        # breakeven, close and a positions read are management of a trade
+        # that already exists and cost nothing.
+        purpose = link.get("purpose") or PURPOSE_PRIVATE
+        allowed, window = _run_budget(purpose)
+        since = _window_start(window)
+        used = await offload(_market_runs, sb, tok, since, True)
+        if used >= allowed:
             raise HTTPException(http.HTTP_429_TOO_MANY_REQUESTS,
-                                {"error": "demo_runs_exhausted",
-                                 "used": used})
+                                _runs_exhausted(purpose, used, allowed,
+                                                window))
         sym, lot = _demo_symbol(body.symbol)
         row.update({"symbol": sym, "side": action, "lots": lot,
                     "command_type": "market", "demo_kind": "market",
@@ -1447,7 +1618,21 @@ class AISendIn(BaseModel):
 async def demo_ai_send(token: str, body: AISendIn,
                        sb: Client = Depends(get_supabase)) -> dict:
     """Send an operator-approved message to the demo channel only."""
-    await read_demo_link(token, sb)
+    link = await read_demo_link(token, sb)
+
+    # The showcase link is printed on a public page and never expires, so
+    # it must not be a permanent endpoint for posting arbitrary text to a
+    # real Telegram channel. Drafting still works, and the trade lifecycle
+    # still publishes and edits real signals — that is what proves the
+    # automation. Private demos are unchanged.
+    if (link.get("purpose") or PURPOSE_PRIVATE) == PURPOSE_SHOWCASE:
+        raise HTTPException(
+            http.HTTP_403_FORBIDDEN,
+            {"error": "showcase_send_disabled",
+             "detail": "the public showcase does not send messages to the "
+                       "channel — signals are published by the trade "
+                       "lifecycle itself"})
+
     text = (body.text or "").strip()
     if len(text) < 10:
         raise HTTPException(http.HTTP_400_BAD_REQUEST, "nothing to send")
