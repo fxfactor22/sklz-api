@@ -35,8 +35,15 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 from supabase import Client
 
+from aio import offload
 from auth import get_current_user
 from db import get_supabase
+# The private offer's eligibility and its figures are decided in ONE
+# place — orders_api — and only read here. This module must never grow a
+# second copy of that logic: two implementations of "is this prospect
+# entitled to 50% off" is how a discount escapes the window it was sold
+# in. orders_api does not import this module, so there is no cycle.
+from orders_api import _demo_links_for, _offer_for, _package_config
 from tv_access import _require_admin
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
@@ -121,7 +128,14 @@ def _founder_taken(sb: Client) -> int:
         return FOUNDER_CAP        # fail closed: never oversell founder slots
 
 
-def _price_id(stripe, lookup_key: str) -> str:
+def _price_for(stripe, lookup_key: str):
+    """The live Stripe Price object behind a lookup key.
+
+    Returned whole rather than as an id because the discounted setup line
+    needs the Product the Price belongs to, and the amount Stripe would
+    otherwise have charged is worth comparing against our own catalogue
+    before we quote a different one.
+    """
     try:
         res = stripe.Price.list(lookup_keys=[lookup_key], limit=1)
     except Exception as exc:  # noqa: BLE001
@@ -130,7 +144,11 @@ def _price_id(stripe, lookup_key: str) -> str:
     if not res.data:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
                             f"price {lookup_key} missing — run admin/setup first")
-    return res.data[0].id
+    return res.data[0]
+
+
+def _price_id(stripe, lookup_key: str) -> str:
+    return _price_for(stripe, lookup_key).id
 
 
 def _sub_row(sb: Client, uid: str) -> dict:
@@ -785,14 +803,142 @@ RETAIL_KEYS = {"suite_monthly", "suite_annual", "suite_lifetime",
                "copy_pro_annual"}
 
 
+# ── the private 48-hour offer, honoured at checkout ─────────────────
+#
+# READ THIS BEFORE CHANGING THE CHECKOUT BELOW.
+#
+# An eligible private-demo prospect can now pay their discounted setup
+# fee with a card instead of quoting a code to a person. Five rules make
+# that safe, and each one is ENFORCED below rather than described:
+#
+#  1. ELIGIBILITY IS NOT DECIDED HERE. `orders_api._offer_for` is the one
+#     decision function, the same one every demo page reads. A token in a
+#     request body grants nothing by itself — it is looked up, and the
+#     stored row decides. Nothing in this module re-implements the
+#     48-hour window, the purpose check or the revocation check.
+#  2. NO PRICE ARRIVES FROM THE BROWSER. The request carries a package
+#     name, a token and a surface name. It cannot carry an amount, a
+#     percentage or a promo code, and none would be read if it did.
+#  3. THE PRICE SHOWN AND THE PRICE CHARGED MUST AGREE. Pages print
+#     `orders_api._package_config()` (which honours the SKLZ_PRICE_*
+#     overrides); Stripe charges from `CATALOG` above. That is two
+#     sources for one number, so they are compared before any session
+#     exists and a mismatch refuses the checkout outright. On the offer
+#     path the live Stripe price is compared too, because that is the
+#     figure the customer would otherwise have met on Stripe's page.
+#  4. ONLY SETUP MOVES. The monthly line is the same Price ID it has
+#     always been. If an offer ever claims otherwise this refuses rather
+#     than half-honouring it.
+#  5. A REFUSAL CREATES NOTHING. A prospect whose window closed while the
+#     tab sat open is never quietly charged full price by a button that
+#     still said 50% off; the page re-reads the offer and changes what it
+#     says.
+#
+# The discount is applied as an inline ONE-TIME `price_data` line on the
+# SAME Stripe Product the setup Price belongs to — not a coupon, not a
+# second permanent Price, nothing left behind in Stripe afterwards.
+# Stripe bills one-time line items on the first invoice of a
+# subscription, which is exactly the shape of this sale.
+
+# A demo token is 32 lowercase hex characters and nothing else. Anything
+# else is rejected before it reaches the database.
+_DEMO_TOKEN_RE = __import__("re").compile(r"^[0-9a-f]{32}$")
+
+
+def _price_guard(pkg: str, setup_cents: int, mon_cents: int) -> None:
+    """The page's price list and Stripe's catalogue, compared.
+
+    _package_config() is what every surface prints — product pages, the
+    desk, the private offer — and it honours the SKLZ_PRICE_* env
+    overrides. CATALOG above is what Stripe is asked to charge and is
+    hardcoded. They are identical today. If an operator ever moves one
+    without the other, a customer reads one number and is billed
+    another, which is the single worst failure this endpoint can have.
+    So it stops instead, before a session exists.
+    """
+    cfg = (_package_config() or {}).get(pkg) or {}
+    try:
+        want_setup = int(round(float(cfg["setup"]["usd"]) * 100))
+        want_mon = int(round(float(cfg["monthly"]["usd"]) * 100))
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            f"pricing_mismatch: {pkg} is not in the price list") from None
+    if want_setup != setup_cents or want_mon != mon_cents:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "pricing_mismatch: the price list says "
+            f"{want_setup}/{want_mon} and the billing catalogue says "
+            f"{setup_cents}/{mon_cents} (setup/monthly, in cents)")
+
+
+def _cancel_url(tok: str, surface: str) -> str:
+    """Where a cancelled checkout returns to.
+
+    The browser names a SURFACE; this builds the URL. Every candidate
+    comes from `_demo_links_for`, which only ever produces paths under
+    SITE, so no value the browser can send turns this into a redirect
+    somewhere else. An unknown name falls back to the experience the
+    prospect was originally sent.
+    """
+    if not tok:
+        return f"{SITE}/signal-desk.html#packages"
+    links = _demo_links_for(SITE, tok)
+    return links.get((surface or "").strip().lower()) or links["experience"]
+
+
+async def _offer_or_refuse(sb: Client, tok: str, pkg: str) -> dict:
+    """The stored link's offer and its figure for this package.
+
+    Raises rather than returning a "no offer" result, because there is no
+    safe way to continue: a checkout that silently drops the discount
+    charges double what the button said.
+    """
+    def _get():
+        return (sb.table("demo_links").select("*")
+                .eq("token", tok).limit(1).execute()).data or []
+
+    try:
+        rows = await offload(_get)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            "offer_unavailable: demo store unreachable") from exc
+    if not rows:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "offer_not_available: unknown link")
+
+    offer = _offer_for({**rows[0], "token": tok})
+    if not offer.get("eligible"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "offer_not_available: " + (offer.get("reason") or "ineligible"))
+    p = (offer.get("packages") or {}).get(pkg)
+    if not p:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "offer_not_available: package not in this offer")
+    return {"offer": offer, "package": p}
+
+
 class PackageCheckoutIn(BaseModel):
     package: str
     ref: str = ""
+    # A private demo link. Absent, this is the full-price checkout and
+    # behaves exactly as it always has.
+    demo_token: str = ""
+    # Where to return someone who backs out — a NAME from the demo link's
+    # own surface list, never a URL. See _cancel_url.
+    surface: str = ""
 
 
 @router.post("/checkout-package")
-async def checkout_package(payload: PackageCheckoutIn) -> dict:
-    """One session: implementation fee + ongoing monthly service."""
+async def checkout_package(payload: PackageCheckoutIn,
+                           sb: Client = Depends(get_supabase)) -> dict:
+    """One session: implementation fee + ongoing monthly service.
+
+    With a valid private demo token the implementation fee is that
+    prospect's discounted figure and the monthly service is untouched.
+    Without one, this is the full-price checkout it has always been.
+    """
     pkg = (payload.package or "").strip()
     if pkg not in SIGNAL_DESK_PACKAGES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown package")
@@ -812,21 +958,102 @@ async def checkout_package(payload: PackageCheckoutIn) -> dict:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
                             "setup must be one-time and service monthly")
 
+    # Displayed price against charged price, on EVERY checkout — offer or
+    # not. The divergence this catches has nothing to do with discounts.
+    _price_guard(pkg, setup_cents, mon_cents)
+
+    tok = (payload.demo_token or "").strip().lower()
+    if tok and not _DEMO_TOKEN_RE.match(tok):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "demo_token must be 32 hex characters")
+
+    offer = None
+    charged_setup = setup_cents
+    percent = 0
+    code = ""
+    if tok:
+        found = await _offer_or_refuse(sb, tok, pkg)
+        offer, p = found["offer"], found["package"]
+        percent = int(offer.get("setup_discount_percent") or 0)
+        code = str(offer.get("promo_code") or "")
+        # Setup only, and stated as such by the offer itself. Anything
+        # else is refused rather than partially applied.
+        if offer.get("applies_to") != "setup_only" or offer.get("monthly_discounted"):
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "offer_price_invalid: this checkout discounts setup only")
+        try:
+            charged_setup = int(round(float(p["offer_setup"]["usd"]) * 100))
+            offer_monthly = int(round(float(p["monthly"]["usd"]) * 100))
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "offer_price_invalid: no discounted setup figure") from None
+        # An offer may only ever REDUCE the setup fee, and only to
+        # something a card can actually be charged.
+        if not 0 < charged_setup <= setup_cents:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "offer_price_invalid: the discounted setup is not a reduction")
+        if offer_monthly != mon_cents:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "pricing_mismatch: the offer's monthly figure is not the "
+                "billing catalogue's")
+
     stripe = _stripe()
+    monthly_line = {"price": _price_id(stripe, keys["monthly"]), "quantity": 1}
+    if offer is None:
+        setup_line = {"price": _price_id(stripe, keys["setup"]), "quantity": 1}
+    else:
+        # The live Price is read for the Product behind it, and checked
+        # against the catalogue on the way past: quoting a discount off a
+        # number Stripe does not actually hold would make the "50% off"
+        # arithmetic false.
+        sp = _price_for(stripe, keys["setup"])
+        if int(getattr(sp, "unit_amount", None) or -1) != setup_cents:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "pricing_mismatch: Stripe's setup price is not the billing "
+                "catalogue's")
+        product = getattr(sp, "product", None)
+        product = getattr(product, "id", product)
+        if not isinstance(product, str) or not product:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "offer_price_invalid: the setup price has no product")
+        setup_line = {"quantity": 1, "price_data": {
+            "currency": getattr(sp, "currency", "usd") or "usd",
+            "product": product,
+            # No `recurring` key: this is a one-time amount, billed on
+            # the first invoice of the subscription and never again.
+            "unit_amount": charged_setup}}
+
     params: dict = {
         # subscription mode, with the one-time setup billed on invoice one
         "mode": "subscription",
-        "line_items": [
-            {"price": _price_id(stripe, keys["setup"]), "quantity": 1},
-            {"price": _price_id(stripe, keys["monthly"]), "quantity": 1},
-        ],
+        "line_items": [setup_line, monthly_line],
         "success_url": f"{SITE}/claim.html?sid={{CHECKOUT_SESSION_ID}}&p={pkg}",
-        "cancel_url": f"{SITE}/signal-desk.html#packages",
+        "cancel_url": _cancel_url(tok, payload.surface),
         "metadata": {"package": pkg, "setup": keys["setup"],
                      "monthly": keys["monthly"], "guest": "true"},
         "subscription_data": {"metadata": {"package": pkg,
                                            "setup_product": keys["setup"]}},
     }
+    if offer is not None:
+        # What was sold, at what discount, against which reference — so a
+        # payment can be reconciled to the offer that produced it. The
+        # TOKEN is deliberately not recorded: it opens a live demo
+        # environment, and Stripe metadata is not where a credential
+        # belongs. The promo code is derived from it one way only.
+        params["metadata"].update({
+            "offer_type": "private_48h",
+            "setup_discount_percent": str(percent),
+            "promo_code": code,
+            "setup_list_cents": str(setup_cents),
+            "setup_charged_cents": str(charged_setup)})
+        params["subscription_data"]["metadata"].update({
+            "offer_type": "private_48h", "promo_code": code})
     ref = (payload.ref or "").strip()
     if ref:
         if not _UUID_RE.match(ref):
@@ -841,9 +1068,17 @@ async def checkout_package(payload: PackageCheckoutIn) -> dict:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             f"checkout unavailable: {str(exc)[:160]}") from exc
+    # Every figure here is what Stripe was actually asked to charge.
+    # `setup_cents` stays the amount due, so an existing caller reading it
+    # keeps reading the truth; the list price sits beside it.
     return {"ok": True, "url": session.url,
-            "due_today_cents": setup_cents + mon_cents,
-            "setup_cents": setup_cents, "monthly_cents": mon_cents}
+            "due_today_cents": charged_setup + mon_cents,
+            "setup_cents": charged_setup,
+            "setup_list_cents": setup_cents,
+            "monthly_cents": mon_cents,
+            "offer_applied": offer is not None,
+            "setup_discount_percent": percent,
+            "promo_code": code}
 
 
 @router.post("/checkout-public")

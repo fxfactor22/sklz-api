@@ -380,7 +380,14 @@ def test_stripe_charges_setup_and_subscription_in_one_session():
     fn = BILL[BILL.index("async def checkout_package("):]
     fn = fn[:fn.index("@router.post(\"/checkout-public\")")]
     assert 'keys["setup"]' in fn and 'keys["monthly"]' in fn
-    assert fn.count('"quantity": 1') == 2      # two line items
+    # Two line items, always: one setup and one monthly. The setup line is
+    # built two ways now (the catalogue Price at full price, an inline
+    # one-time amount on the same Product for a private-offer prospect),
+    # so the literal appears three times while the session still carries
+    # exactly two. Assert the session, not the source.
+    assert '"line_items": [setup_line, monthly_line]' in fn
+    assert fn.count("setup_line = {") == 2
+    assert fn.count("monthly_line = {") == 1
 
 
 def test_signal_desk_can_never_be_billed_on_a_retail_price():
