@@ -7,6 +7,7 @@ and nobody has to remember where it got to.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import secrets
@@ -270,6 +271,88 @@ def _package_config() -> dict:
     return out
 
 
+def _usd(v) -> str:
+    """A price as the pages print it. Whole dollars stay whole."""
+    f = float(v)
+    return f"${f:,.0f}" if f == int(f) else f"${f:,.2f}"
+
+
+# ── the private 48-hour commercial offer ────────────────────────────
+#
+# Read this before changing anything below.
+#
+# The offer is a SALES-ASSISTED discount. It is NOT a checkout coupon,
+# and nothing in this section touches Stripe, the crypto amounts, or the
+# public /api/orders/packages response — that response is byte-for-byte
+# what it was, which is what makes "public prices unchanged" a fact and
+# not a claim. What the server decides here is only: does THIS link
+# qualify, what is the discounted SETUP figure, and which code does the
+# prospect quote to SKLZ. The browser is told; it never decides.
+OFFER_SETUP_DISCOUNT_PERCENT = 50
+OFFER_CODE_PREFIX = "SKLZ50"
+
+# 10 hex characters — about 1.1e12 codes. At ten thousand prospect demos
+# the chance of any two colliding is about one in twenty thousand, which
+# is the difference between "unlikely" and "we would have to handle it".
+OFFER_CODE_BODY = 10
+
+# created_at is written by the database default and expires_at by this
+# process, so the two come from different clocks and an exact 48.000000h
+# span is not something to require. Anything inside this tolerance is the
+# standard prospect demo; a deliberate 2-hour or 168-hour link is not.
+OFFER_WINDOW_TOLERANCE_MINUTES = 30
+
+
+def _offer_code(token: str) -> str:
+    """The code a prospect quotes to SKLZ, derived from their own token.
+
+    Deterministic, so the same link yields the same code every time it is
+    read and no column has to store it. Derived through a digest rather
+    than sliced out of the token, so the code can never be turned back
+    into the credential that opens the demo. The token is the only input:
+    no name, no email, no contact value is reachable from the result.
+    """
+    tok = (token or "").strip().lower()
+    if not tok:
+        return ""
+    digest = hashlib.sha256(("sklz-demo-offer:" + tok).encode()).hexdigest()
+    return f"{OFFER_CODE_PREFIX}-{digest[:OFFER_CODE_BODY].upper()}"
+
+
+def _offer_packages(percent: int = OFFER_SETUP_DISCOUNT_PERCENT) -> dict:
+    """Discounted setup figures, from the one live package configuration.
+
+    Every number here is derived from _package_config(), so an env price
+    override moves the normal figure and the offer figure together and
+    they cannot drift apart.
+
+    Monthly is carried through untouched and says so explicitly, so a page
+    never needs a second source to state "unchanged". The combined
+    activation aggregate is deliberately NOT offered: the private offer
+    shows setup and monthly separately, because that is what the sales
+    conversation actually agrees.
+    """
+    out = {}
+    for key, p in _package_config().items():
+        setup = p["setup"]["usd"]
+        off = round(float(setup) * (100 - percent) / 100.0, 2)
+        out[key] = {
+            "key": key,
+            "name": p["name"],
+            "setup_discount_percent": percent,
+            "applies_to": "setup_only",
+            "normal_setup": {"usd": setup, "display": p["setup"]["display"],
+                             "label": p["setup"]["label"]},
+            "offer_setup": {"usd": off, "display": _usd(off),
+                            "label": p["setup"]["label"]},
+            "monthly": {"usd": p["monthly"]["usd"],
+                        "display": p["monthly"]["display"],
+                        "label": p["monthly"]["label"],
+                        "discounted": False},
+        }
+    return out
+
+
 @router.get("/packages")
 async def packages() -> dict:
     """Public. The whole commercial model, for both product pages.
@@ -429,6 +512,96 @@ def _clamp_hours(purpose: str, hours) -> int | None:
     return max(1, min(want, DEMO_MAX_HOURS))
 
 
+def _ts(value):
+    """One stored ISO timestamp as an aware datetime, or None. Never raises."""
+    if not value:
+        return None
+    try:
+        d = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def _demo_links_for(site: str, token: str) -> dict:
+    """Every surface of one prospect's environment, on one token.
+
+    The prospect is sent exactly one of these — the experience. The rest
+    exist so an operator can jump straight to a surface when they need to
+    check something, and so nothing has to rebuild a URL by hand.
+    """
+    q = f"?t={token}"
+    return {
+        "experience": f"{site}/demo/trader-site.html{q}",
+        "os": f"{site}/demo/pro-trader-os.html{q}",
+        "signal_desk": f"{site}/demo/signal-desk.html{q}",
+        "portal": f"{site}/demo/client-portal.html{q}",
+    }
+
+
+def _offer_for(row: dict, now=None) -> dict:
+    """The private commercial offer carried by one demo link.
+
+    Always returns an object, so no caller has to work out what a missing
+    key meant; `eligible` is the only field that grants anything, and
+    `reason` says why when it does not. A showcase, a revoked link, an
+    expired link and a link minted with a deliberately non-standard
+    lifetime all come back ineligible.
+
+    Eligibility is decided here, from the stored row, and nowhere else.
+    Not from the presence of a token in a URL, not from localStorage, not
+    from a page that says it is private.
+    """
+    now = now or datetime.now(timezone.utc)
+    out = {
+        "eligible": False,
+        "reason": "",
+        "setup_discount_percent": OFFER_SETUP_DISCOUNT_PERCENT,
+        "applies_to": "setup_only",
+        "monthly_discounted": False,
+        # The code is quoted to a human during activation. Checkout does
+        # not accept it and is not asked to; saying so here keeps the
+        # pages from inventing a coupon that does not exist.
+        "redemption": "sales_assisted",
+        "promo_code": "",
+        "expires_at": None,
+        "seconds_remaining": None,
+    }
+    if _purpose_of(row) != PURPOSE_PRIVATE:
+        out["reason"] = "showcase"
+        return out
+    if row.get("revoked"):
+        out["reason"] = "revoked"
+        return out
+    expires = _ts(row.get("expires_at"))
+    if expires is None:
+        out["reason"] = "no_expiry"
+        return out
+    if expires <= now:
+        out["reason"] = "expired"
+        return out
+    created = _ts(row.get("created_at"))
+    if created is None:
+        out["reason"] = "unknown_creation"
+        return out
+    drift_minutes = abs((expires - created).total_seconds() / 60.0
+                        - DEMO_HOURS * 60)
+    if drift_minutes > OFFER_WINDOW_TOLERANCE_MINUTES:
+        out["reason"] = "not_a_standard_48h_demo"
+        return out
+    out.update({
+        "eligible": True,
+        "promo_code": _offer_code(row.get("token") or ""),
+        "expires_at": expires.isoformat(),
+        # The deadline the browser counts down to is this number, taken
+        # from the server on every read. A refresh re-reads it; it cannot
+        # be restarted by clearing a browser.
+        "seconds_remaining": int((expires - now).total_seconds()),
+        "packages": _offer_packages(),
+    })
+    return out
+
+
 class DemoLinkIn(BaseModel):
     provider_name: str
     telegram_channel: str
@@ -485,8 +658,9 @@ async def create_demo_link(body: DemoLinkIn,
     # 32 hex chars of CSPRNG. The link IS the credential, so it has to be
     # unguessable rather than merely unlisted.
     token = secrets.token_hex(16)
+    minted_at = datetime.now(timezone.utc)
     expires = (None if hours is None
-               else datetime.now(timezone.utc) + timedelta(hours=hours))
+               else minted_at + timedelta(hours=hours))
     row = {"token": token, "provider_name": name, "telegram_channel": chan,
            "language": lang, "contact_name": _clean(body.contact_name, 80),
            "contact_email": _clean(body.contact_email, 160).lower(),
@@ -506,8 +680,24 @@ async def create_demo_link(body: DemoLinkIn,
                             f"could not create the link: {str(exc)[:120]}") from exc
 
     site = _os.environ.get("SITE_URL", "https://www.sklzlabs.com").rstrip("/")
+    links = _demo_links_for(site, token)
+    # The offer the link was born with, computed from what we just wrote
+    # rather than read back — the row's created_at is a database default
+    # we have not seen yet, and minted_at is the same instant.
+    offer = _offer_for({**row, "token": token, "revoked": False,
+                        "created_at": minted_at.isoformat()}, minted_at)
     return {"ok": True, "token": token,
-            "url": f"{site}/demo/signal-desk.html?t={token}",
+            # The prospect receives ONE link and it is the whole
+            # environment — the website they walk in through, not the
+            # desk they end up at. `url` keeps its name so every existing
+            # caller keeps working; what changed is where it points.
+            "url": links["experience"],
+            "links": links,
+            "experience_url": links["experience"],
+            "os_url": links["os"],
+            "signal_desk_url": links["signal_desk"],
+            "portal_url": links["portal"],
+            "offer": offer,
             "provider_name": name, "telegram_channel": chan,
             "language": lang, "purpose": purpose,
             "expires_at": None if expires is None else expires.isoformat(),
@@ -582,6 +772,7 @@ async def read_demo_link(token: str,
 
     # A non-expiring link reports null, not a very large number. The page
     # can then say "public demo" instead of counting down from a lie.
+    site = _os.environ.get("SITE_URL", "https://www.sklzlabs.com").rstrip("/")
     return {"ok": True, "provider_name": row["provider_name"],
             "telegram_channel": row["telegram_channel"],
             "language": row.get("language") or "en",
@@ -590,7 +781,14 @@ async def read_demo_link(token: str,
             "purpose": purpose,
             "expires_at": row.get("expires_at"),
             "seconds_remaining": (None if exp is None
-                                  else int((exp - now).total_seconds()))}
+                                  else int((exp - now).total_seconds())),
+            # Where this token can go. The pages carry the token between
+            # surfaces themselves, but a surface that wants an absolute
+            # URL takes it from here rather than assembling one.
+            "links": _demo_links_for(site, tok),
+            # The one authority on whether this prospect has an offer,
+            # what it is worth, and when it ends.
+            "offer": _offer_for(row, now)}
 
 
 @demo_router.get("")
@@ -619,8 +817,16 @@ async def list_demo_links(user=Depends(get_current_user),
         if t:
             used[t] = used.get(t, 0) + 1
 
+    now = datetime.now(timezone.utc)
     for r in rows:
-        r["url"] = f"{site}/demo/signal-desk.html?t={r['token']}"
+        links = _demo_links_for(site, r["token"])
+        # Same change as the create response: `url` is the experience the
+        # prospect was sent, and the per-surface links sit beside it for
+        # the operator. The listing's "open" action follows `url`, so an
+        # older demo now opens the way a new one does.
+        r["url"] = links["experience"]
+        r["links"] = links
+        r["offer"] = _offer_for(r, now)
         purpose = _purpose_of(r)
         allowed, window = _run_budget(purpose)
         r["purpose"] = purpose
