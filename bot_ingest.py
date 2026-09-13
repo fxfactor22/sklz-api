@@ -23,7 +23,13 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from supabase import Client
 
+from aio import offload
 from auth import get_current_user
+# Publication is no longer the browser's job — see post_result. orders_api
+# does not import this module, so this is a plain one-way dependency and
+# not a cycle; the import is at module level deliberately, so a mistake
+# here fails at start-up rather than at the moment a prospect trades.
+from orders_api import publish_demo_open
 
 
 def _require_admin(user):
@@ -444,6 +450,35 @@ async def post_result(body: ResultIn,
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             f"could not record result: {exc}") from exc
 
+    # ── the signal is published by the acknowledgement, not by the page
+    #
+    # This is the incident fix. A confirmed fill used to be announced
+    # only if the prospect's browser was still polling when the result
+    # landed; a closed tab, a dropped connection or a fill slower than
+    # the page's patience lost the signal permanently, because nothing
+    # else in the system ever looked at the row again.
+    #
+    # Now the request that settles the order is the request that
+    # publishes it. The browser poll still calls the same function, and
+    # cannot produce a second message: delivery is claimed in the
+    # database before the send.
+    #
+    # Scope is exactly one command — the one being settled right here.
+    # There is no scan and no backfill, so deploying this cannot announce
+    # anything that settled in the past. A Telegram fault is printed and
+    # dropped: the Runner is reporting a real execution and must always
+    # be told the result was recorded.
+    published = None
+    if (stored == "succeeded" and row.get("demo_kind") == "market"
+            and row.get("demo_token") and body.ticket):
+        try:
+            published = await offload(publish_demo_open, sb, body.command_id)
+        except Exception as exc:  # noqa: BLE001
+            published = {"error": type(exc).__name__}
+        if published and published.get("error"):
+            print(f"[demo] ack publish failed for {body.command_id}: "
+                  f"{str(published['error'])[:120]}")
+
     if mismatch:
         print(f"[bot] ACCOUNT_MISMATCH command={body.command_id} "
               f"expected={expected} actual={actual}")
@@ -452,6 +487,9 @@ async def post_result(body: ResultIn,
               f"account={actual or '?'} — outcome could not be confirmed")
     return {"ok": True, "duplicate": False, "status": stored,
             "account_mismatch": mismatch,
+            # Informational for the Runner and for operators. Delivery
+            # never changes whether the execution was recorded.
+            "published": published,
             "reconciliation_required": stored == "unknown",
             "note": ("Execution outcome unknown — verify the trading "
                      "account before retrying. This command will not be "

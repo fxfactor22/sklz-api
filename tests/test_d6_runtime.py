@@ -50,8 +50,15 @@ class _Tbl:
         self._rows = [dict(row, command_id="close-cmd-1")]
         return self
     def update(self, patch):
+        """An UPDATE returns the rows it changed.
+
+        This used to return nothing, which is not what the real client
+        does — `get_command`'s atomic claim has depended on the returned
+        representation since A3, and so does demo publication now. A
+        double that returns [] makes every conditional claim look lost.
+        """
         self.store.setdefault("updates", []).append((self.name, patch))
-        self._rows = []
+        self._rows = [dict(r, **patch) for r in self._rows]
         return self
     def execute(self):
         return types.SimpleNamespace(data=self._rows)

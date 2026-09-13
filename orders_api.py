@@ -1214,6 +1214,15 @@ async def demo_run_state(token: str, command_id: str,
       # row already says so. This endpoint once returned 500 for twenty
       # minutes because a delivery bug propagated out of here while the
       # order sat filled.
+      #
+      # The delivery result is initialised HERE, before the attempt. The
+      # handler below reports a communication fault by reading `tg`, and
+      # `tg` used to be assigned only inside the try — so any fault
+      # raised before that assignment made the handler itself raise
+      # UnboundLocalError, which escaped and returned 500 for a poll the
+      # prospect was watching. A handler whose whole purpose is to stop a
+      # delivery fault reaching the browser must not be able to fail.
+      tg: dict = {}
       try:
         link = await read_demo_link(token, sb)
         kind = r.get("demo_kind")
@@ -1254,20 +1263,29 @@ async def demo_run_state(token: str, command_id: str,
                                link["provider_name"])
         if kind != "positions":
             out["telegram"] = tg
-      except Exception as exc:  # noqa: BLE001
-        print(f"[demo] telegram step failed for {r.get('command_id')}: "
-              f"{type(exc).__name__}: {str(exc)[:160]}")
-        out["telegram"] = {"error": f"communication failed: "
-                                    f"{type(exc).__name__}",
-                           "trading_unaffected": True}
+        # SUCCESS ONLY: the gap between the broker's fill and the post.
+        # This block used to sit inside the except handler, where there
+        # is by definition no message and no latency to measure, so it
+        # never ran on the path it was written for.
         if tg.get("message_id") and out["latency_ms"] is not None:
             try:
                 sent = r.get("demo_tg_sent_at") or datetime.now(
                     timezone.utc).isoformat()
                 t2 = datetime.fromisoformat(str(sent).replace("Z", "+00:00"))
                 out["telegram_latency_ms"] = int((t2 - a).total_seconds() * 1000)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, NameError):
                 out["telegram_latency_ms"] = None
+      except Exception as exc:  # noqa: BLE001
+        print(f"[demo] telegram step failed for {r.get('command_id')}: "
+              f"{type(exc).__name__}: {str(exc)[:160]}")
+        # The broker result above is untouched. `state`, `ticket`,
+        # `fill_price`, `retcode` and the account all stay exactly as the
+        # ledger recorded them; only this field says delivery did not
+        # happen. Broker truth and distribution truth are separate, and a
+        # failure here is never allowed to look like a failed trade.
+        out["telegram"] = {"error": f"communication failed: "
+                                    f"{type(exc).__name__}",
+                           "trading_unaffected": True}
 
     # The close result lives on ITS OWN row. The parent was written once
     # at queue time and never updated, so it reported "queued" forever
@@ -1399,6 +1417,131 @@ def _edit_demo_message(dest, message_id, text: str) -> dict:
             "url": _tg_message_url(DEMO_TG_CHAT, message_id)}
 
 
+# A send has a 10-second socket timeout. Well past that, a claim that
+# produced no message belongs to a request that is no longer running.
+CLAIM_STALE_SECONDS = 120
+
+
+def _published_state(sb: Client, cid) -> dict:
+    """What the row says about a post somebody else is making."""
+    try:
+        rows = (sb.table("bot_orders").select("demo_tg_message_id")
+                .eq("command_id", cid).limit(1).execute()).data or []
+    except Exception:  # noqa: BLE001
+        rows = []
+    mid = (rows[0] or {}).get("demo_tg_message_id") if rows else None
+    if mid:
+        return {"message_id": mid, "url": _tg_message_url(DEMO_TG_CHAT, mid),
+                "replay": True}
+    return {"pending": True, "note": "another delivery is already in flight"}
+
+
+def _claim_demo_publication(sb: Client, cid) -> bool:
+    """Win the right to post this signal, exactly once.
+
+    Two callers can now reach delivery for the same command: the Runner's
+    acknowledgement and the prospect's browser poll. An in-memory flag
+    cannot separate them — they are different requests and may be
+    different processes — so the claim is taken in the database.
+
+    `demo_tg_sent_at` is written BEFORE the send, conditioned on it still
+    being null. Postgres applies that condition and the write as one
+    statement, so of two simultaneous callers exactly one gets a row back
+    and the other is told the post is already in hand. The marker is
+    released again if nothing was actually posted, so a transient
+    Telegram outage does not silence the signal forever.
+    """
+    if not cid:
+        return True                      # nothing to coordinate on
+    now = datetime.now(timezone.utc)
+    try:
+        rows = (sb.table("bot_orders")
+                .update({"demo_tg_sent_at": now.isoformat()})
+                .eq("command_id", cid).is_("demo_tg_sent_at", "null")
+                .is_("demo_tg_message_id", "null")
+                .execute()).data or []
+        if rows:
+            return True
+
+        # Nobody claimed it, or somebody claimed it and never finished.
+        # A process that dies between the claim and the send would
+        # otherwise silence that signal permanently, so a claim older
+        # than the send timeout can be taken over — but only by swapping
+        # the EXACT timestamp we just read, so two takeovers racing each
+        # other still produce one winner.
+        held = (sb.table("bot_orders")
+                .select("demo_tg_sent_at,demo_tg_message_id")
+                .eq("command_id", cid).limit(1).execute()).data or []
+        row = held[0] if held else {}
+        if row.get("demo_tg_message_id"):
+            return False                 # already published; never again
+        stale_at = _ts(row.get("demo_tg_sent_at"))
+        if stale_at is None or (now - stale_at).total_seconds() < CLAIM_STALE_SECONDS:
+            return False                 # somebody is posting it right now
+        took = (sb.table("bot_orders")
+                .update({"demo_tg_sent_at": now.isoformat()})
+                .eq("command_id", cid)
+                .eq("demo_tg_sent_at", row["demo_tg_sent_at"])
+                .is_("demo_tg_message_id", "null")
+                .execute()).data or []
+        return bool(took)
+    except Exception:  # noqa: BLE001
+        return False                     # fail closed: never double-post
+
+
+def _release_demo_publication(sb: Client, cid) -> None:
+    """Give the claim back when nothing reached Telegram."""
+    if not cid:
+        return
+    try:
+        (sb.table("bot_orders").update({"demo_tg_sent_at": None})
+         .eq("command_id", cid).is_("demo_tg_message_id", "null").execute())
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _provider_for(sb: Client, tok: str) -> str:
+    """The branding this token was minted with."""
+    try:
+        rows = (sb.table("demo_links").select("provider_name")
+                .eq("token", tok).limit(1).execute()).data or []
+    except Exception:  # noqa: BLE001
+        return ""
+    return (rows[0] or {}).get("provider_name") or ""
+
+
+def publish_demo_open(sb: Client, command_id: str) -> dict:
+    """Post the OPEN signal for a demo market order that has just settled.
+
+    The entry point the acknowledgement path uses, so that a confirmed
+    fill is announced by the server rather than by whether the prospect
+    happened to still be on the page. It is given ONE command id by the
+    request that just settled it and looks at nothing else: there is no
+    scan, no backfill, and no path here that can reach a historical row.
+
+    It re-reads the row rather than trusting a caller's copy, refuses
+    anything that is not a succeeded demo market fill, and then delivers
+    through the one existing formatter and the one existing destination.
+    There is no second Telegram implementation.
+    """
+    try:
+        rows = (sb.table("bot_orders").select("*")
+                .eq("command_id", command_id).limit(1).execute()).data or []
+    except Exception as exc:  # noqa: BLE001
+        return {"skipped": f"row unreadable: {type(exc).__name__}"}
+    if not rows:
+        return {"skipped": "unknown command"}
+    row = rows[0]
+    tok = (row.get("demo_token") or "").strip().lower()
+    if not tok:
+        return {"skipped": "not a demo order"}
+    if row.get("demo_kind") != "market":
+        return {"skipped": "not a market order"}
+    if row.get("status") != "succeeded" or not row.get("ticket"):
+        return {"skipped": "not a confirmed fill"}
+    return _deliver_demo_signal(sb, row, _provider_for(sb, tok))
+
+
 def _deliver_demo_signal(sb: Client, row: dict, provider: str) -> dict:
     """Post the signal to @sklzlabsdemo. Once, and nowhere else."""
     if row.get("demo_tg_message_id"):
@@ -1420,6 +1563,12 @@ def _deliver_demo_signal(sb: Client, row: dict, provider: str) -> dict:
     if str(dest.chat_id) not in (DEMO_TG_CHAT, "@sklzlabsdemo"):
         return {"error": f"refused: resolver returned {dest.chat_id}"}
 
+    # Everything cheap has passed. Take the claim immediately before the
+    # only irreversible step there is.
+    cid = row.get("command_id")
+    if not _claim_demo_publication(sb, cid):
+        return _published_state(sb, cid)
+
     import urllib.request
     payload = {"chat_id": dest.chat_id, "text": text,
                "disable_web_page_preview": True}
@@ -1431,8 +1580,10 @@ def _deliver_demo_signal(sb: Client, row: dict, provider: str) -> dict:
         with urllib.request.urlopen(req, timeout=10) as r:
             d = json.loads(r.read().decode())
     except Exception as exc:  # noqa: BLE001
+        _release_demo_publication(sb, cid)
         return {"error": f"{type(exc).__name__}"}
     if not d.get("ok"):
+        _release_demo_publication(sb, cid)
         return {"error": str(d.get("description", "telegram refused"))[:120]}
 
     mid = (d.get("result") or {}).get("message_id")
@@ -1558,6 +1709,64 @@ async def demo_sweep(user=Depends(get_current_user),
 # ── interactive control desk ────────────────────────────────────────
 CONTROL_ACTIONS = {"buy", "sell", "modify", "breakeven", "close", "positions"}
 
+# ── one click, one broker order ──────────────────────────────────────
+#
+# A prospect whose desk said "timed out" while the broker had in fact
+# filled would click BUY again, and the second click opened a second real
+# position. Two independent guards now stand in the way, and neither one
+# blocks a trade the prospect actually meant to make.
+#
+#  1. The browser carries a key for ONE user action and RE-SENDS THE SAME
+#     KEY while that action is still unresolved. The command id is
+#     derived from it here — never taken from the browser — so a retry
+#     lands on the command it already created, and a deliberate later
+#     click carries a new key and gets a new command.
+#  2. Even with no key at all — an old cached page, a curl, a second tab
+#     — an identical market command that is still in flight is returned
+#     rather than duplicated. "In flight" means the broker has not
+#     answered yet, which is the only moment a duplicate can be an
+#     accident; once a trade has settled, the next click is a new trade.
+#
+# Deliberately NOT a time window over symbol and side: that would refuse
+# a legitimate second entry minutes later, which is a normal thing to do.
+DEMO_COMMAND_NS = _uuid.UUID("6f1f5b6e-0a3a-4f2e-9d51-7f0d9a2c4b88")
+UNSETTLED = ("pending", "dispatched")
+
+
+def _demo_command_id(tok: str, client_key: str) -> str:
+    """The command id one user action will always map to.
+
+    Derived from the token AND the key, so two prospects cannot collide
+    and a browser cannot name a command id belonging to somebody else.
+    """
+    return str(_uuid.uuid5(DEMO_COMMAND_NS, f"{tok}:{client_key}"))
+
+
+def _command_by_id(sb: Client, tok: str, cmd_id: str) -> dict:
+    """This token's command with this id, or nothing."""
+    try:
+        rows = (sb.table("bot_orders")
+                .select("command_id,status,symbol,side")
+                .eq("command_id", cmd_id).eq("demo_token", tok)
+                .limit(1).execute()).data or []
+    except Exception:  # noqa: BLE001
+        return {}
+    return rows[0] if rows else {}
+
+
+def _inflight_market(sb: Client, tok: str, sym: str, side: str) -> dict:
+    """An identical market command the broker has not answered yet."""
+    try:
+        rows = (sb.table("bot_orders")
+                .select("command_id,status,symbol,side,created_at")
+                .eq("demo_token", tok).eq("demo_kind", "market")
+                .eq("symbol", sym).eq("side", side)
+                .in_("status", list(UNSETTLED))
+                .order("created_at", desc=True).limit(1).execute()).data or []
+    except Exception:  # noqa: BLE001
+        return {}
+    return rows[0] if rows else {}
+
 
 class ControlIn(BaseModel):
     action: str
@@ -1565,6 +1774,8 @@ class ControlIn(BaseModel):
     sl: float | None = None
     tp: float | None = None
     symbol: str | None = None        # chosen from DEMO_SYMBOLS, or ignored
+    # One user action's retry key. Never a command id: see _demo_command_id.
+    client_key: str | None = None
 
 
 async def _owned_ticket(sb: Client, tok: str, ticket: int) -> dict:
@@ -1621,6 +1832,31 @@ async def demo_control(token: str, body: ControlIn,
                  "symbol": "", "side": "buy"}
 
     if action in ("buy", "sell"):
+        sym, lot = _demo_symbol(body.symbol)
+
+        # Duplicate checks come BEFORE the budget. A retry is not a
+        # second trade, so it must not spend a second run either.
+        key = _clean(body.client_key or "", 80)
+        forced_id = _demo_command_id(tok, key) if key else ""
+        if forced_id:
+            again = await offload(_command_by_id, sb, tok, forced_id)
+            if again:
+                return {"ok": True, "action": action,
+                        "command_id": again.get("command_id"),
+                        "state": again.get("status") or "queued",
+                        "duplicate": True,
+                        "note": "this action is already placed — "
+                                "poll it rather than sending it again"}
+        live = await offload(_inflight_market, sb, tok, sym, action)
+        if live:
+            return {"ok": True, "action": action,
+                    "command_id": live.get("command_id"),
+                    "state": live.get("status") or "queued",
+                    "duplicate": True,
+                    "note": "the broker has not answered the last "
+                            f"{action} on {sym} yet — poll it rather than "
+                            "sending it again"}
+
         # Only opening a new market position spends the budget. Modify,
         # breakeven, close and a positions read are management of a trade
         # that already exists and cost nothing.
@@ -1632,10 +1868,13 @@ async def demo_control(token: str, body: ControlIn,
             raise HTTPException(http.HTTP_429_TOO_MANY_REQUESTS,
                                 _runs_exhausted(purpose, used, allowed,
                                                 window))
-        sym, lot = _demo_symbol(body.symbol)
         row.update({"symbol": sym, "side": action, "lots": lot,
                     "command_type": "market", "demo_kind": "market",
                     "note": f"[demo] {link['provider_name']} {sym}"[:300]})
+        if forced_id:
+            # The retry key decides the row's identity, so a second
+            # arrival of the same click cannot insert a second row.
+            row["command_id"] = forced_id
     elif action == "positions":
         # A positions read needs no ticket: "what is open?" is a valid
         # question with an empty answer. Requiring one meant the read
@@ -1682,7 +1921,7 @@ async def demo_control(token: str, body: ControlIn,
 
     return {"ok": True, "action": action,
             "command_id": created.get("command_id"),
-            "state": "queued",
+            "state": "queued", "duplicate": False,
             "note": "poll the command for the broker's answer"}
 
 
