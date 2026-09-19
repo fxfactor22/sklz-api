@@ -481,3 +481,66 @@ def test_n_no_webhook_is_the_silent_button_case(monkeypatch):
 
 def test_n_missing_token_is_not_an_exception():
     assert P._webhook_report("")["configured"] is False
+
+
+# ── O. the funnel answers as the bot that was tapped ───────────────
+import asyncio  # noqa: E402
+import contextvars  # noqa: E402
+
+
+def test_o_default_path_still_means_the_sales_bot(monkeypatch):
+    """Every existing registration must behave exactly as before."""
+    monkeypatch.setenv("TG_SALES_BOT_TOKEN", "sales-token")
+    B._REPLY_TOKEN.set("")
+    assert B._token() == "sales-token"
+
+
+def test_o_a_named_bot_answers_as_itself(monkeypatch):
+    monkeypatch.setenv("TG_SALES_BOT_TOKEN", "sales-token")
+    monkeypatch.setenv("TG_PROMO_TOKEN", "promo-token")
+
+    def run():
+        B._REPLY_TOKEN.set(os.environ["TG_PROMO_TOKEN"])
+        return B._token()
+
+    # a copied context, the way asyncio.to_thread runs the work
+    assert contextvars.copy_context().run(run) == "promo-token"
+    B._REPLY_TOKEN.set("")
+
+
+def test_o_the_token_survives_the_worker_thread(monkeypatch):
+    """The reply is sent inside offload. If the context did not copy,
+    the wrong bot would answer and nothing would arrive."""
+    monkeypatch.setenv("TG_PROMO_TOKEN", "promo-token")
+
+    async def go():
+        B._REPLY_TOKEN.set("promo-token")
+        from aio import offload
+        return await offload(B._token)
+
+    assert asyncio.run(go()) == "promo-token"
+
+
+def test_o_unknown_bot_name_is_refused(monkeypatch):
+    async def go():
+        return await B.webhook_for_bot("s", "nonsense", None, None)
+    assert asyncio.run(go()) == {"ok": False}
+
+
+def test_o_a_configured_name_with_no_token_is_refused(monkeypatch):
+    monkeypatch.delenv("TG_PROMO_TOKEN", raising=False)
+
+    async def go():
+        return await B.webhook_for_bot("s", "promo", None, None)
+    assert asyncio.run(go()) == {"ok": False}
+
+
+def test_o_both_channels_have_a_route(monkeypatch):
+    assert set(B._BOT_TOKEN_ENV) == {"sales", "promo"}
+    assert B._BOT_TOKEN_ENV["promo"] == "TG_PROMO_TOKEN"
+
+
+def test_o_the_two_webhook_paths_are_registered():
+    paths = {r.path for r in B.router.routes}
+    assert "/api/tgbot/webhook/{secret}" in paths
+    assert "/api/tgbot/webhook/{secret}/{bot}" in paths

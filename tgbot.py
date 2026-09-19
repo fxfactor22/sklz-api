@@ -25,6 +25,7 @@ via /forget.
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import urllib.parse
@@ -64,8 +65,39 @@ def _u(path: str, ref: str = "", fragment: str = "") -> str:
     return base + (("#" + fragment) if fragment else "")
 
 
+# WHICH BOT ANSWERS
+# =================
+# The funnel used to assume one bot: whatever TG_SALES_BOT_TOKEN held.
+# A second channel with its own bot broke that assumption in a way that
+# is silent rather than loud — Telegram delivered the tap, the handler
+# ran, and the reply was sent with a token belonging to a bot the user
+# had never started, so nothing arrived and nothing errored.
+#
+# Pointing TG_SALES_BOT_TOKEN at the new bot would have moved the
+# problem rather than fixed it: the Arabic channel's pinned button opens
+# the ORIGINAL bot, and a bot may only message people who started IT.
+# One variable cannot be right for both.
+#
+# So the receiving bot is identified by the webhook path it was
+# registered under, and the reply goes out on that bot's own token. The
+# original single-segment path still means TG_SALES_BOT_TOKEN, so every
+# existing registration behaves exactly as before.
+_BOT_TOKEN_ENV = {
+    "sales": "TG_SALES_BOT_TOKEN",
+    "promo": "TG_PROMO_TOKEN",
+}
+
+_REPLY_TOKEN: contextvars.ContextVar = contextvars.ContextVar(
+    "tgbot_reply_token", default="")
+
+
 def _token() -> str:
-    return os.environ.get("TG_SALES_BOT_TOKEN", "")
+    """The bot this request must answer as.
+
+    asyncio.to_thread copies the context, so a token set on the request
+    task is still the right one inside `offload`.
+    """
+    return _REPLY_TOKEN.get() or os.environ.get("TG_SALES_BOT_TOKEN", "")
 
 
 def _api(method: str, payload: dict) -> dict:
@@ -594,6 +626,25 @@ async def _asend(*args, **kwargs) -> dict:
 
 async def _aapi(method: str, payload: dict) -> dict:
     return await offload(_api, method, payload)
+
+
+@router.post("/webhook/{secret}/{bot}")
+async def webhook_for_bot(secret: str, bot: str, request: Request,
+                          sb: Client = Depends(get_supabase)) -> dict:
+    """The same funnel, answered by a named bot.
+
+    Register a second bot at /api/tgbot/webhook/<secret>/promo and it
+    runs this flow and replies as itself, without disturbing the bot
+    already registered on the single-segment path.
+    """
+    env = _BOT_TOKEN_ENV.get(bot)
+    if not env:
+        return {"ok": False}
+    tok = os.environ.get(env, "").strip()
+    if not tok:
+        return {"ok": False}
+    _REPLY_TOKEN.set(tok)
+    return await webhook(secret, request, sb)
 
 
 @router.post("/webhook/{secret}")
