@@ -28,11 +28,11 @@ from __future__ import annotations
 import contextvars
 import json
 import os
-import urllib.parse
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from supabase import Client
 
 from aio import offload
@@ -100,18 +100,54 @@ def _token() -> str:
     return _REPLY_TOKEN.get() or os.environ.get("TG_SALES_BOT_TOKEN", "")
 
 
+# WHY FAILURES ARE RECORDED
+# =========================
+# Every failure here used to become a return value that no caller read.
+# A bot that could not answer looked exactly like a bot that had nothing
+# to say: Telegram returned 400 with a precise explanation, urlopen
+# raised, the reason string went into a dict, and the dict was dropped.
+# Diagnosing one silent button then took an afternoon of guessing.
+#
+# The last few failures are kept in memory and served to an admin
+# endpoint. The token is never part of what is stored: it appears only
+# in the URL, which is never logged.
+_FAILURES: list = []
+
+
+def _note(what: str, detail: str) -> None:
+    _FAILURES.append({
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "what": what, "detail": detail[:300]})
+    del _FAILURES[:-20]
+
+
 def _api(method: str, payload: dict) -> dict:
     tok = _token()
     if not tok:
-        return {"ok": False, "reason": "TG_SALES_BOT_TOKEN not set"}
+        _note(method, "no bot token resolved for this request")
+        return {"ok": False, "reason": "no bot token"}
     try:
         req = urllib.request.Request(
             f"https://api.telegram.org/bot{tok}/{method}",
             data=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=15) as r:
-            return json.loads(r.read().decode())
+            out = json.loads(r.read().decode())
+        if not out.get("ok"):
+            _note(method, str(out.get("description", out))[:300])
+        return out
+    except urllib.error.HTTPError as exc:
+        # Telegram explains itself in the BODY of a 4xx — "chat not
+        # found", "can't parse entities", "bot was blocked". Reading it
+        # is the difference between a diagnosis and a shrug.
+        try:
+            body = exc.read().decode()[:300]
+        except Exception:  # noqa: BLE001
+            body = ""
+        _note(method, f"HTTP {exc.code}: {body}")
+        return {"ok": False, "reason": body or f"HTTP {exc.code}"}
     except Exception as exc:  # noqa: BLE001
+        _note(method, f"{type(exc).__name__}: {exc}"[:300])
         return {"ok": False, "reason": str(exc)[:160]}
 
 
@@ -121,10 +157,21 @@ def send(chat_id: int, text: str, buttons: list | None = None,
                "disable_web_page_preview": True}
     if buttons:
         payload["reply_markup"] = {"inline_keyboard": buttons}
+    method = "sendMessage"
     if edit_id:
         payload["message_id"] = edit_id
-        return _api("editMessageText", payload)
-    return _api("sendMessage", payload)
+        method = "editMessageText"
+    out = _api(method, payload)
+    if out.get("ok"):
+        return out
+    # Telegram rejects the WHOLE message when Markdown will not parse,
+    # and says only "can't parse entities". Sending it unformatted is
+    # better than sending nothing, and costs one extra call on a path
+    # that has already failed.
+    if "parse" in str(out.get("reason", "")).lower():
+        payload.pop("parse_mode", None)
+        return _api(method, payload)
+    return out
 
 
 # ── copy, in three languages ────────────────────────────────────────
@@ -854,6 +901,29 @@ async def webhook(secret: str, request: Request,
 
     await _asend(chat_id, "/start", _lang_buttons())
     return {"ok": True}
+
+
+@router.get("/diag")
+async def diag(request: Request) -> dict:
+    """The last few things Telegram refused, and why.
+
+    Booleans for configuration, never values: knowing that a token is
+    set is enough to act on, and printing one would be a leak in a
+    diagnostic meant to make leaks unnecessary.
+    """
+    key = os.environ.get("SIGNAL_WEBHOOK_KEY", "")
+    got = (request.headers.get("authorization", "")
+           .replace("Bearer ", "").strip())
+    if not key or got != key:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "admin only")
+    return {
+        "webhook_secret_set": bool(os.environ.get("TG_SALES_WEBHOOK_SECRET")),
+        "tokens_set": {name: bool(os.environ.get(env))
+                       for name, env in _BOT_TOKEN_ENV.items()},
+        "recent_failures": list(reversed(_FAILURES)),
+        "note": ("Empty recent_failures with a silent bot means the "
+                 "handler never reached a send."),
+    }
 
 
 @router.get("/leads")

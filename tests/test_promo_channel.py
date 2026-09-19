@@ -485,6 +485,7 @@ def test_n_missing_token_is_not_an_exception():
 
 # ── O. the funnel answers as the bot that was tapped ───────────────
 import asyncio  # noqa: E402
+import io  # noqa: E402
 import contextvars  # noqa: E402
 
 
@@ -544,3 +545,102 @@ def test_o_the_two_webhook_paths_are_registered():
     paths = {r.path for r in B.router.routes}
     assert "/api/tgbot/webhook/{secret}" in paths
     assert "/api/tgbot/webhook/{secret}/{bot}" in paths
+
+
+# ── P. a refused send must never be silent ─────────────────────────
+def test_p_telegram_error_body_is_recorded(monkeypatch):
+    """Telegram explains a 400 in the body. Dropping it is what made a
+    silent button take an afternoon to diagnose."""
+    import urllib.error
+    B._FAILURES.clear()
+    monkeypatch.setenv("TG_SALES_BOT_TOKEN", "tok")
+    B._REPLY_TOKEN.set("")
+
+    def boom(_req, timeout=0):
+        raise urllib.error.HTTPError(
+            "https://api.telegram.org/botX/sendMessage", 400, "Bad Request",
+            {}, io.BytesIO(b'{"ok":false,"description":"chat not found"}'))
+
+    monkeypatch.setattr(B.urllib.request, "urlopen", boom)
+    out = B._api("sendMessage", {"chat_id": 1, "text": "hi"})
+    assert out["ok"] is False
+    assert "chat not found" in B._FAILURES[-1]["detail"]
+
+
+def test_p_a_200_that_says_not_ok_is_recorded(monkeypatch):
+    B._FAILURES.clear()
+    monkeypatch.setenv("TG_SALES_BOT_TOKEN", "tok")
+    B._REPLY_TOKEN.set("")
+
+    def fake(_req, timeout=0):
+        class R:
+            def __enter__(s): return s
+            def __exit__(s, *a): return False
+            def read(s): return b'{"ok":false,"description":"bot was blocked"}'
+        return R()
+
+    monkeypatch.setattr(B.urllib.request, "urlopen", fake)
+    B._api("sendMessage", {"chat_id": 1})
+    assert "blocked" in B._FAILURES[-1]["detail"]
+
+
+def test_p_a_missing_token_is_recorded_not_shrugged(monkeypatch):
+    B._FAILURES.clear()
+    monkeypatch.delenv("TG_SALES_BOT_TOKEN", raising=False)
+    B._REPLY_TOKEN.set("")
+    assert B._api("sendMessage", {})["ok"] is False
+    assert B._FAILURES[-1]["detail"]
+
+
+def test_p_no_failure_record_ever_contains_a_token(monkeypatch):
+    import urllib.error
+    B._FAILURES.clear()
+    monkeypatch.setenv("TG_SALES_BOT_TOKEN", "SUPERSECRETTOKEN")
+    B._REPLY_TOKEN.set("")
+
+    def boom(_req, timeout=0):
+        raise urllib.error.HTTPError("u", 401, "Unauthorized", {},
+                                     io.BytesIO(b'{"description":"Unauthorized"}'))
+
+    monkeypatch.setattr(B.urllib.request, "urlopen", boom)
+    B._api("sendMessage", {"chat_id": 1})
+    assert "SUPERSECRETTOKEN" not in repr(B._FAILURES)
+
+
+def test_p_markdown_refusal_retries_as_plain_text(monkeypatch):
+    """A message Telegram will not format is still worth sending."""
+    monkeypatch.setenv("TG_SALES_BOT_TOKEN", "tok")
+    B._REPLY_TOKEN.set("")
+    calls = []
+
+    def fake_api(method, payload):
+        calls.append(dict(payload))
+        if "parse_mode" in payload:
+            return {"ok": False, "reason": "can't parse entities at byte 12"}
+        return {"ok": True}
+
+    monkeypatch.setattr(B, "_api", fake_api)
+    assert B.send(1, "*broken", None)["ok"] is True
+    assert len(calls) == 2
+    assert "parse_mode" in calls[0] and "parse_mode" not in calls[1]
+
+
+def test_p_an_unrelated_failure_is_not_retried(monkeypatch):
+    monkeypatch.setenv("TG_SALES_BOT_TOKEN", "tok")
+    calls = []
+
+    def fake_api(method, payload):
+        calls.append(payload)
+        return {"ok": False, "reason": "chat not found"}
+
+    monkeypatch.setattr(B, "_api", fake_api)
+    B.send(1, "hello", None)
+    assert len(calls) == 1
+
+
+def test_p_the_ring_does_not_grow_without_bound():
+    B._FAILURES.clear()
+    for i in range(50):
+        B._note("sendMessage", f"failure {i}")
+    assert len(B._FAILURES) == 20
+    assert "failure 49" in B._FAILURES[-1]["detail"]
