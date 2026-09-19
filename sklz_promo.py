@@ -529,7 +529,7 @@ def start(app, log=print) -> None:
 
 # ── endpoints ───────────────────────────────────────────────────────
 def _admin(request: Request) -> None:
-    key = os.environ.get("SIGNAL_WEBHOOK_KEY", "")
+    key = os.environ.get("SIGNAL_WEBHOOK_KEY", "").strip()
     got = (request.headers.get("authorization", "")
            .replace("Bearer ", "").strip())
     if not key or got != key:

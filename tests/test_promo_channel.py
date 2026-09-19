@@ -644,3 +644,37 @@ def test_p_the_ring_does_not_grow_without_bound():
         B._note("sendMessage", f"failure {i}")
     assert len(B._FAILURES) == 20
     assert "failure 49" in B._FAILURES[-1]["detail"]
+
+
+# ── Q. a stray space on a paste must not look like a wrong key ─────
+def test_q_admin_key_tolerates_surrounding_whitespace(monkeypatch):
+    """Railway values and terminal pastes pick up whitespace. An
+    invisible character should not present as 'wrong credential'."""
+    monkeypatch.setenv("SIGNAL_WEBHOOK_KEY", "  the-key \n")
+
+    class Req:
+        headers = {"authorization": "Bearer the-key"}
+
+    P._admin(Req())          # must not raise
+
+
+def test_q_webhook_secret_tolerates_whitespace(monkeypatch):
+    monkeypatch.setenv("TG_SALES_WEBHOOK_SECRET", " sekrit ")
+    src = open("tgbot.py").read()
+    assert 'os.environ.get("TG_SALES_WEBHOOK_SECRET", "").strip()' in src
+    assert "secret.strip() != expected" in src
+
+
+def test_q_rejections_are_logged_without_the_values(capsys):
+    B._FAILURES.clear()
+    B._note("sendMessage", "chat not found")
+    out = capsys.readouterr().out
+    assert "chat not found" in out and "[tgbot]" in out
+
+
+def test_q_the_log_line_for_a_bad_secret_prints_no_secret():
+    src = open("tgbot.py").read()
+    block = src[src.index("webhook rejected"):src.index("webhook rejected") + 400]
+    assert "len(secret)" in block and "len(expected)" in block
+    # the values themselves must not be interpolated
+    assert "{secret}" not in block and "{expected}" not in block

@@ -115,6 +115,10 @@ _FAILURES: list = []
 
 
 def _note(what: str, detail: str) -> None:
+    # Also printed, because reading the in-memory ring needs an admin key
+    # and the moment you most need a diagnostic is the moment the key is
+    # the thing that is wrong. Railway's log viewer needs no key at all.
+    print(f"[tgbot] {what} refused: {detail[:300]}", flush=True)
     _FAILURES.append({
         "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "what": what, "detail": detail[:300]})
@@ -698,8 +702,15 @@ async def webhook_for_bot(secret: str, bot: str, request: Request,
 async def webhook(secret: str, request: Request,
                   sb: Client = Depends(get_supabase)) -> dict:
     """Telegram posts every update here."""
-    expected = os.environ.get("TG_SALES_WEBHOOK_SECRET", "")
-    if not expected or secret != expected:
+    expected = os.environ.get("TG_SALES_WEBHOOK_SECRET", "").strip()
+    if not expected or secret.strip() != expected:
+        # Neither value is printed. Which of the two conditions failed,
+        # and the lengths, are enough to tell "never configured" from
+        # "configured differently" from "a stray space on a paste".
+        print(f"[tgbot] webhook rejected: "
+              f"{'TG_SALES_WEBHOOK_SECRET not set' if not expected else 'secret mismatch'}"
+              f" (sent {len(secret)} chars, expected {len(expected)})",
+              flush=True)
         return {"ok": False}
 
     try:
@@ -911,10 +922,15 @@ async def diag(request: Request) -> dict:
     set is enough to act on, and printing one would be a leak in a
     diagnostic meant to make leaks unnecessary.
     """
-    key = os.environ.get("SIGNAL_WEBHOOK_KEY", "")
+    key = os.environ.get("SIGNAL_WEBHOOK_KEY", "").strip()
     got = (request.headers.get("authorization", "")
            .replace("Bearer ", "").strip())
     if not key or got != key:
+        # An admin endpoint that only ever says "no" cannot help you fix
+        # the reason it is saying no. Lengths are not the secret.
+        print(f"[tgbot] /diag denied: "
+              f"{'SIGNAL_WEBHOOK_KEY not set' if not key else 'key mismatch'}"
+              f" (sent {len(got)} chars, expected {len(key)})", flush=True)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "admin only")
     return {
         "webhook_secret_set": bool(os.environ.get("TG_SALES_WEBHOOK_SECRET")),
