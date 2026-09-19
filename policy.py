@@ -45,9 +45,18 @@ _NUM_AR = (r"(?:[0-9٠-٩]+|واحدة|اثنتين|اثنتان|ثلاث|أرب
 _RATIO_AR = re.compile(
     _NUM_AR + r"\s*(?:صفقات|صفقة|مرات|مرة)?\s*من\s*(?:كل\s*)?" + _NUM_AR
     + r"|" + _NUM_AR + r"\s*من\s*أصل\s*" + _NUM_AR)
+# The Arabic side has always understood a ratio written in words,
+# because "ثلاث من عشر" is how a claim gets past a digit filter. English
+# has exactly the same escape hatch and did not cover it: "seven out of
+# ten signals close in profit" is a 70% win rate spelled out, and it
+# passed every check until a marketing post wrote it.
+_NUM_EN = (r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|"
+           r"eleven|twelve|fifteen|twenty|thirty|forty|fifty|hundred)")
 _RATIO_EN = re.compile(
-    r"\b\d+\s*(?:out\s*of|of|in)\s*\d+\b\s*(?:trades?|signals?|wins?)?"
-    r"|\b\d+\s*(?:trades?|signals?)\s*(?:out\s*of|of|in)\s*\d+\b",
+    r"\b" + _NUM_EN + r"\s*(?:out\s*of|of|in)\s*" + _NUM_EN
+    + r"\b\s*(?:trades?|signals?|wins?)?"
+    r"|\b" + _NUM_EN + r"\s*(?:trades?|signals?)\s*(?:out\s*of|of|in)\s*"
+    + _NUM_EN + r"\b",
     re.IGNORECASE)
 
 _CLAIM_AR = r"(?:نجاح|رابح|ربح|دقة|إصابة|خسار)"

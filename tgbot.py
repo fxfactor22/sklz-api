@@ -43,6 +43,26 @@ SITE = "https://www.sklzlabs.com"
 BROKER = "https://mexatlantic.com/account/live-account?ibNum=9904917"
 ADMIN = "https://t.me/skillscoin"
 
+# A lead that arrives from a channel with its own referral code must
+# carry that code all the way to checkout, or the channel cannot be
+# measured. There is no ref COLUMN on tg_leads and adding one for a
+# value that is a pure function of `source` would be a migration for
+# nothing — so the map lives here and the lookup is by source.
+_SOURCE_REF_ENV = {"mindsiege": "TG_PROMO_REF"}
+
+
+def _ref_for(lead: dict) -> str:
+    env = _SOURCE_REF_ENV.get((lead.get("source") or "").strip())
+    return os.environ.get(env, "").strip() if env else ""
+
+
+def _u(path: str, ref: str = "", fragment: str = "") -> str:
+    """A site URL carrying the referral code, if this lead has one."""
+    base = SITE + (path if path.startswith("/") else "/" + path)
+    if ref:
+        base += ("&" if "?" in base else "?") + "ref=" + ref
+    return base + (("#" + fragment) if fragment else "")
+
 
 def _token() -> str:
     return os.environ.get("TG_SALES_BOT_TOKEN", "")
@@ -318,6 +338,149 @@ _F_QUESTIONS = {
 
 _F_ORDER = ["type", "workflow", "audience", "accounts", "problem"]
 
+# ── the fork ────────────────────────────────────────────────────────
+# Someone arriving from a promotion channel has not told us yet whether
+# they sell signals or buy them, and the two need different questions and
+# different packages. Asking once, first, costs one tap and saves
+# recommending a $1,499 business layer to somebody who wanted a $29
+# indicator subscription.
+_ROLE_WELCOME = (
+    "*SKLZ Labs*\n\n"
+    "A few short questions and you get the option that actually fits \u2014 "
+    "including being told when none of them does.\n\n"
+    "*Which one are you?*")
+
+# Having just said "I run a signal channel", being asked "what describes
+# you best?" with "I trade my own account" among the options reads like
+# the bot was not listening. Same column, same values, same
+# recommendation logic — only the wording narrows to what is still
+# genuinely unknown. The demo path keeps the original question, which is
+# correct there because no role was asked first.
+_ROLE_TYPE_Q = ("*Where are you with it?*", [
+    ("I already run a channel", "provider"),
+    ("I manage accounts for others", "multi"),
+    ("I want to start one", "starting")])
+
+
+def _role_type_buttons() -> list:
+    return [[{"text": label, "callback_data": f"f:type:{val}"}]
+            for label, val in _ROLE_TYPE_Q[1]]
+
+
+_ROLE_BUTTONS = [
+    [{"text": "\U0001F4E1 I run \u2014 or want to run \u2014 a signal channel",
+      "callback_data": "f:role:provider"}],
+    [{"text": "\U0001F4C8 I trade my own account",
+      "callback_data": "f:role:client"}],
+]
+
+# The client branch writes into columns that already exist: `trades`
+# from the retail flow, and f_accounts / f_problem from the funnel. The
+# values are free text, so a new value costs nothing. No migration.
+_C_QUESTIONS = {
+    "trade": ("*What do you trade?*", [
+        ("Forex and metals", "forex"), ("Crypto", "crypto"),
+        ("Both", "both"), ("Still learning", "learning")]),
+    "accounts": ("*How many accounts are you trading?*", [
+        ("Just one", "one"), ("Two or three of my own", "own_multi"),
+        ("Prop firm evaluations", "prop"),
+        ("I already copy another trader", "copy")]),
+    "goal": ("*What would help most right now?*", [
+        ("Copying a strategy automatically", "copy"),
+        ("Signals with real levels", "signals"),
+        ("Better chart analysis", "analysis"),
+        ("Seeing what my own trading does", "journal")]),
+}
+
+_C_ORDER = ["trade", "accounts", "goal"]
+_C_COLUMN = {"trade": "trades", "accounts": "f_accounts",
+             "goal": "f_problem"}
+
+
+def _c_buttons(stage: str) -> list:
+    q = _C_QUESTIONS.get(stage)
+    return [[{"text": label, "callback_data": f"c:{stage}:{val}"}]
+            for label, val in q[1]] if q else []
+
+
+def _c_next(lead: dict) -> str:
+    for k in _C_ORDER:
+        if not lead.get(_C_COLUMN[k]):
+            return k
+    return ""
+
+
+def _plan_price(product: str) -> str:
+    """The monthly price, from the same table Stripe is charged from.
+
+    Quoting a figure that lives only in this file is how a bot ends up
+    promising a price the checkout does not honour.
+    """
+    try:
+        import billing
+        name, cents, interval = billing.CATALOG[product]
+        return f"${cents // 100}/{interval}"
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _c_recommend(lead: dict) -> tuple[str, str, str]:
+    """Which retail plan fits. Returns (name, product key, why)."""
+    trades = lead.get("trades") or ""
+    accounts = lead.get("f_accounts") or ""
+    goal = lead.get("f_problem") or ""
+
+    if trades == "learning":
+        return ("SKLZ Core", "copy_basic_monthly",
+                "You said you are still learning, so start at the bottom "
+                "and do not pay for what you cannot use yet. Core gives "
+                "you the indicators, chart analysis and the journal. "
+                "Build a hundred trades of history before you spend more "
+                "than this \u2014 the journal is the part that will "
+                "tell you what your trading actually does.")
+    if accounts in ("own_multi", "prop"):
+        return ("SKLZ Pro", "copy_pro_monthly",
+                "Several accounts, and prop evaluations especially, are "
+                "where the cheaper plans stop: they copy on the partner "
+                "broker only, one account at a time. Pro copies on any "
+                "broker and up to ten accounts at once, which is the "
+                "reason it exists.")
+    if trades in ("crypto", "both"):
+        return ("SKLZ Plus", "copy_crypto_monthly",
+                "Crypto is the line between the two lower plans. Plus is "
+                "Core plus crypto trading and crypto copy trading; if "
+                "you were only trading FX you would not need it.")
+    if goal == "journal":
+        return ("SKLZ Core", "copy_basic_monthly",
+                "What you described is a measurement problem, not a "
+                "signal problem. Core includes the journal and the AI "
+                "reviews, and that is the part that answers it. You can "
+                "move up later if you ever need crypto or more accounts.")
+    return ("SKLZ Core", "copy_basic_monthly",
+            "One account on the partner broker, forex and metals \u2014 "
+            "Core covers exactly that, with the indicators, chart "
+            "analysis, signals and journal included. Nothing here needs "
+            "the more expensive plans.")
+
+
+def _c_summary(lead: dict) -> tuple[str, list]:
+    name, product, why = _c_recommend(lead)
+    ref = _ref_for(lead)
+    price = _plan_price(product)
+    head = f"*{name}*" + (f"\n{price}" if price else "")
+    text = (f"{head}\n\n{why}\n\n"
+            "Annual billing saves 20 percent. Seven-day money-back "
+            "guarantee on a first purchase, and you can cancel from the "
+            "billing portal.\n\n"
+            "_Software tools only. Not financial advice. Trading involves "
+            "risk of loss._")
+    buttons = [
+        [{"text": f"\u2705 Get {name}", "url": _u("/pricing.html", ref)}],
+        [{"text": "\U0001F4CA Compare all plans",
+          "url": _u("/pricing.html", ref)}],
+        [{"text": "\U0001F464 Talk to a human", "callback_data": "f:human:1"}]]
+    return text, buttons
+
 
 def _f_buttons(stage: str) -> list:
     q = _F_QUESTIONS.get(stage)
@@ -371,18 +534,18 @@ def _f_summary(lead: dict, pkg_key: str, why: str) -> tuple[str, list]:
     except Exception:  # noqa: BLE001
         name, price = "SKLZ Signal Desk", ""
 
-    site = os.environ.get("SITE_URL", "https://www.sklzlabs.com")
+    ref = _ref_for(lead)
     text = (f"*{name}*\n{price}\n\n{why}\n\n"
             "Multi-account copying available with Signal Desk "
             "implementation.\n\n"
             "_Software and automation only. Not financial advice._")
     buttons = [
         [{"text": "\u26a1 Try the live demo",
-          "url": f"{site}/signal-desk.html#demo"}],
+          "url": _u("/signal-desk.html", ref, "demo")}],
         [{"text": "\U0001F4E6 View packages",
-          "url": f"{site}/signal-desk.html#packages"}],
+          "url": _u("/signal-desk.html", ref, "packages")}],
         [{"text": "\u2705 Activate",
-          "url": f"{site}/signal-desk.html#packages"}],
+          "url": _u("/signal-desk.html", ref, "packages")}],
         [{"text": "\U0001F464 Talk to a human",
           "callback_data": "f:human:1"}]]
     return text, buttons
@@ -468,8 +631,42 @@ async def webhook(secret: str, request: Request,
         lead = _get_lead(sb, chat_id)
         lang = lead.get("lang") or "en"
 
+        if data.startswith("c:"):
+            _, stage, val = data.split(":", 2)
+            col = _C_COLUMN.get(stage)
+            if not col:
+                return {"ok": True}
+            _save_lead(sb, chat_id, {col: val, "step": f"c_{stage}_done"})
+            lead = _get_lead(sb, chat_id) or {}
+            lead[col] = val
+            nxt = _c_next(lead)
+            if nxt:
+                _save_lead(sb, chat_id, {"step": f"c_{nxt}"})
+                await _asend(chat_id, _C_QUESTIONS[nxt][0], _c_buttons(nxt))
+                return {"ok": True}
+            _name, product, _why = _c_recommend(lead)
+            _save_lead(sb, chat_id, {"recommended": product,
+                                     "step": "c_done"})
+            text, buttons = _c_summary(lead)
+            await _asend(chat_id, text, buttons)
+            return {"ok": True}
+
         if data.startswith("f:"):
             _, stage, val = data.split(":", 2)
+            if stage == "role":
+                # The fork. A client never sees the provider questions and
+                # a provider never sees the retail plans, so neither is
+                # recommended something priced for the other one.
+                if val == "client":
+                    _save_lead(sb, chat_id, {"f_type": "client",
+                                             "step": "c_trade"})
+                    await _asend(chat_id, _C_QUESTIONS["trade"][0],
+                                 _c_buttons("trade"))
+                else:
+                    _save_lead(sb, chat_id, {"step": "f_type"})
+                    await _asend(chat_id, _ROLE_TYPE_Q[0],
+                                 _role_type_buttons())
+                return {"ok": True}
             if stage == "human":
                 _save_lead(sb, chat_id, {"human_requested": True,
                                          "step": "f_human"})
@@ -561,6 +758,16 @@ async def webhook(secret: str, request: Request,
         # provider evaluating the product, not a retail lead choosing a
         # language. They enter their own path and never touch the Arabic
         # flow, which is keyed on a different payload.
+        # The promotion channel's pinned button. Its leads are tagged so
+        # the channel's contribution is countable, and its referral code
+        # rides every link they are given from here on.
+        if payload.startswith("mindsiege"):
+            _save_lead(sb, chat_id, {
+                "lang": "en", "step": "f_role", "source": "mindsiege",
+                "name": (m.get("from") or {}).get("first_name", "")})
+            await _asend(chat_id, _ROLE_WELCOME, _ROLE_BUTTONS)
+            return {"ok": True}
+
         if payload.startswith("demo"):
             _save_lead(sb, chat_id, {
                 "lang": "en", "step": "f_type",

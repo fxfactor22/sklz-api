@@ -42,6 +42,7 @@ import orders_api
 import provisioning
 import demo_api
 import sklz_arabic
+import sklz_promo
 import sklz_tiers
 from copy_scheduler import router as poll_router
 from tgbot import router as tgbot_router
@@ -102,6 +103,7 @@ alerts_api.start(app)
 signal_lifecycle.start(app)
 app.include_router(poll_router)
 app.include_router(sklz_arabic.router)
+app.include_router(sklz_promo.router)
 app.include_router(demo_api.router)
 app.include_router(providers.router)
 app.include_router(provisioning.router)
@@ -113,6 +115,7 @@ app.include_router(orders_api.leads_router)
 app.include_router(orders_api.demo_router)
 copy_scheduler.start(app)
 sklz_arabic.start(app)
+sklz_promo.start(app)
 app.include_router(tgbot_router)
 app.include_router(codes_router)
 app.include_router(signals_router)
