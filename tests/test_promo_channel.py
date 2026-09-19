@@ -415,3 +415,69 @@ def test_m_starting_out_is_still_reachable():
 def test_m_demo_path_keeps_the_original_question():
     assert 'payload.startswith("demo")' in open("tgbot.py").read()
     assert B._F_QUESTIONS["type"][1][1][1] == "self"
+
+
+# ── N. the diagnostic must not leak the secret it checks ───────────
+def test_n_webhook_report_never_returns_the_url(monkeypatch):
+    """The webhook URL ends in TG_SALES_WEBHOOK_SECRET. Returning it to
+    explain a misconfiguration would publish the thing being protected."""
+    monkeypatch.setenv("TG_SALES_WEBHOOK_SECRET", "s3cr3t-value")
+    url = "https://api.sklzlabs.com/api/tgbot/webhook/s3cr3t-value"
+
+    def fake(_u, timeout=0):
+        import io as _io, json as _j
+        class R:
+            def __enter__(s): return s
+            def __exit__(s, *a): return False
+            def read(s): return _j.dumps(
+                {"ok": True, "result": {"url": url, "pending_update_count": 2}}
+            ).encode()
+        return R()
+
+    monkeypatch.setattr(P.urllib.request, "urlopen", fake)
+    rep = P._webhook_report("tok")
+    blob = repr(rep)
+    assert "s3cr3t-value" not in blob
+    assert url not in blob
+    assert rep["path_secret_matches"] is True
+    assert rep["points_at_the_funnel"] is True
+    assert rep["host"] == "api.sklzlabs.com"
+
+
+def test_n_wrong_secret_is_reported_without_revealing_either(monkeypatch):
+    monkeypatch.setenv("TG_SALES_WEBHOOK_SECRET", "current-secret")
+
+    def fake(_u, timeout=0):
+        import json as _j
+        class R:
+            def __enter__(s): return s
+            def __exit__(s, *a): return False
+            def read(s): return _j.dumps({"ok": True, "result": {
+                "url": "https://api.sklzlabs.com/api/tgbot/webhook/old-secret",
+                "pending_update_count": 0}}).encode()
+        return R()
+
+    monkeypatch.setattr(P.urllib.request, "urlopen", fake)
+    rep = P._webhook_report("tok")
+    assert rep["points_at_the_funnel"] is True
+    assert rep["path_secret_matches"] is False
+    assert "old-secret" not in repr(rep)
+    assert "current-secret" not in repr(rep)
+
+
+def test_n_no_webhook_is_the_silent_button_case(monkeypatch):
+    def fake(_u, timeout=0):
+        import json as _j
+        class R:
+            def __enter__(s): return s
+            def __exit__(s, *a): return False
+            def read(s): return _j.dumps(
+                {"ok": True, "result": {"url": ""}}).encode()
+        return R()
+    monkeypatch.setattr(P.urllib.request, "urlopen", fake)
+    rep = P._webhook_report("tok")
+    assert rep["configured"] is False
+
+
+def test_n_missing_token_is_not_an_exception():
+    assert P._webhook_report("")["configured"] is False

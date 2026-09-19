@@ -50,6 +50,7 @@ import asyncio
 import json
 import os
 import re as _re
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
@@ -558,6 +559,100 @@ async def bot(request: Request) -> dict:
     return {"channel": _chat() or "not set",
             "posts_as": await offload(_bot_username, _token()) or "not set",
             "funnel_bot": funnel_link()}
+
+
+def _webhook_report(token: str) -> dict:
+    """What Telegram thinks this bot's webhook is — with the secret cut out.
+
+    The webhook URL ends in TG_SALES_WEBHOOK_SECRET, so the URL itself can
+    never be returned. Host and a boolean 'the path ends with the secret
+    we expect' answer the question without printing the answer.
+    """
+    if not token:
+        return {"configured": False, "reason": "token not set"}
+    try:
+        with urllib.request.urlopen(
+                f"https://api.telegram.org/bot{token}/getWebhookInfo",
+                timeout=10) as r:
+            d = json.loads(r.read().decode())
+    except Exception as exc:  # noqa: BLE001
+        return {"configured": False, "reason": f"{type(exc).__name__}"}
+    if not d.get("ok"):
+        return {"configured": False, "reason": "telegram refused the token"}
+    info = d.get("result") or {}
+    raw = info.get("url") or ""
+    secret = os.environ.get("TG_SALES_WEBHOOK_SECRET", "")
+    host = ""
+    if raw:
+        try:
+            host = urllib.parse.urlsplit(raw).netloc
+        except Exception:  # noqa: BLE001
+            host = "unparseable"
+    return {
+        "configured": bool(raw),
+        "host": host or "(none)",
+        "points_at_the_funnel": bool(raw) and "/api/tgbot/webhook/" in raw,
+        "path_secret_matches": bool(raw and secret and raw.endswith(secret)),
+        "pending_updates": info.get("pending_update_count", 0),
+        "last_error": info.get("last_error_message", ""),
+    }
+
+
+@router.get("/diagnose")
+async def diagnose(request: Request) -> dict:
+    """Why the pinned Start button does or does not answer.
+
+    Posting and answering are two different bots' jobs and either can be
+    wired while the other is not. A pinned button that opens a silent bot
+    is the most expensive failure this channel has, so it gets its own
+    check rather than being inferred from /health.
+    """
+    _admin(request)
+    promo_tok = _token()
+    sales_tok = os.environ.get("TG_SALES_BOT_TOKEN", "")
+    posts_as = await offload(_bot_username, promo_tok)
+    sales_as = await offload(_bot_username, sales_tok)
+    link = funnel_link()
+    link_bot = "@" + link.split("/")[-1].split("?")[0] if link else ""
+
+    wh_link = await offload(
+        _webhook_report,
+        promo_tok if link_bot == posts_as else sales_tok)
+    wh_sales = (wh_link if link_bot == sales_as
+                else await offload(_webhook_report, sales_tok))
+
+    same = bool(posts_as) and posts_as == sales_as
+    if not link_bot:
+        verdict = ("No funnel bot resolves. Set TG_FUNNEL_BOT to the "
+                   "username of the bot whose webhook is registered.")
+    elif link_bot == sales_as and wh_sales.get("path_secret_matches"):
+        verdict = "OK — the Start button opens the bot that owns the webhook."
+    elif not wh_link.get("configured"):
+        verdict = (f"{link_bot} has NO webhook, so Telegram delivers /start "
+                   f"nowhere and the button is silent. Either register this "
+                   f"bot's webhook at /api/tgbot/webhook/<secret>, or point "
+                   f"TG_FUNNEL_BOT at {sales_as or 'the bot that has one'}.")
+    elif not wh_link.get("points_at_the_funnel"):
+        verdict = (f"{link_bot} has a webhook, but it points at "
+                   f"{wh_link.get('host')} rather than this API's funnel "
+                   f"route. Repointing it would break whatever owns it now.")
+    elif not wh_link.get("path_secret_matches"):
+        verdict = (f"{link_bot}'s webhook reaches the funnel route but its "
+                   f"path does not match TG_SALES_WEBHOOK_SECRET, so every "
+                   f"update is rejected. Re-register it with the current "
+                   f"secret.")
+    else:
+        verdict = "OK."
+
+    return {
+        "posts_to_channel_as": posts_as or "not set",
+        "start_button_opens": link_bot or "(unresolved)",
+        "funnel_replies_as": sales_as or "not set",
+        "one_bot_for_both": same,
+        "webhook_of_the_button_bot": wh_link,
+        "webhook_of_the_replying_bot": wh_sales,
+        "verdict": verdict,
+    }
 
 
 @router.post("/preview/{slot}")
