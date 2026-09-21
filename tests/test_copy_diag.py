@@ -159,11 +159,23 @@ def test_b_copy_key_never_in_the_report():
 
 
 # ── C. verdicts name the broken link ────────────────────────────────
-def test_c_paused_slave():
+def test_c_paused_slave_says_whether_the_ea_is_alive():
     db = base_db()
     db["copy_slaves"][0]["enabled"] = False
     v = run_diag(db)["followers"][0]["verdict"]
-    assert v.startswith("PAUSED")
+    assert v.startswith("PAUSED") and "not polling either" in v
+    C._LAST_POLL[SLAVE] = time.time()
+    v = run_diag(db)["followers"][0]["verdict"]
+    assert v.startswith("PAUSED") and "copying paused" in v
+
+
+def test_c_events_without_created_at_still_count():
+    e = event(); del e["created_at"]; e["at"] = NOW
+    out = run_diag(base_db(copy_events=[e]))
+    assert out["master_events_24h"] == 1
+    assert out["errors"] == []
+    stale = event(id=2, created_at="2020-01-01T00:00:00+00:00")
+    assert run_diag(base_db(copy_events=[stale]))["master_events_24h"] == 0
 
 
 def test_c_no_config_row():

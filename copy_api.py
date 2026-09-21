@@ -484,7 +484,13 @@ def _age(iso: str | None, now: datetime) -> int | None:
 def _verdict(slave: dict, cfg: dict | None, q: dict, trades: list,
              events_24h: int, poll_age: int | None) -> str:
     if not slave.get("enabled"):
-        return "PAUSED on the dashboard — press Resume."
+        alive = (poll_age is not None and poll_age <= _POLL_OFFLINE_AFTER)
+        return ("PAUSED on the dashboard — press Resume. "
+                + (f"The EA is polling ({poll_age}s ago) and being told "
+                   "'copying paused'; it copies from the next master trade "
+                   "the moment you resume." if alive else
+                   "The EA is not polling either — resume AND start the "
+                   "terminal."))
     if not cfg:
         return ("NO SUBSCRIPTION to the SKLZ Engine master — Resume on the "
                 "dashboard creates one; the fan-out skips this account.")
@@ -549,10 +555,18 @@ async def diag(request: Request,
     master = m[0] if m else None
     events = []
     if master:
-        events = _rows(errors, "copy_events", sb.table("copy_events")
-                       .select("*").eq("master_id", master["id"])
-                       .gte("created_at", since)
-                       .order("created_at", desc=True).limit(20))
+        # copy_events carries no created_at (the queue does); take the
+        # newest rows by id and keep the ones stamped inside 24h under
+        # whichever timestamp column the table has.
+        raw = _rows(errors, "copy_events", sb.table("copy_events")
+                    .select("*").eq("master_id", master["id"])
+                    .order("id", desc=True).limit(200))
+        for e in raw:
+            ts = e.get("created_at") or e.get("at") or e.get("ts")
+            if ts is None or str(ts) >= since:
+                e["created_at"] = ts
+                events.append(e)
+        events = events[:20]
     slaves = _rows(errors, "copy_slaves",
                    sb.table("copy_slaves").select("*").order("created_at"))
     cfgs = _rows(errors, "copy_configs", sb.table("copy_configs").select("*"))
