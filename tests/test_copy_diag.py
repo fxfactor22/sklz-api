@@ -251,6 +251,17 @@ def test_c_failed_reports_surface_the_ea_error_text():
     assert f["last_reports"][0]["error"] == "symbol not found: ETHUSD"
 
 
+def test_c_old_failures_do_not_colour_todays_verdict():
+    C._LAST_POLL[SLAVE] = time.time()
+    db = base_db(copy_events=[event()], copied_trades=[
+        {"id": 1, "slave_id": SLAVE, "at": "2026-09-01T00:00:00+00:00",
+         "status": "failed", "error": "no position matched SKLZ#1",
+         "symbol": "XAUUSD"}])
+    v = run_diag(db)["followers"][0]["verdict"]
+    assert not v.startswith("EA REFUSING")
+    assert v.startswith("EVENTS ARRIVE BUT NOTHING QUEUED")
+
+
 def test_c_healthy():
     C._LAST_POLL[SLAVE] = time.time()
     db = base_db(copy_events=[event()], copy_queue=[qrow("done", sent_at=NOW)],

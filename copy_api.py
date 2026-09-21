@@ -482,7 +482,7 @@ def _age(iso: str | None, now: datetime) -> int | None:
 
 
 def _verdict(slave: dict, cfg: dict | None, q: dict, trades: list,
-             events_24h: int, poll_age: int | None) -> str:
+             events_24h: int, poll_age: int | None, since: str = "") -> str:
     if not slave.get("enabled"):
         alive = (poll_age is not None and poll_age <= _POLL_OFFLINE_AFTER)
         return ("PAUSED on the dashboard — press Resume. "
@@ -504,7 +504,10 @@ def _verdict(slave: dict, cfg: dict | None, q: dict, trades: list,
     if poll_age > _POLL_OFFLINE_AFTER:
         return (f"EA OFFLINE — last poll {poll_age}s ago. Terminal closed, "
                 "VPS asleep, or the EA was removed from the chart.")
-    fails = [t for t in trades if t.get("status") == "failed"]
+    # Only this window's reports count — a failure from last week says
+    # nothing about why nothing copied today.
+    recent = [t for t in trades if str(t.get("at") or "") >= since]
+    fails = [t for t in recent if t.get("status") == "failed"]
     if fails:
         errs = []
         for t in fails:
@@ -516,7 +519,7 @@ def _verdict(slave: dict, cfg: dict | None, q: dict, trades: list,
     if q.get("expired", 0) and not q.get("done", 0):
         return ("OPENS EXPIRED UNFETCHED — instructions waited >90s. The "
                 "EA is polling now but was not when the master traded.")
-    if events_24h == 0:
+    if events_24h == 0 and not any(q.values()):
         return ("MASTER SILENT — no master events in 24h. On the VPS: is "
                 "SKLZ_COPY_PUBLISH on, and does the runner log "
                 "'[copy]' after an entry? Dashboard/forced entries may "
@@ -618,7 +621,7 @@ async def diag(request: Request,
                                        "slave_lots", "slave_ticket")}
                 for t in trades[:5]],
             "verdict": _verdict(s, cfg, counts, trades, len(events),
-                                poll_age),
+                                poll_age, since),
         })
 
     return {
