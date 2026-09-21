@@ -61,9 +61,8 @@ def _pips(symbol: str, side: str, entry: float, price: float) -> float:
 
 
 def _key_ok(key: str) -> bool:
-    expected = os.environ.get("SIGNAL_WEBHOOK_KEY", "")
-    ingest = os.environ.get("BOT_INGEST_KEY", "")
-    return bool(key) and key in (expected, ingest)
+    from keyauth import engine_key_ok
+    return engine_key_ok(key, "/api/signals/status")
 
 
 def _auth(request_key: str) -> None:

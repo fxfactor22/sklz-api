@@ -44,8 +44,8 @@ def _bearer(req: Request) -> str:
 
 
 def _engine_key_ok(key: str) -> bool:
-    return bool(key) and key in (os.environ.get("SIGNAL_WEBHOOK_KEY", ""),
-                                 os.environ.get("BOT_INGEST_KEY", ""))
+    from keyauth import engine_key_ok
+    return engine_key_ok(key, "/api/mt5copy/event")
 
 
 # ── master events (engine hook / master EA) ─────────────────────────

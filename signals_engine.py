@@ -224,8 +224,11 @@ def send_to_telegram(category: str, text: str) -> dict:
 async def signal_webhook(key: str, payload: dict,
                          sb: Client = Depends(get_supabase)) -> dict:
     """TradingView alert endpoint. `key` is a shared secret in the alert URL."""
-    expected = os.environ.get("SIGNAL_WEBHOOK_KEY", "")
-    if not expected or key != expected:
+    from keyauth import engine_key_ok
+    # TradingView and the engine's own publish both land here. Only the
+    # signal key opens this door — BOT_INGEST_KEY is for the bot routes.
+    if not engine_key_ok(key, "/api/signals/webhook",
+                         names=("SIGNAL_WEBHOOK_KEY",)):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad signal key")
 
     symbol = (payload.get("symbol") or payload.get("ticker") or "").upper()
