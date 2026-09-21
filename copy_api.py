@@ -309,7 +309,16 @@ async def my_slaves(user=Depends(get_current_user),
                     sb: Client = Depends(get_supabase)) -> dict:
     r = (sb.table("copy_slaves").select("*")
          .eq("user_id", user.id).order("created_at").execute())
-    return {"slaves": r.data or []}
+    slaves = r.data or []
+    # Settings were write-only: set once in the wizard, then invisible
+    # and unchangeable. The dashboard needs them back to edit them.
+    configs: dict = {}
+    ids = [s["id"] for s in slaves]
+    if ids:
+        for c in (sb.table("copy_configs").select("*")
+                  .in_("slave_id", ids).execute()).data or []:
+            configs[c["slave_id"]] = c
+    return {"slaves": slaves, "configs": configs}
 
 
 class SlaveToggle(BaseModel):
@@ -355,6 +364,7 @@ class ConfigIn(BaseModel):
     account_size: float = 10000
     lot_mode: str = "multiplier"
     lot_value: float = 1.0
+    min_lot: float = 0.0           # 0 = no floor
     max_lot: float = 1.0
     max_open: int = 5
     max_daily_loss_pct: float = 5.0
@@ -385,6 +395,15 @@ async def upsert_config(body: ConfigIn, user=Depends(get_current_user),
     if body.lot_mode not in ("fixed", "multiplier", "balance",
                              "equity", "risk_pct"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "bad lot mode")
+    if body.lot_value <= 0 or body.max_lot <= 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "lot value and max lot must be above zero")
+    if body.min_lot < 0 or body.min_lot > body.max_lot:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "min lot must be between 0 and max lot")
+    if body.max_open < 1:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "max open must be at least 1")
     sb.table("copy_configs").upsert(
         body.model_dump() | {"enabled": True},
         on_conflict="slave_id,master_id").execute()
