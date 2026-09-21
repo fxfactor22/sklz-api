@@ -526,25 +526,36 @@ def _verdict(slave: dict, cfg: dict | None, q: dict, trades: list,
     return "HEALTHY — polling, queued, executed and reported."
 
 
+def _rows(errors: list, what: str, q) -> list:
+    """A diagnostic must never die on the thing it is diagnosing. A
+    query that fails is reported by name and the rest still runs."""
+    try:
+        return q.execute().data or []
+    except Exception as e:
+        errors.append(f"{what}: {type(e).__name__}: {str(e)[:200]}")
+        return []
+
+
 @router.get("/diag")
 async def diag(request: Request,
                sb: Client = Depends(get_supabase)) -> dict:
     _admin(request)
     now = datetime.now(timezone.utc)
     since = (now - timedelta(hours=24)).isoformat()
+    errors: list[str] = []
 
-    m = (sb.table("copy_masters").select("id,status")
-         .eq("is_system", True).limit(1).execute()).data or []
+    m = _rows(errors, "copy_masters", sb.table("copy_masters")
+              .select("id,status").eq("is_system", True).limit(1))
     master = m[0] if m else None
     events = []
     if master:
-        events = (sb.table("copy_events").select("*")
-                  .eq("master_id", master["id"]).gte("created_at", since)
-                  .order("created_at", desc=True).limit(20).execute()
-                  ).data or []
-    slaves = (sb.table("copy_slaves").select("*")
-              .order("created_at").execute()).data or []
-    cfgs = (sb.table("copy_configs").select("*").execute()).data or []
+        events = _rows(errors, "copy_events", sb.table("copy_events")
+                       .select("*").eq("master_id", master["id"])
+                       .gte("created_at", since)
+                       .order("created_at", desc=True).limit(20))
+    slaves = _rows(errors, "copy_slaves",
+                   sb.table("copy_slaves").select("*").order("created_at"))
+    cfgs = _rows(errors, "copy_configs", sb.table("copy_configs").select("*"))
     cfg_by_slave = {}
     for c in cfgs:
         if master and c.get("master_id") == master["id"]:
@@ -553,11 +564,13 @@ async def diag(request: Request,
     out = []
     for s in slaves:
         sid = s.get("id")
-        queue = (sb.table("copy_queue").select("*").eq("slave_id", sid)
-                 .gte("created_at", since).order("id", desc=True)
-                 .limit(50).execute()).data or []
-        trades = (sb.table("copied_trades").select("*").eq("slave_id", sid)
-                  .order("at", desc=True).limit(10).execute()).data or []
+        queue = _rows(errors, f"copy_queue[{sid}]",
+                      sb.table("copy_queue").select("*").eq("slave_id", sid)
+                      .gte("created_at", since).order("id", desc=True)
+                      .limit(50))
+        trades = _rows(errors, f"copied_trades[{sid}]",
+                       sb.table("copied_trades").select("*")
+                       .eq("slave_id", sid).order("at", desc=True).limit(10))
         counts: dict[str, int] = {}
         for r in queue:
             st = r.get("status") or "?"
@@ -596,6 +609,7 @@ async def diag(request: Request,
 
     return {
         "checked_at": now.isoformat(),
+        "errors": errors,
         "flags": {"real_money": _flag("REAL_MONEY_COPYING"),
                   "live": _flag("COPY_LIVE")},
         "master": ({"status": master.get("status")} if master

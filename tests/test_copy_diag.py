@@ -307,3 +307,30 @@ def test_d_bad_key_records_nothing():
     with pytest.raises(HTTPException):
         asyncio.run(C.poll("sk_copy_" + "n" * 32, sb=SB(base_db())))
     assert not C._LAST_POLL
+
+
+# ── E. the diagnostic survives the thing it diagnoses ───────────────
+class _BrokenTable(SB):
+    """copied_trades raises (e.g. a column the query names is absent)."""
+    def table(self, name):
+        q = super().table(name)
+        if name == "copied_trades":
+            def boom():
+                raise RuntimeError("column copied_trades.at does not exist")
+            q.execute = boom
+        return q
+
+
+def test_e_a_failing_query_is_reported_not_fatal():
+    C._LAST_POLL[SLAVE] = time.time()
+    db = base_db(copy_events=[event()], copy_queue=[qrow("done", sent_at=NOW)])
+    out = asyncio.run(C.diag(_req(), _BrokenTable(db)))
+    assert out["errors"] and "copied_trades" in out["errors"][0]
+    assert "does not exist" in out["errors"][0]
+    f = out["followers"][0]
+    assert f["queue_24h"] == {"done": 1}          # the rest still ran
+    assert f["last_reports"] == []
+
+
+def test_e_clean_run_has_no_errors():
+    assert run_diag(base_db())["errors"] == []

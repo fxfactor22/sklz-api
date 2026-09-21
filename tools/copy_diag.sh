@@ -3,8 +3,13 @@
 # command line and never echoed:
 #   read -rs "?Paste key: " SKLZ_ADMIN_KEY && export SKLZ_ADMIN_KEY
 #   bash tools/copy_diag.sh
-set -euo pipefail
+set -uo pipefail
 : "${SKLZ_ADMIN_KEY:?set SKLZ_ADMIN_KEY first (read -rs, see header)}"
 API="${SKLZ_API:-https://api.sklzlabs.com}"
-curl -sS -H "Authorization: Bearer ${SKLZ_ADMIN_KEY}" \
-     "${API}/api/mt5copy/diag" | python3 -m json.tool
+body="$(mktemp)"
+code="$(curl -sS -o "$body" -w '%{http_code}' \
+        -H "Authorization: Bearer ${SKLZ_ADMIN_KEY}" "${API}/api/mt5copy/diag")"
+echo "HTTP ${code}"
+python3 -m json.tool "$body" 2>/dev/null || cat "$body"
+echo
+rm -f "$body"
