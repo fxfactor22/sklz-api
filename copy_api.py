@@ -22,7 +22,8 @@ from __future__ import annotations
 import json
 import os
 import secrets
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
@@ -145,12 +146,41 @@ def _slave_by_key(sb: Client, key: str) -> dict | None:
     return r[0] if r else None
 
 
+# ── EA liveness ─────────────────────────────────────────────────────
+# Nothing here recorded whether a follower's terminal was polling at
+# all, so "not copying" could not be split into "never asked" and
+# "asked and refused". The poll is the heartbeat. It is remembered in
+# process every time and persisted to copy_slaves.last_poll_at at most
+# every 30s, so the 2s poll loop does not become a write storm.
+_LAST_POLL: dict[str, float] = {}       # slave_id -> unix ts
+_LAST_POLL_DB: dict[str, float] = {}    # slave_id -> ts of last persist
+_POLL_PERSIST_EVERY = 30.0
+_POLL_OFFLINE_AFTER = 120.0             # seconds without a poll = offline
+
+
+def _note_poll(sb: Client, slave_id: str) -> None:
+    now = time.time()
+    _LAST_POLL[slave_id] = now
+    if now - _LAST_POLL_DB.get(slave_id, 0.0) < _POLL_PERSIST_EVERY:
+        return
+    _LAST_POLL_DB[slave_id] = now
+    try:
+        sb.table("copy_slaves").update(
+            {"last_poll_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("id", slave_id).execute()
+    except Exception as e:  # column missing until migration P13 runs
+        _LAST_POLL_DB[slave_id] = now + 3600.0   # in-memory still works
+        print(f"[mt5copy] last_poll_at not persisted ({type(e).__name__}) "
+              "— run migrations/P13-copy-last-poll.sql")
+
+
 @router.get("/poll")
 async def poll(key: str, co: str = "",
                sb: Client = Depends(get_supabase)) -> dict:
     sl = _slave_by_key(sb, key)
     if not sl:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad copy key")
+    _note_poll(sb, sl["id"])
     if not sl["enabled"]:
         return {"instructions": [], "note": "copying paused"}
     # the EA reports its terminal's ACCOUNT_COMPANY (co=). Declared broker
@@ -171,7 +201,7 @@ async def poll(key: str, co: str = "",
     # older than 90 seconds expire unfetched; closes always deliver,
     # because closing a position you hold is right at any age.
     cutoff = (datetime.now(timezone.utc)
-              - __import__("datetime").timedelta(seconds=90)).isoformat()
+              - timedelta(seconds=90)).isoformat()
     stale = (sb.table("copy_queue").select("id,instruction")
              .eq("slave_id", sl["id"]).eq("status", "pending")
              .lt("created_at", cutoff).execute()).data or []
@@ -421,3 +451,159 @@ async def recommend(account_type: str = "normal",
     out["account_type"] = account_type
     out["account_size"] = size
     return out
+
+
+# ── admin diagnosis: where does the chain stop for each follower? ───
+# Master event -> copy_events -> copy_queue(pending) -> EA poll (sent)
+# -> EA executes -> report (done/failed + copied_trades). "Not copying"
+# is one of six different failures along that line, and every one of
+# them was silent. This names the link that broke, per follower, in a
+# sentence, without ever returning a copy key.
+_ADMIN_NAMES = ("SIGNAL_WEBHOOK_KEY",)
+
+
+def _admin(request: Request) -> None:
+    from keyauth import engine_key_ok
+    if not engine_key_ok(_bearer(request), "/api/mt5copy/diag",
+                         names=_ADMIN_NAMES):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "admin only")
+
+
+def _age(iso: str | None, now: datetime) -> int | None:
+    if not iso:
+        return None
+    try:
+        t = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return int((now - t).total_seconds())
+    except ValueError:
+        return None
+
+
+def _verdict(slave: dict, cfg: dict | None, q: dict, trades: list,
+             events_24h: int, poll_age: int | None) -> str:
+    if not slave.get("enabled"):
+        return "PAUSED on the dashboard — press Resume."
+    if not cfg:
+        return ("NO SUBSCRIPTION to the SKLZ Engine master — Resume on the "
+                "dashboard creates one; the fan-out skips this account.")
+    if not cfg.get("enabled"):
+        return "config DISABLED — re-save the settings on the dashboard."
+    if poll_age is None:
+        return ("EA NOT POLLING — no poll seen since this deploy. On the "
+                "follower terminal: EA attached to a chart? AutoTrading "
+                "on? api.sklzlabs.com in Tools>Options>Expert Advisors>"
+                "WebRequest? Experts tab shows 'SKLZ COPY slave active'?")
+    if poll_age > _POLL_OFFLINE_AFTER:
+        return (f"EA OFFLINE — last poll {poll_age}s ago. Terminal closed, "
+                "VPS asleep, or the EA was removed from the chart.")
+    fails = [t for t in trades if t.get("status") == "failed"]
+    if fails:
+        errs = []
+        for t in fails:
+            e = (t.get("error") or "").strip() or "(no error text)"
+            if e not in errs:
+                errs.append(e)
+        return ("EA REFUSING or the broker rejecting — last errors: "
+                + " | ".join(errs[:4]))
+    if q.get("expired", 0) and not q.get("done", 0):
+        return ("OPENS EXPIRED UNFETCHED — instructions waited >90s. The "
+                "EA is polling now but was not when the master traded.")
+    if events_24h == 0:
+        return ("MASTER SILENT — no master events in 24h. On the VPS: is "
+                "SKLZ_COPY_PUBLISH on, and does the runner log "
+                "'[copy]' after an entry? Dashboard/forced entries may "
+                "not publish.")
+    if not any(q.values()):
+        return ("EVENTS ARRIVE BUT NOTHING QUEUED for this account — the "
+                "symbol is blocked/not allowed in the config, or the "
+                "account was paused when the master traded.")
+    if q.get("sent", 0) and not q.get("done", 0) and not fails:
+        return ("EA FETCHED BUT NEVER REPORTED — instructions left the "
+                "queue and no fill/failure came back. Report HTTP errors "
+                "in the Experts tab (WebRequest POST blocked?).")
+    return "HEALTHY — polling, queued, executed and reported."
+
+
+@router.get("/diag")
+async def diag(request: Request,
+               sb: Client = Depends(get_supabase)) -> dict:
+    _admin(request)
+    now = datetime.now(timezone.utc)
+    since = (now - timedelta(hours=24)).isoformat()
+
+    m = (sb.table("copy_masters").select("id,status")
+         .eq("is_system", True).limit(1).execute()).data or []
+    master = m[0] if m else None
+    events = []
+    if master:
+        events = (sb.table("copy_events").select("*")
+                  .eq("master_id", master["id"]).gte("created_at", since)
+                  .order("created_at", desc=True).limit(20).execute()
+                  ).data or []
+    slaves = (sb.table("copy_slaves").select("*")
+              .order("created_at").execute()).data or []
+    cfgs = (sb.table("copy_configs").select("*").execute()).data or []
+    cfg_by_slave = {}
+    for c in cfgs:
+        if master and c.get("master_id") == master["id"]:
+            cfg_by_slave[c.get("slave_id")] = c
+
+    out = []
+    for s in slaves:
+        sid = s.get("id")
+        queue = (sb.table("copy_queue").select("*").eq("slave_id", sid)
+                 .gte("created_at", since).order("id", desc=True)
+                 .limit(50).execute()).data or []
+        trades = (sb.table("copied_trades").select("*").eq("slave_id", sid)
+                  .order("at", desc=True).limit(10).execute()).data or []
+        counts: dict[str, int] = {}
+        for r in queue:
+            st = r.get("status") or "?"
+            counts[st] = counts.get(st, 0) + 1
+        mem = _LAST_POLL.get(sid)
+        poll_age = (int(time.time() - mem) if mem
+                    else _age(s.get("last_poll_at"), now))
+        cfg = cfg_by_slave.get(sid)
+        cfg_view = None
+        if cfg:
+            cfg_view = {k: cfg.get(k) for k in (
+                "enabled", "lot_mode", "lot_value", "min_lot", "max_lot",
+                "max_open", "max_daily_loss_pct", "max_spread_pips",
+                "copy_sl", "copy_tp", "allowed_symbols", "blocked_symbols",
+                "symbol_map") if k in cfg}
+        out.append({
+            "slave_id": sid, "label": s.get("label"),
+            "broker": s.get("broker"), "mt5_login": s.get("mt5_login"),
+            "enabled": s.get("enabled"),
+            "last_poll_seconds_ago": poll_age,
+            "config": cfg_view,
+            "queue_24h": counts,
+            "last_instructions": [
+                {"status": r.get("status"), "created_at": r.get("created_at"),
+                 "sent_at": r.get("sent_at"),
+                 **{k: (r.get("instruction") or {}).get(k)
+                    for k in ("event", "symbol", "lots", "sl", "live")}}
+                for r in queue[:5]],
+            "last_reports": [
+                {k: t.get(k) for k in ("at", "status", "error", "symbol",
+                                       "slave_lots", "slave_ticket")}
+                for t in trades[:5]],
+            "verdict": _verdict(s, cfg, counts, trades, len(events),
+                                poll_age),
+        })
+
+    return {
+        "checked_at": now.isoformat(),
+        "flags": {"real_money": _flag("REAL_MONEY_COPYING"),
+                  "live": _flag("COPY_LIVE")},
+        "master": ({"status": master.get("status")} if master
+                   else {"status": "MISSING — no system master row"}),
+        "master_events_24h": len(events),
+        "last_master_events": [
+            {k: e.get(k) for k in ("created_at", "event", "symbol", "lots",
+                                   "sl", "tp", "master_ticket")}
+            for e in events[:5]],
+        "followers": out,
+    }
