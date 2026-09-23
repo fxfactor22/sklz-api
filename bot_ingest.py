@@ -564,6 +564,114 @@ async def place_order(body: OrderIn, user=Depends(get_current_user),
     return {"ok": True, "note": "order queued — bot executes within a few seconds"}
 
 
+# ── position controls from the dashboard ───────────────────────────
+# Close, breakeven, change the stop, or read what is open — on a LIVE
+# Runner, owner-only. The Runner already executes these four command
+# types for the Signal Desk; this is the same queue with the same
+# exactly-once guarantees (claim, lease, TTL), just reachable from the
+# owner's own dashboard instead of a demo token.
+POSITION_ACTIONS = ("close", "breakeven", "modify", "positions")
+POSITION_TTL_SECONDS = 120     # a stale close must not fire an hour later
+
+
+class PositionIn(_BM):
+    bot_name: str
+    action: str                  # close | breakeven | modify | positions
+    ticket: int | None = None
+    sl: float | None = None      # modify only; None = leave unchanged
+    tp: float | None = None
+    note: str = ""
+
+
+def _is_demo_bot(name: str) -> bool:
+    return (_os.environ.get("SKLZ_DEMO_BOT_NAME", "sklz-demo").strip().lower()
+            == (name or "").strip().lower())
+
+
+@router.post("/position")
+async def position_command(body: PositionIn, user=Depends(get_current_user),
+                           sb: Client = Depends(get_supabase)) -> dict:
+    """Owner-only: queue a position command for the bot's next poll."""
+    _require_owner(user)
+    action = (body.action or "").strip().lower()
+    if action not in POSITION_ACTIONS:
+        return {"ok": False, "reason": "action must be one of "
+                                       + "|".join(POSITION_ACTIONS)}
+    if _is_demo_bot(body.bot_name):
+        return {"ok": False,
+                "reason": "that is the demo Runner — position controls "
+                          "apply to a live Runner. Pick one from the list."}
+    if action != "positions" and not body.ticket:
+        return {"ok": False, "reason": "this action needs the ticket"}
+    if action == "modify" and body.sl is None and body.tp is None:
+        return {"ok": False, "reason": "give a stop, a target, or both"}
+    now = datetime.now(timezone.utc)
+    row = {
+        "bot_name": body.bot_name, "command_type": action,
+        "status": "pending", "created_by": str(user.id),
+        "note": (body.note or f"[dashboard] {action}"
+                 + (f" {body.ticket}" if body.ticket else ""))[:300],
+        "symbol": "", "side": "buy", "lots": 0,
+        "expires_at": (now + timedelta(
+            seconds=POSITION_TTL_SECONDS)).isoformat(),
+    }
+    if body.ticket:
+        row["ticket"] = int(body.ticket)
+    if action == "modify":
+        # 0 means "leave unchanged" on the Runner's modify_sl(sl, tp or None)
+        row["sl"] = float(body.sl or 0)
+        row["tp"] = float(body.tp or 0)
+    try:
+        res = sb.table("bot_orders").insert(row).execute()
+        created = (res.data or [{}])[0] or {}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "reason": str(exc)[:200]}
+    return {"ok": True, "action": action,
+            "command_id": str(created.get("command_id") or created.get("id")
+                              or ""),
+            "note": "queued — the Runner answers within a few seconds; "
+                    "poll /api/bot/command/{command_id}"}
+
+
+@router.get("/command/{command_id}")
+async def command_status(command_id: str, user=Depends(get_current_user),
+                         sb: Client = Depends(get_supabase)) -> dict:
+    """What the Runner said about one command. Owner/admin only.
+
+    A read of the queue row — never a guess: `state` is pending until the
+    Runner claims it, dispatched until the broker answers, then whatever
+    the Runner recorded (succeeded / failed / expired / unknown).
+    """
+    _require_admin(user)
+    try:
+        rows = (sb.table("bot_orders").select(
+            "command_id,id,bot_name,command_type,status,ticket,symbol,"
+            "resolved_symbol,sl,tp,fill_price,filled_volume,broker_comment,"
+            "positions,created_at,executed_at,result_recorded_at")
+            .eq("command_id", command_id).limit(1).execute()).data or []
+    except Exception:
+        rows = []
+    if not rows:
+        try:
+            rows = (sb.table("bot_orders").select("*")
+                    .eq("id", int(command_id)).limit(1).execute()).data or []
+        except Exception:
+            rows = []
+    if not rows:
+        return {"ok": False, "reason": "unknown command"}
+    r = rows[0]
+    return {"ok": True, "command_id": str(r.get("command_id") or r.get("id")),
+            "action": r.get("command_type"), "state": r.get("status"),
+            "ticket": r.get("ticket"),
+            "symbol": r.get("resolved_symbol") or r.get("symbol"),
+            "sl": r.get("sl"), "tp": r.get("tp"),
+            "fill_price": r.get("fill_price"),
+            "broker_comment": r.get("broker_comment"),
+            "positions": r.get("positions"),
+            "created_at": r.get("created_at"),
+            "executed_at": r.get("executed_at")}
+
+
 @router.get("/state")
 async def bot_state(bot_name: str, user=Depends(get_current_user),
                     sb: Client = Depends(get_supabase)) -> dict:
