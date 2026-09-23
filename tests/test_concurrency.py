@@ -170,7 +170,9 @@ def test_summary_sends_keep_their_original_order():
 def test_routing_and_arabic_behaviour_unchanged():
     """This phase moved WHERE work runs, not what it does."""
     src = open("./signals_engine.py").read()
-    assert "offload(send_to_telegram, category, format_signal(sig))" in src
+    # the send still runs through offload with the same function; the text
+    # argument became render_card(...) when the card grew a status block
+    assert "offload(send_to_telegram, category," in src
     ar = open("./sklz_arabic.py").read()
     assert 'RoutingScope(language="ar")' in ar          # same scope
     assert "os.environ.get(\"TG_ARABIC_CHAT\"" not in ar  # no env regression

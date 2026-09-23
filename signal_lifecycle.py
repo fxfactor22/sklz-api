@@ -101,6 +101,9 @@ async def _push_status(body: StatusIn, sb: Client) -> dict:
     if not rows:
         return {"ok": False, "reason": "no running signal for that symbol"}
     sig = rows[0]
+    # the engine says "trailing" when the trail arms; the row says "secured"
+    if body.status == "trailing":
+        body = body.model_copy(update={"status": "secured"})
 
     upd: dict = {"tracked_at": datetime.now(timezone.utc).isoformat()}
     if body.status == "secured":
@@ -119,7 +122,76 @@ async def _push_status(body: StatusIn, sb: Client) -> dict:
         return {"ok": False, "reason": f"unknown status {body.status!r}"}
 
     sb.table("signals").update(upd).eq("id", sig["id"]).execute()
-    return {"ok": True, "signal_id": sig["id"], "applied": upd}
+    # The channel posts follow the row: the ORIGINAL card is edited to show
+    # the new status. Off the event loop, never fatal — a Telegram hiccup
+    # must not turn a recorded close into a 500 for the engine.
+    edited = 0
+    try:
+        edited = await offload(edit_posts, sb, sig["id"], body.status,
+                               body.pips)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[signal-lifecycle] edit failed: {type(exc).__name__}: {exc}")
+    return {"ok": True, "signal_id": sig["id"], "applied": upd,
+            "edited": edited}
+
+
+def _posts_of(sb: Client, signal_id) -> dict:
+    """The stored posts + bodies. Empty when P14 has not run."""
+    try:
+        res = (sb.table("signals")
+               .select("id,category,tg_posts,tg_text,tg_text_ar")
+               .eq("id", signal_id).limit(1).execute())
+        return (res.data or [{}])[0] or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def edit_posts(sb: Client, signal_id, status: str, pips=None) -> int:
+    """Edit every channel post of one signal in place. Returns how many.
+
+    The token is never stored with the post — only the destination key.
+    The credential is resolved again here, through the same resolver that
+    sent the card, so a rotated bot token is picked up automatically and a
+    removed channel is simply skipped.
+    """
+    from signals_engine import render_card, edit_message
+    row = _posts_of(sb, signal_id)
+    posts = row.get("tg_posts") or []
+    if isinstance(posts, str):
+        try:
+            posts = json.loads(posts)
+        except ValueError:
+            posts = []
+    if not posts:
+        return 0
+    body_en = row.get("tg_text") or ""
+    body_ar = row.get("tg_text_ar") or ""
+    by_key = {d.key: d for d in resolve_destinations(
+        RoutingScope(category=str(row.get("category") or ""),
+                     purpose="signal"))}
+    n = 0
+    for p in posts:
+        key, mid = p.get("key"), p.get("message_id")
+        if not mid:
+            continue
+        if key == "arabic":
+            if not body_ar:
+                continue
+            try:
+                import sklz_arabic
+                ok = sklz_arabic.edit(mid, render_card(body_ar, status,
+                                                       pips, "ar"))
+            except Exception:  # noqa: BLE001
+                ok = False
+        else:
+            d = by_key.get(key)
+            if not d or not body_en:
+                continue
+            ok = edit_message(p.get("chat_id") or d.chat_id, mid,
+                              render_card(body_en, status, pips, "en"),
+                              d.token.reveal())
+        n += 1 if ok else 0
+    return n
 
 
 @router.get("/open")
@@ -181,14 +253,32 @@ async def track(body: TrackIn, request: Request,
 # ── summary ─────────────────────────────────────────────────────────
 def _summarise(sb: Client, days: int) -> dict:
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    res = (sb.table("signals")
-           .select("status,outcome,result_pips,locked_pips,peak_pips,symbol")
-           .gte("received_at", since).limit(1000).execute())
+    try:
+        res = (sb.table("signals")
+               .select("status,outcome,result_pips,locked_pips,peak_pips,"
+                       "symbol,category")
+               .gte("received_at", since).limit(1000).execute())
+    except Exception:  # noqa: BLE001
+        # an older table without `category` still gets a summary
+        res = (sb.table("signals")
+               .select("status,outcome,result_pips,locked_pips,peak_pips,symbol")
+               .gte("received_at", since).limit(1000).execute())
     rows = res.data or []
     closed = [r for r in rows if r["status"] == "closed"]
     wins = [r for r in closed if r.get("outcome") == "win"]
     losses = [r for r in closed if r.get("outcome") == "loss"]
     net = sum(r.get("result_pips") or 0 for r in closed)
+    won_pips = sum(r.get("result_pips") or 0 for r in wins)
+    lost_pips = sum(r.get("result_pips") or 0 for r in losses)
+    by_cat: dict = {}
+    for r in closed:
+        c = str(r.get("category") or "other").lower()
+        b = by_cat.setdefault(c, {"wins": 0, "losses": 0, "net_pips": 0.0})
+        if r.get("outcome") == "win":
+            b["wins"] += 1
+        elif r.get("outcome") == "loss":
+            b["losses"] += 1
+        b["net_pips"] = round(b["net_pips"] + (r.get("result_pips") or 0), 1)
     return {
         "days": days,
         "signals": len(rows),
@@ -199,8 +289,11 @@ def _summarise(sb: Client, days: int) -> dict:
                              if r["status"] in ("active", "secured")),
         "secured": sum(1 for r in rows if r["status"] == "secured"),
         "net_pips": round(net, 1),
+        "won_pips": round(won_pips, 1),
+        "lost_pips": round(lost_pips, 1),
         "win_rate": (round(100 * len(wins) / len(closed))
                      if closed else None),
+        "by_category": by_cat,
     }
 
 
@@ -232,10 +325,17 @@ def format_summary(day: dict, week: dict) -> str:
     if day["closed"] == 0 and day["still_running"] == 0:
         lines.append("No signals closed today.")
     else:
-        lines.append(f"today: {day['wins']} won · {day['losses']} lost"
+        lines.append(f"trades closed today: {day['closed']} — "
+                     f"{day['wins']} won · {day['losses']} lost"
                      + (f" · {day['still_running']} still running"
                         if day['still_running'] else ""))
-        lines.append(f"net: *{day['net_pips']:+.1f} pips*")
+        if day["closed"]:
+            lines.append(f"pips collected: *{day['net_pips']:+.1f} pips*"
+                         f"  (won {day.get('won_pips', 0):+.1f} / "
+                         f"lost {day.get('lost_pips', 0):+.1f})")
+        for c, b in sorted((day.get("by_category") or {}).items()):
+            lines.append(f"  · {c}: {b['wins']}W / {b['losses']}L, "
+                         f"{b['net_pips']:+.1f} pips")
     lines += ["",
               f"7 days: {week['wins']}W / {week['losses']}L"
               + (f" ({week['win_rate']}%)" if week['win_rate'] is not None
@@ -245,6 +345,19 @@ def format_summary(day: dict, week: dict) -> str:
         lines += ["", "_small sample — treat the percentages accordingly._"]
     lines += ["", "every signal tracked to its close, including the misses."]
     return "\n".join(lines)
+
+
+def summary_destinations() -> list:
+    """Where the daily numbers go: the summary channel(s) AND every channel
+    that received the signals themselves — a channel that shows the entries
+    shows the results, losses included. SIGNAL_SUMMARY_TO_SIGNAL_CHANNELS=0
+    restores the summary-channel-only behaviour. Duplicates by chat id are
+    removed by the caller."""
+    out = list(resolve_destinations(RoutingScope(purpose="summary")))
+    if os.environ.get("SIGNAL_SUMMARY_TO_SIGNAL_CHANNELS", "1") != "0":
+        out.extend(resolve_destinations(
+            RoutingScope(channels=("all",), purpose="broadcast")))
+    return out
 
 
 async def summary_loop(app=None) -> None:
@@ -272,8 +385,11 @@ async def summary_loop(app=None) -> None:
                 # Offloading once keeps the sends in their original order.
                 def _send_all() -> int:
                     n = 0
-                    for d in resolve_destinations(
-                            RoutingScope(purpose="summary")):
+                    done: set = set()
+                    for d in summary_destinations():
+                        if d.chat_id in done:
+                            continue
+                        done.add(d.chat_id)
                         if d.enabled and _tg(d.chat_id, d.token.reveal(),
                                              text):
                             n += 1

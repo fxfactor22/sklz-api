@@ -235,8 +235,13 @@ _CATEGORY_AR = {
 _SIDE_AR = {"buy": "🟢 شراء", "sell": "🔴 بيع"}
 
 
-def format_signal_ar(sig: dict) -> str:
-    """The same signal the English channels get, in Arabic.
+FOOTER_AR = ("_SKLZ Labs · برامج فقط، وليست نصيحة مالية · "
+             "التداول ينطوي على مخاطر خسارة_")
+
+
+def signal_body_ar(sig: dict) -> str:
+    """The same signal the English channels get, in Arabic — the part
+    that never changes after posting.
 
     Numbers stay in Western digits: every trading terminal an Arabic-speaking
     trader uses displays them that way, and a price they cannot paste into
@@ -259,15 +264,41 @@ def format_signal_ar(sig: dict) -> str:
     ]
     if sig.get("note_ar"):
         lines += ["", sig["note_ar"]]
-    lines += ["", "_SKLZ Labs · برامج فقط، وليست نصيحة مالية · "
-                  "التداول ينطوي على مخاطر خسارة_"]
     return "\n".join(lines)
+
+
+def format_signal_ar(sig: dict, status: str = "open", pips=None) -> str:
+    from signals_engine import render_card
+    return render_card(signal_body_ar(sig), status, pips, "ar")
+
+
+def post_id(text: str):
+    """Like post(), but returns the message_id (None when nothing posted)."""
+    chat, token = _chat(), _token()
+    if not chat or not token:
+        return None
+    from signals_engine import _post_telegram_id
+    return _post_telegram_id(chat, text, token)
+
+
+def edit(message_id, text: str) -> bool:
+    chat, token = _chat(), _token()
+    if not chat or not token:
+        return False
+    from signals_engine import edit_message
+    return edit_message(chat, message_id, text, token)
 
 
 def send_signal(sig: dict) -> bool:
     if not _chat():
         return False
     return post(format_signal_ar(sig))
+
+
+def send_signal_id(sig: dict):
+    if not _chat():
+        return None
+    return post_id(format_signal_ar(sig))
 
 
 # ── results ─────────────────────────────────────────────────────────
@@ -279,9 +310,16 @@ def format_summary_ar(day: dict, week: dict) -> str:
     else:
         run = day.get("still_running", 0)
         lines.append(
-            f"اليوم: {day.get('wins', 0)} رابحة · {day.get('losses', 0)} خاسرة"
+            f"صفقات أُغلقت اليوم: {day.get('closed', 0)} — "
+            f"{day.get('wins', 0)} رابحة · {day.get('losses', 0)} خاسرة"
             + (f" · {run} ما زالت مفتوحة" if run else ""))
-        lines.append(f"الصافي: *{day.get('net_pips', 0):+.1f} نقطة*")
+        if day.get("closed"):
+            lines.append(f"النقاط المحصَّلة: *{day.get('net_pips', 0):+.1f} نقطة*"
+                         f"  (رابحة {day.get('won_pips', 0):+.1f} / "
+                         f"خاسرة {day.get('lost_pips', 0):+.1f})")
+        for c, b in sorted((day.get("by_category") or {}).items()):
+            lines.append(f"  · {_CATEGORY_AR.get(c, c)}: {b['wins']} رابحة / "
+                         f"{b['losses']} خاسرة، {b['net_pips']:+.1f} نقطة")
     lines += ["",
               f"آخر ٧ أيام: {week.get('wins', 0)} رابحة / "
               f"{week.get('losses', 0)} خاسرة"

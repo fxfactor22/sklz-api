@@ -89,7 +89,10 @@ class SB:
 MASTER = "53eb21cd-0000-4000-8000-000000000001"
 SLAVE = "aaaaaaaa-0000-4000-8000-000000000001"
 COPY_KEY = "sk_copy_" + "x" * 32
-NOW = "2026-09-21T10:00:00+00:00"
+# "now", not a date: the diag only counts the last 24 hours, so a fixed
+# timestamp silently expired two days after it was written
+from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+NOW = (_dt.now(_tz.utc) - _td(minutes=5)).isoformat()
 
 
 def base_db(**over):
