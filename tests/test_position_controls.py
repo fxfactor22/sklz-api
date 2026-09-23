@@ -40,6 +40,13 @@ class SB:
 
 
 OWNER = types.SimpleNamespace(id="u-owner", email="fxfactor24@gmail.com")
+
+
+@pytest.fixture(autouse=True)
+def _owner_env(monkeypatch):
+    # other suites set OWNER_EMAIL to their own fixtures; pin ours
+    monkeypatch.setenv("OWNER_EMAIL", OWNER.email)
+    monkeypatch.delenv("SKLZ_DEMO_BOT_NAME", raising=False)
 ADMIN = types.SimpleNamespace(id="u-admin", email="someone@else.com")
 
 
