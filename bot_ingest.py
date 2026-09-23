@@ -633,6 +633,84 @@ async def position_command(body: PositionIn, user=Depends(get_current_user),
                     "poll /api/bot/command/{command_id}"}
 
 
+@router.get("/forced")
+async def forced_positions(bot_name: str, user=Depends(get_current_user),
+                           sb: Client = Depends(get_supabase)) -> dict:
+    """The owner's OWN dashboard trades that are still open, with the
+    broker's current levels — the rows the position controls act on.
+
+    Two sources, joined by ticket:
+      - bot_orders: which tickets the dashboard opened (market commands
+        without a demo token, filled, last 7 days)
+      - the Runner's heartbeat: what the broker holds RIGHT NOW, with the
+        stop as it really is (trailing moves it at the broker)
+    A dashboard ticket absent from the heartbeat is closed and not shown.
+    An engine older than v3.30.1 sends no open_positions; then the rows
+    come from the orders alone, marked live=false, minus tickets with a
+    confirmed close.
+    """
+    _require_admin(user)
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    try:
+        orders = (sb.table("bot_orders")
+                  .select("ticket,symbol,resolved_symbol,side,fill_price,"
+                          "filled_volume,sl,tp,note,executed_at,command_type,"
+                          "status,demo_token,bot_name,created_at")
+                  .eq("bot_name", bot_name).gte("created_at", since)
+                  .order("created_at", desc=True).limit(300).execute()
+                  ).data or []
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "reason": str(exc)[:160]}
+    opened: dict = {}
+    closed: set = set()
+    for r in orders:
+        if r.get("demo_token") or r.get("status") != "succeeded":
+            continue
+        tk = r.get("ticket")
+        if not tk:
+            continue
+        if (r.get("command_type") or "market") == "market":
+            opened.setdefault(int(tk), r)
+        elif r.get("command_type") == "close":
+            closed.add(int(tk))
+    live = None
+    try:
+        sess = (sb.table("bot_sessions").select("stats,last_seen")
+                .eq("bot", bot_name).order("last_seen", desc=True)
+                .limit(1).execute()).data or []
+        st = (sess[0].get("stats") or {}) if sess else {}
+        if isinstance(st, dict) and "open_positions" in st:
+            live = {int(p.get("ticket") or 0): p
+                    for p in (st.get("open_positions") or [])}
+    except Exception:  # noqa: BLE001
+        live = None
+    out = []
+    for tk, r in opened.items():
+        if live is not None:
+            p = live.get(tk)
+            if not p:
+                continue                       # closed at the broker
+            out.append({"ticket": tk, "symbol": p.get("symbol") or r.get("resolved_symbol") or r.get("symbol"),
+                        "side": p.get("side") or r.get("side"),
+                        "volume": p.get("volume"), "entry": p.get("entry"),
+                        "sl": p.get("sl"), "tp": p.get("tp"),
+                        "profit": p.get("profit"), "live": True,
+                        "note": r.get("note"), "opened_at": r.get("executed_at")})
+        else:
+            if tk in closed:
+                continue
+            out.append({"ticket": tk, "symbol": r.get("resolved_symbol") or r.get("symbol"),
+                        "side": r.get("side"), "volume": r.get("filled_volume"),
+                        "entry": r.get("fill_price"), "sl": r.get("sl"),
+                        "tp": r.get("tp"), "profit": None, "live": False,
+                        "note": r.get("note"), "opened_at": r.get("executed_at")})
+    return {"ok": True, "bot_name": bot_name, "positions": out,
+            "live": live is not None,
+            "note": ("" if live is not None else
+                     "levels as placed — update the engine to v3.30.1 for "
+                     "the broker's current stop and P/L")}
+
+
 @router.get("/command/{command_id}")
 async def command_status(command_id: str, user=Depends(get_current_user),
                          sb: Client = Depends(get_supabase)) -> dict:

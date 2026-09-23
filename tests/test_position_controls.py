@@ -19,6 +19,7 @@ class _Q:
 
     def select(self, *a, **k): return self
     def eq(self, c, v): self.f.append((c, v)); return self
+    def gte(self, c, v): return self
     def limit(self, *a, **k): return self
     def order(self, *a, **k): return self
     def insert(self, row): self._op, self._row = "insert", dict(row); return self
@@ -131,3 +132,51 @@ def test_g_command_status_reads_the_runner_answer():
     assert out["ok"] and out["state"] == "succeeded"
     assert out["positions"][0]["symbol"] == "XAUUSD"
     assert asyncio.run(B.command_status("nope", OWNER, sb))["ok"] is False
+
+
+# ── the dashboard's own trades, joined with the Runner's heartbeat ───
+def _orders_db(sb, extra_orders=(), stats=None):
+    sb.db["bot_orders"] = [
+        {"id": 1, "command_id": "c1", "bot_name": "learning-runner",
+         "command_type": "market", "status": "succeeded", "ticket": 100,
+         "symbol": "XAUUSD", "side": "buy", "fill_price": 2400.0,
+         "filled_volume": 0.1, "sl": 2390.0, "tp": 0, "note": "[dashboard] gold",
+         "created_at": "2999-01-01", "executed_at": "2999-01-01"},
+        {"id": 2, "command_id": "c2", "bot_name": "learning-runner",
+         "command_type": "market", "status": "succeeded", "ticket": 200,
+         "symbol": "EURUSD", "side": "sell", "created_at": "2999-01-01",
+         "demo_token": "demo-xyz"},                       # demo: never listed
+        {"id": 3, "command_id": "c3", "bot_name": "learning-runner",
+         "command_type": "market", "status": "succeeded", "ticket": 300,
+         "symbol": "US30", "side": "buy", "fill_price": 40000.0,
+         "created_at": "2999-01-01"},
+        *extra_orders]
+    if stats is not None:
+        sb.db["bot_sessions"] = [{"bot": "learning-runner", "stats": stats,
+                                  "last_seen": "2999-01-01"}]
+
+
+def test_h_forced_list_uses_the_brokers_current_levels():
+    sb = SB()
+    _orders_db(sb, stats={"open_positions": [
+        {"ticket": 100, "symbol": "XAUUSD", "side": "buy", "volume": 0.1,
+         "entry": 2400.0, "sl": 2401.0, "tp": 0, "profit": 15.0},   # trailing moved the stop
+        {"ticket": 999, "symbol": "GBPUSD", "side": "buy", "volume": 0.2,
+         "entry": 1.3, "sl": 1.29, "tp": 0, "profit": -3.0}]})     # a model trade: not ours
+    out = asyncio.run(B.forced_positions("learning-runner", OWNER, sb))
+    assert out["ok"] and out["live"]
+    assert [p["ticket"] for p in out["positions"]] == [100]     # 300 is closed at the broker
+    p = out["positions"][0]
+    assert p["sl"] == 2401.0 and p["profit"] == 15.0 and p["live"]
+
+
+def test_i_forced_list_falls_back_to_orders_on_an_old_engine():
+    sb = SB()
+    _orders_db(sb, extra_orders=[{
+        "id": 4, "command_id": "c4", "bot_name": "learning-runner",
+        "command_type": "close", "status": "succeeded", "ticket": 300,
+        "created_at": "2999-01-02"}], stats={"open_now": 1})
+    out = asyncio.run(B.forced_positions("learning-runner", OWNER, sb))
+    assert out["ok"] and not out["live"] and "v3.30.1" in out["note"]
+    assert [p["ticket"] for p in out["positions"]] == [100]     # 300 had a confirmed close
+    assert out["positions"][0]["sl"] == 2390.0 and out["positions"][0]["live"] is False
