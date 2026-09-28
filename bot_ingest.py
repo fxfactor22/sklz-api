@@ -537,6 +537,9 @@ def _is_admin_user(user) -> bool:
     return (getattr(user, "email", "") or "").lower() in admins
 
 
+MARKET_ORDER_TTL_SECONDS = 120   # a stale market order must never fire later
+
+
 @router.post("/order")
 async def place_order(body: OrderIn, user=Depends(get_current_user),
                       sb: Client = Depends(get_supabase)) -> dict:
@@ -553,15 +556,25 @@ async def place_order(body: OrderIn, user=Depends(get_current_user),
         return {"ok": False,
                 "reason": "that is the demo Runner — manual orders go to a "
                           "live Runner. Pick one from the list."}
+    # A market order is a price the owner agreed to NOW. Without a TTL a
+    # row queued for a Runner that is offline (or registered under another
+    # name after an account switch) sat as `pending` indefinitely and fired
+    # the moment a Runner with that name next polled — hours or days later,
+    # at whatever the market was doing then. Same TTL as position controls.
+    now = datetime.now(timezone.utc)
     try:
         sb.table("bot_orders").insert({
             "bot_name": body.bot_name, "symbol": body.symbol.upper(),
             "side": body.side, "note": body.note[:300],
             "lots": body.lots, "sl": body.sl, "tp": body.tp,
-            "status": "pending", "created_by": str(user.id)}).execute()
+            "status": "pending", "created_by": str(user.id),
+            "expires_at": (now + timedelta(
+                seconds=MARKET_ORDER_TTL_SECONDS)).isoformat()}).execute()
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": str(exc)[:200]}
-    return {"ok": True, "note": "order queued — bot executes within a few seconds"}
+    return {"ok": True,
+            "note": "order queued — the Runner executes within a few seconds; "
+                    f"it expires unexecuted after {MARKET_ORDER_TTL_SECONDS}s"}
 
 
 # ── position controls from the dashboard ───────────────────────────
