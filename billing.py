@@ -345,6 +345,20 @@ async def status_ep(user=Depends(get_current_user),
 
 
 # ------------------------------------------------------------------ webhook
+COMMISSIONABLE_PLAN_WORDS = ("bundle", "membership", "sklz core", "sklz plus", "sklz pro")
+
+
+def _commissionable_plan(plan: str) -> bool:
+    """Which subscriptions pay the 50% partner commission.
+
+    Plan names come from PLAN_NAMES ("SKLZ Plus (Annual)", "Bundle (Founder)").
+    Signal Desk / Pro Trader OS are B2B contracts and TradeGPT / the
+    Indicator Suite are tools, not memberships — none of those commission.
+    """
+    p = (plan or "").lower()
+    return any(w in p for w in COMMISSIONABLE_PLAN_WORDS)
+
+
 def _partner_payment(uid: str, price: float, active: bool, email: str = "") -> None:
     """Tell the partner engine a referred customer paid — recurring commission."""
     import os, urllib.request, json as _json
@@ -651,9 +665,13 @@ async def _handle_event(etype: str, obj: dict, sb: Client) -> dict:
                 plan = (row[0].get("plan") or "").lower()
         except Exception:
             plan = ""
-        # only membership/bundle earns commission; TradeGPT and others do not
-        if uid and ("bundle" in plan or "membership" in plan):
-            _partner_payment(uid, amount if amount in (39.0, 49.0) else 49.0, True)
+        # Membership plans earn commission — the Bundle and the current
+        # SKLZ Core / Plus / Pro (monthly AND annual). TradeGPT, the
+        # Indicator Suite and Signal Desk / Pro Trader OS do not.
+        # The REAL amount paid goes through: an annual invoice credits the
+        # partner 50% of the annual price at once, not a coerced $25.
+        if uid and _commissionable_plan(plan) and amount > 0:
+            _partner_payment(uid, amount, True)
 
     elif etype == "customer.subscription.deleted":
         meta = _d(obj.get("metadata"))

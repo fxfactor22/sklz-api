@@ -1,9 +1,11 @@
 """SKLZ Partner Program — single-level, performance-based commissions.
 
 Model (from the Partner Program spec):
-  - 50% recurring commission on the membership, per active month:
-      $49 regular  -> $25/mo commission
-      $39 founder  -> $20/mo commission
+  - 50% recurring commission on the membership, per cleared payment:
+      $49 Plus / Bundle -> $25     $39 founder -> $20
+      $29 Core -> $14.50          $79 Pro -> $39.50
+      annual plans credit 50% of the annual price when the invoice clears
+      ($139 Core / $235 Plus / $379 Pro)
   - commission accrues each month the referred customer's payment CLEARS
       (recurring, sustainable — stops on churn)
   - TradeGPT and non-membership products earn NO commission
@@ -29,9 +31,12 @@ from db import get_supabase
 
 router = APIRouter(prefix="/api/partner", tags=["partner"])
 
-# commission per membership price (rounded up per your call)
+# commission per membership price (rounded up per your call) — the two
+# legacy Bundle prices keep their rounded figures; every other price pays
+# exactly half of what cleared, so a $278 Core annual credits $139 at once.
 COMMISSION = {49: 25.0, 39: 20.0}
-DEFAULT_COMMISSION = 25.0
+COMMISSION_RATE = 0.5
+DEFAULT_COMMISSION = 25.0   # only if the price is missing/zero
 
 LEVELS = [
     ("Partner", 0, 24),
@@ -58,7 +63,15 @@ def _level(active: int) -> dict:
 
 
 def _commission_for(price_usd: float) -> float:
-    return COMMISSION.get(int(round(price_usd)), DEFAULT_COMMISSION)
+    try:
+        price = float(price_usd or 0)
+    except (TypeError, ValueError):
+        price = 0.0
+    if price <= 0:
+        return DEFAULT_COMMISSION
+    if abs(price - round(price)) < 1e-9 and int(round(price)) in COMMISSION:
+        return COMMISSION[int(round(price))]
+    return round(price * COMMISSION_RATE, 2)
 
 
 # ── partner row bootstrap (reuses affiliate code if present) ──────────
