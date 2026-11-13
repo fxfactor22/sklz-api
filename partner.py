@@ -140,7 +140,7 @@ async def me(user=Depends(get_current_user),
 
     def _comm(c: dict) -> float:
         cid = c.get("customer_id") or ""
-        if cid.startswith("skillsart:"):
+        if cid in by_cust:                          # what this customer actually earned you
             return round(by_cust.get(cid, 0.0), 2)
         return _commission_for(c.get("price", 49))
 
@@ -158,7 +158,7 @@ async def me(user=Depends(get_current_user),
             "active": c.get("active"), "since": c.get("created_at"),
             "months": c.get("months_active", 0),
             "commission": _comm(c),
-            "source": "skillsart" if (c.get("customer_id") or "").startswith("skillsart:") else "sklz",
+            "source": "sklz" if "@" in (c.get("email") or "") else "imported",
         } for c in custs[:400]],
     }
 
@@ -293,11 +293,21 @@ def _legacy_active(c: dict, snapshot: str) -> bool:
     return days <= (365 if annual else 60)
 
 
+_IMPORT_NS = __import__("uuid").UUID("6b1b3a2e-5c0e-4d6a-9f4b-2f1d4b7e8a10")
+
+
+def legacy_customer_uuid(legacy_id: int | str) -> str:
+    """customer_id is a uuid column: derive a stable one per imported client."""
+    import uuid as _uuid
+    return str(_uuid.uuid5(_IMPORT_NS, f"skillsart:{legacy_id}"))
+
+
 def import_legacy(sb: Client, uid: str, snap: dict) -> dict:
     """Pure-ish worker so a test can drive it with a fake client."""
     p = _ensure_partner(sb, uid)
+    wanted = {c["id"]: legacy_customer_uuid(c["id"]) for c in snap["clients"]}
     existing = (sb.table("partner_customers").select("customer_id")
-                .eq("partner_id", uid).like("customer_id", "skillsart:%").execute()).data or []
+                .eq("partner_id", uid).execute()).data or []
     have = {e["customer_id"] for e in existing}
     snapshot = snap.get("snapshot_at") or _now()[:10]
     by_name = {}
@@ -306,7 +316,7 @@ def import_legacy(sb: Client, uid: str, snap: dict) -> dict:
     added_c = 0
     name_to_cid: dict[str, str] = {}
     for c in snap["clients"]:
-        cid = f"skillsart:{c['id']}"
+        cid = wanted[c["id"]]
         name_to_cid.setdefault(c["name"], cid)
         if cid in have:
             continue
@@ -320,12 +330,14 @@ def import_legacy(sb: Client, uid: str, snap: dict) -> dict:
             "created_at": (c.get("first_order") or snapshot) + "T00:00:00+00:00",
         }).execute()
         added_c += 1
-    done = (sb.table("partner_commissions").select("customer_id")
-            .eq("partner_id", uid).like("customer_id", "skillsart:%").limit(1).execute()).data or []
+    led = (sb.table("partner_commissions").select("customer_id")
+           .eq("partner_id", uid).execute()).data or []
+    imported_ids = set(wanted.values())
+    done = any(e.get("customer_id") in imported_ids for e in led)
     added_o, total = 0, 0.0
     if not done:
         for o in snap["orders"]:
-            cid = name_to_cid.get(o["referral"], f"skillsart:name:{o['referral']}")
+            cid = name_to_cid.get(o["referral"]) or legacy_customer_uuid("name:" + o["referral"])
             amt = round(float(o["commission_fixed"]) + float(o["total"]) * float(o["commission_pct"]) / 100, 2)
             sb.table("partner_commissions").insert({
                 "partner_id": uid, "customer_id": cid, "amount": amt, "base": amt, "bonus": 0.0,
@@ -334,7 +346,7 @@ def import_legacy(sb: Client, uid: str, snap: dict) -> dict:
             }).execute()
             added_o += 1
             total += amt
-        # settled on Skillsart already: paid out, not withdrawable again
+        # settled on the previous platform already: paid out, not withdrawable again
         paid = float(p.get("paid_out") or 0.0) + round(total, 2)
         sb.table("partners").update({"paid_out": round(paid, 2)}).eq("user_id", uid).execute()
     return {"ok": True, "customers_added": added_c, "orders_added": added_o,

@@ -203,7 +203,8 @@ def test_skillsart_import_folds_into_partner_record():
     assert out["customers_added"] == 300 and out["orders_added"] == 375
     assert abs(out["commission_added"] - 14679.93) < 0.01
     assert abs(sb.db["partners"][0]["paid_out"] - (40.0 + 14679.93)) < 0.01
-    assert all(c["customer_id"].startswith("skillsart:") for c in sb.db["partner_customers"])
+    import uuid as _u
+    assert all(_u.UUID(c["customer_id"]).version == 5 for c in sb.db["partner_customers"])
     assert all(e["status"] == "cleared" for e in sb.db["partner_commissions"])
     again = partner.import_legacy(sb, "u1", snap)
     assert again["customers_added"] == 0 and again["orders_added"] == 0
