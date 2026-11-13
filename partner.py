@@ -250,3 +250,43 @@ async def request_payout(user=Depends(get_current_user),
                             f"could not request payout: {exc}") from exc
     return {"ok": True, "requested": avail,
             "note": "Payout requested. SKLZ will process it manually and mark it paid."}
+
+
+# ── legacy import: the owner's Skillsart partner history ────────────
+# A read-only snapshot exported from skillsart.com (clients, referral
+# orders, rank, wallet). It is the OWNER's own business history, so it is
+# served to admin accounts only — it carries other people's names.
+# Refresh by replacing data/skillsart_import.json.
+import json as _json
+from pathlib import Path as _Path
+from tv_access import _require_admin as _owner_only
+
+_LEGACY = _Path(__file__).parent / "data" / "skillsart_import.json"
+_LEGACY_CACHE: dict = {"mtime": None, "body": None}
+
+
+def _legacy_snapshot() -> dict | None:
+    try:
+        m = _LEGACY.stat().st_mtime
+    except FileNotFoundError:
+        return None
+    if _LEGACY_CACHE["mtime"] != m:
+        with _LEGACY.open(encoding="utf-8") as fh:
+            _LEGACY_CACHE.update(mtime=m, body=_json.load(fh))
+    return _LEGACY_CACHE["body"]
+
+
+@router.get("/legacy")
+async def legacy(full: int = 0, user=Depends(get_current_user)) -> dict:
+    """Skillsart snapshot. Summary by default; full=1 adds clients and orders."""
+    _owner_only(user)
+    snap = _legacy_snapshot()
+    if not snap:
+        return {"available": False}
+    out = {"available": True, "source": snap["source"], "snapshot_at": snap["snapshot_at"],
+           "account": snap["account"], "totals": snap["totals"], "by_rank": snap["by_rank"],
+           "by_product": snap["by_product"], "by_month": snap["by_month"]}
+    if full:
+        out["clients"] = snap["clients"]
+        out["orders"] = sorted(snap["orders"], key=lambda o: o["date"], reverse=True)
+    return out

@@ -1,0 +1,6302 @@
+{
+"source": "skillsart.com — platform dashboard, exported 13 Nov 2026 (read-only; names as shown there)",
+"snapshot_at": "2026-11-13",
+"account": {
+"name": "Adnan Aljahdhami",
+"id": 1,
+"rank": "Gold",
+"rank_points": 310,
+"next_rank": "Platinum",
+"next_rank_points": 512,
+"pct_to_next": 21.1,
+"subscription": "SkillsArt University Annual pass",
+"subscription_days_left": 1484,
+"wallet_available": 157704.93,
+"wallet_note": "Available Balance as displayed in My e-wallet (points wallet, shown with a $ sign on the platform)"
+},
+"totals": {
+"clients": 300,
+"clients_with_orders": 215,
+"orders": 375,
+"sales": 42661.8,
+"commission_fixed": 14505.0,
+"commission_pct": 174.93,
+"commission_total": 14679.93,
+"first_order": "2022-06-02",
+"last_order": "2026-06-06"
+},
+"by_rank": {
+"Newbie": 279,
+"Trader": 5,
+"Consultant": 5,
+"Kick Starter": 8,
+"Scalper": 2,
+"Emerald": 1
+},
+"by_product": [
+{
+"price": 49.0,
+"orders": 174,
+"label": "Monthly membership"
+},
+{
+"price": 17.0,
+"orders": 139,
+"label": "Starter / course"
+},
+{
+"price": 529.2,
+"orders": 59,
+"label": "University annual pass"
+},
+{
+"price": 300.0,
+"orders": 1,
+"label": "Custom"
+},
+{
+"price": 200.0,
+"orders": 1,
+"label": "Custom"
+},
+{
+"price": 50.0,
+"orders": 1,
+"label": "Custom"
+}
+],
+"by_month": [
+{
+"month": "2022-06",
+"orders": 118,
+"sales": 2472.0,
+"commission": 0.0
+},
+{
+"month": "2022-07",
+"orders": 23,
+"sales": 391.0,
+"commission": 0.0
+},
+{
+"month": "2022-08",
+"orders": 8,
+"sales": 392.0,
+"commission": 199.93
+},
+{
+"month": "2022-09",
+"orders": 15,
+"sales": 735.0,
+"commission": 375.0
+},
+{
+"month": "2022-10",
+"orders": 54,
+"sales": 4086.6,
+"commission": 1350.0
+},
+{
+"month": "2022-11",
+"orders": 11,
+"sales": 2459.8,
+"commission": 275.0
+},
+{
+"month": "2022-12",
+"orders": 7,
+"sales": 1783.6,
+"commission": 175.0
+},
+{
+"month": "2023-01",
+"orders": 16,
+"sales": 4145.4,
+"commission": 400.0
+},
+{
+"month": "2023-02",
+"orders": 2,
+"sales": 578.2,
+"commission": 50.0
+},
+{
+"month": "2023-03",
+"orders": 2,
+"sales": 1058.4,
+"commission": 100.0
+},
+{
+"month": "2023-04",
+"orders": 1,
+"sales": 529.2,
+"commission": 50.0
+},
+{
+"month": "2023-05",
+"orders": 12,
+"sales": 3469.2,
+"commission": 1475.0
+},
+{
+"month": "2023-06",
+"orders": 9,
+"sales": 1401.4,
+"commission": 680.0
+},
+{
+"month": "2023-07",
+"orders": 5,
+"sales": 726.2,
+"commission": 315.0
+},
+{
+"month": "2023-08",
+"orders": 4,
+"sales": 196.0,
+"commission": 75.0
+},
+{
+"month": "2023-09",
+"orders": 3,
+"sales": 147.0,
+"commission": 75.0
+},
+{
+"month": "2023-10",
+"orders": 8,
+"sales": 392.0,
+"commission": 200.0
+},
+{
+"month": "2023-11",
+"orders": 8,
+"sales": 872.2,
+"commission": 440.0
+},
+{
+"month": "2023-12",
+"orders": 6,
+"sales": 2214.8,
+"commission": 1110.0
+},
+{
+"month": "2024-01",
+"orders": 7,
+"sales": 1783.6,
+"commission": 895.0
+},
+{
+"month": "2024-02",
+"orders": 8,
+"sales": 872.2,
+"commission": 440.0
+},
+{
+"month": "2024-03",
+"orders": 8,
+"sales": 392.0,
+"commission": 200.0
+},
+{
+"month": "2024-04",
+"orders": 3,
+"sales": 147.0,
+"commission": 75.0
+},
+{
+"month": "2024-05",
+"orders": 2,
+"sales": 578.2,
+"commission": 290.0
+},
+{
+"month": "2024-07",
+"orders": 2,
+"sales": 578.2,
+"commission": 290.0
+},
+{
+"month": "2024-08",
+"orders": 2,
+"sales": 98.0,
+"commission": 50.0
+},
+{
+"month": "2024-09",
+"orders": 4,
+"sales": 676.2,
+"commission": 340.0
+},
+{
+"month": "2024-10",
+"orders": 3,
+"sales": 147.0,
+"commission": 75.0
+},
+{
+"month": "2024-11",
+"orders": 2,
+"sales": 98.0,
+"commission": 50.0
+},
+{
+"month": "2024-12",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0
+},
+{
+"month": "2025-05",
+"orders": 11,
+"sales": 5341.0,
+"commission": 2675.0
+},
+{
+"month": "2025-06",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0
+},
+{
+"month": "2025-07",
+"orders": 2,
+"sales": 578.2,
+"commission": 290.0
+},
+{
+"month": "2025-08",
+"orders": 2,
+"sales": 1058.4,
+"commission": 530.0
+},
+{
+"month": "2025-10",
+"orders": 2,
+"sales": 1058.4,
+"commission": 530.0
+},
+{
+"month": "2025-11",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0
+},
+{
+"month": "2026-01",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0
+},
+{
+"month": "2026-06",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0
+}
+],
+"clients": [
+{
+"id": 8,
+"name": "Guylin van den Berg",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 29,
+"name": "Eduard Karnaukh",
+"rank": "Trader",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-28",
+"last_order": "2022-09-28"
+},
+{
+"id": 31,
+"name": "Carlon Dimakiling",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 37,
+"name": "sunny ihemrorochi amaechi",
+"rank": "Consultant",
+"orders": 2,
+"sales": 578.2,
+"commission": 50.0,
+"first_order": "2022-10-22",
+"last_order": "2023-01-02"
+},
+{
+"id": 38,
+"name": "Besma Braghta",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 59,
+"name": "Anouar alaoui",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 60,
+"name": "Saif ul islam Khan",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 62,
+"name": "Imtiyaz Mansuri",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 65,
+"name": "Hashim Abu Zaid",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 66,
+"name": "Tom Riddle",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 68,
+"name": "Eduard Karnaukh",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-28",
+"last_order": "2022-09-28"
+},
+{
+"id": 74,
+"name": "Antone Okoya",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 78,
+"name": "Hamad Alzeyoudi",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 83,
+"name": "Mary Jane Legaspi",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 87,
+"name": "BLAS Garcia",
+"rank": "Kick Starter",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 90,
+"name": "OLIVIA LAO",
+"rank": "Kick Starter",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 92,
+"name": "Victoria Just",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 105,
+"name": "Anacleta Rosaroso",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 113,
+"name": "Ahmed Asfoor",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 116,
+"name": "Anacleta Rosaroso",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 127,
+"name": "Jamal Aitbassou",
+"rank": "Consultant",
+"orders": 3,
+"sales": 1107.4,
+"commission": 555.0,
+"first_order": "2022-10-03",
+"last_order": "2024-09-15"
+},
+{
+"id": 134,
+"name": "Day Trader",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 146,
+"name": "Aimad Chtatou",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 147,
+"name": "musallam tabook",
+"rank": "Scalper",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 152,
+"name": "Emmanuel Faustin",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 155,
+"name": "Arnel Erasmo De Guzman",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 162,
+"name": "hamza taiss",
+"rank": "Trader",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-10-14",
+"last_order": "2023-10-14"
+},
+{
+"id": 166,
+"name": "Bethel Dennis",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 178,
+"name": "qasim alsheyadi",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 198,
+"name": "abdulrahman tamer",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 202,
+"name": "Ruby Juan",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2023-05-21",
+"last_order": "2023-05-21"
+},
+{
+"id": 203,
+"name": "Darren Little",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 205,
+"name": "Ghaith Alghafri",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 207,
+"name": "Lyudmila Krupenya",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 210,
+"name": "Ashraf Faizi",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 215,
+"name": "test test",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 227,
+"name": "Skill Skill",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 236,
+"name": "Oleksandr Novosiadlyi",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 24.99,
+"first_order": "2022-08-06",
+"last_order": "2022-08-06"
+},
+{
+"id": 240,
+"name": "Naseem Almarar",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 24.99,
+"first_order": "2022-08-08",
+"last_order": "2022-08-08"
+},
+{
+"id": 243,
+"name": "Abdulaziz Alhameli",
+"rank": "Newbie",
+"orders": 3,
+"sales": 147.0,
+"commission": 74.99,
+"first_order": "2022-08-09",
+"last_order": "2022-11-23"
+},
+{
+"id": 244,
+"name": "Ahmad Nader",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 24.99,
+"first_order": "2022-08-09",
+"last_order": "2022-08-09"
+},
+{
+"id": 245,
+"name": "Nicole Hernandez",
+"rank": "Kick Starter",
+"orders": 1,
+"sales": 49.0,
+"commission": 24.99,
+"first_order": "2022-08-10",
+"last_order": "2022-08-10"
+},
+{
+"id": 249,
+"name": "dada gsbxbx",
+"rank": "Newbie",
+"orders": 2,
+"sales": 98.0,
+"commission": 49.98,
+"first_order": "2022-08-11",
+"last_order": "2022-08-11"
+},
+{
+"id": 258,
+"name": "Eduard Karnaukh",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-28",
+"last_order": "2022-09-28"
+},
+{
+"id": 265,
+"name": "Eduard Karnaukh",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-28",
+"last_order": "2022-09-28"
+},
+{
+"id": 269,
+"name": "Ed Ka",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 271,
+"name": "Benjamin Tangang",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-08-25",
+"last_order": "2022-08-25"
+},
+{
+"id": 275,
+"name": "Tebogo A Tlhagadikgora",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-01",
+"last_order": "2022-09-01"
+},
+{
+"id": 278,
+"name": "William Dominic Carandang",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-04",
+"last_order": "2022-09-04"
+},
+{
+"id": 279,
+"name": "Abegail Pranada",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-04",
+"last_order": "2022-09-04"
+},
+{
+"id": 282,
+"name": "Kevin Schoeneberg",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-06",
+"last_order": "2022-09-06"
+},
+{
+"id": 287,
+"name": "EMMANUEL ADEKUNBI",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-09",
+"last_order": "2022-09-09"
+},
+{
+"id": 288,
+"name": "cristyl mitra",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-10",
+"last_order": "2022-09-10"
+},
+{
+"id": 289,
+"name": "larbi zeradna",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-10",
+"last_order": "2022-09-10"
+},
+{
+"id": 293,
+"name": "Chiradee Enriquez",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-14",
+"last_order": "2022-09-14"
+},
+{
+"id": 295,
+"name": "Gabriel bonilla",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-15",
+"last_order": "2022-09-15"
+},
+{
+"id": 297,
+"name": "Nasir Mohammed",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-16",
+"last_order": "2022-09-16"
+},
+{
+"id": 299,
+"name": "mohamed Ahmed",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-18",
+"last_order": "2022-09-18"
+},
+{
+"id": 302,
+"name": "Juahar Ahmed",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-19",
+"last_order": "2022-09-19"
+},
+{
+"id": 305,
+"name": "Noura Almansoori",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-27",
+"last_order": "2022-09-27"
+},
+{
+"id": 308,
+"name": "Cherish Deb Lomocso",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-28",
+"last_order": "2022-09-28"
+},
+{
+"id": 309,
+"name": "Mm Mmm",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 311,
+"name": "Armie dilidili",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-06",
+"last_order": "2022-10-06"
+},
+{
+"id": 312,
+"name": "jane patindol",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-10",
+"last_order": "2022-10-10"
+},
+{
+"id": 313,
+"name": "keath john aquino",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-10",
+"last_order": "2022-10-10"
+},
+{
+"id": 316,
+"name": "HARLENE JACOSALEM",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-11",
+"last_order": "2022-10-11"
+},
+{
+"id": 317,
+"name": "joyce mondido",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-12",
+"last_order": "2022-10-12"
+},
+{
+"id": 318,
+"name": "Tito Sabanal",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 319,
+"name": "Lourdas Llamos",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-12",
+"last_order": "2022-10-12"
+},
+{
+"id": 320,
+"name": "Shekinah Sipaco",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-12",
+"last_order": "2022-10-12"
+},
+{
+"id": 321,
+"name": "Margo Ejercito",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-12",
+"last_order": "2022-10-12"
+},
+{
+"id": 322,
+"name": "Ferdinand Christian Sabanal",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-12",
+"last_order": "2022-10-12"
+},
+{
+"id": 323,
+"name": "Ji Jae Ce",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-13",
+"last_order": "2022-10-13"
+},
+{
+"id": 324,
+"name": "Jillian Zamora",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-13",
+"last_order": "2022-10-13"
+},
+{
+"id": 325,
+"name": "Melody Abad",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-13",
+"last_order": "2022-10-13"
+},
+{
+"id": 326,
+"name": "Analyn Endona",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-13",
+"last_order": "2022-10-13"
+},
+{
+"id": 327,
+"name": "Jhessa Naya",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-13",
+"last_order": "2022-10-13"
+},
+{
+"id": 328,
+"name": "Arim Aricev",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-13",
+"last_order": "2022-10-13"
+},
+{
+"id": 329,
+"name": "Tebogo Abel Tlhagadikgora",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2022-10-13",
+"last_order": "2022-10-13"
+},
+{
+"id": 331,
+"name": "Alferez Lad",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-13",
+"last_order": "2022-10-13"
+},
+{
+"id": 332,
+"name": "Mark Anthony Baunsit",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 333,
+"name": "Gretchen Ablan",
+"rank": "Newbie",
+"orders": 2,
+"sales": 98.0,
+"commission": 50.0,
+"first_order": "2022-10-13",
+"last_order": "2022-10-13"
+},
+{
+"id": 334,
+"name": "Pat Pastrana",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-13",
+"last_order": "2022-10-13"
+},
+{
+"id": 335,
+"name": "Elay Obama",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-13",
+"last_order": "2022-10-13"
+},
+{
+"id": 336,
+"name": "Raven bridget Beralde",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-15",
+"last_order": "2022-10-15"
+},
+{
+"id": 337,
+"name": "Alea Louise Flores",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-14",
+"last_order": "2022-10-14"
+},
+{
+"id": 338,
+"name": "julie demogena",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-14",
+"last_order": "2022-10-14"
+},
+{
+"id": 339,
+"name": "Marjorey Gustilo",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-14",
+"last_order": "2022-10-14"
+},
+{
+"id": 340,
+"name": "Reynalin Gonzales",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-14",
+"last_order": "2022-10-14"
+},
+{
+"id": 341,
+"name": "heaven polestico",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-14",
+"last_order": "2022-10-14"
+},
+{
+"id": 342,
+"name": "Bobo Kho",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 343,
+"name": "Noman Bacha",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-14",
+"last_order": "2022-10-14"
+},
+{
+"id": 344,
+"name": "Erica Magnawa",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-15",
+"last_order": "2022-10-15"
+},
+{
+"id": 345,
+"name": "Noella Sause",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-15",
+"last_order": "2022-10-15"
+},
+{
+"id": 346,
+"name": "Mycel Jum",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 347,
+"name": "Jennie ann Nidera",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 348,
+"name": "Lyza Vailoces",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 349,
+"name": "Fahid Khalid",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2022-10-15",
+"last_order": "2022-10-15"
+},
+{
+"id": 351,
+"name": "Christ Justine Yosores",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-16",
+"last_order": "2022-10-16"
+},
+{
+"id": 352,
+"name": "Nika Tenahi",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-16",
+"last_order": "2022-10-16"
+},
+{
+"id": 353,
+"name": "yen gentapa",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 354,
+"name": "Smokey Frante",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 355,
+"name": "Cyberd Newton Piñero",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 356,
+"name": "Angela Clara",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-16",
+"last_order": "2022-10-16"
+},
+{
+"id": 357,
+"name": "JAIKA BARNAHA",
+"rank": "Newbie",
+"orders": 2,
+"sales": 98.0,
+"commission": 50.0,
+"first_order": "2022-10-16",
+"last_order": "2022-10-16"
+},
+{
+"id": 358,
+"name": "fatima famoso",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-16",
+"last_order": "2022-10-16"
+},
+{
+"id": 359,
+"name": "Zee Jee",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-18",
+"last_order": "2022-10-18"
+},
+{
+"id": 360,
+"name": "RIZA COBRADO",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 361,
+"name": "Mariel Alacio",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 362,
+"name": "Rosemarie Uy",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-17",
+"last_order": "2022-10-17"
+},
+{
+"id": 363,
+"name": "Christine Joy Moreno",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-18",
+"last_order": "2022-10-18"
+},
+{
+"id": 364,
+"name": "Lawrence Mwenda",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-18",
+"last_order": "2022-10-18"
+},
+{
+"id": 365,
+"name": "Mark Anthony Baunsit",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 366,
+"name": "Mae Studenski",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-22",
+"last_order": "2022-10-22"
+},
+{
+"id": 367,
+"name": "Kingsley Ugochukwu Ubaezuonu",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 368,
+"name": "Seth Fenuku",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-23",
+"last_order": "2022-10-23"
+},
+{
+"id": 369,
+"name": "Mounir Abbotti",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-23",
+"last_order": "2022-10-23"
+},
+{
+"id": 370,
+"name": "Tama Amir",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-23",
+"last_order": "2022-10-23"
+},
+{
+"id": 371,
+"name": "OKEH EBUKA",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-23",
+"last_order": "2022-10-23"
+},
+{
+"id": 372,
+"name": "Dolly Redilla",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 373,
+"name": "Amjad Rafiq",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-24",
+"last_order": "2022-10-24"
+},
+{
+"id": 375,
+"name": "Rapsan Diamalod",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2022-10-29",
+"last_order": "2022-10-29"
+},
+{
+"id": 376,
+"name": "David Farrow",
+"rank": "Newbie",
+"orders": 4,
+"sales": 676.2,
+"commission": 100.0,
+"first_order": "2022-10-29",
+"last_order": "2022-11-22"
+},
+{
+"id": 377,
+"name": "Yahaya Abdulqudus",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-29",
+"last_order": "2022-10-29"
+},
+{
+"id": 378,
+"name": "Vennice Arnibal",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-29",
+"last_order": "2022-10-29"
+},
+{
+"id": 379,
+"name": "Omran Ali",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-10-29",
+"last_order": "2022-10-29"
+},
+{
+"id": 380,
+"name": "Villanueva Maridol",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 381,
+"name": "Michael John Lobaton",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-11-03",
+"last_order": "2022-11-03"
+},
+{
+"id": 382,
+"name": "Tim Beya",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2022-11-03",
+"last_order": "2022-11-03"
+},
+{
+"id": 383,
+"name": "Jimmy Apas",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-11-04",
+"last_order": "2022-11-04"
+},
+{
+"id": 384,
+"name": "Izzatbek Shokirov",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2022-11-08",
+"last_order": "2022-11-08"
+},
+{
+"id": 386,
+"name": "احمد السيد السيد",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-11-23",
+"last_order": "2022-11-23"
+},
+{
+"id": 387,
+"name": "Stephanie Basan",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 388,
+"name": "Ara Tate",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2022-12-02",
+"last_order": "2022-12-02"
+},
+{
+"id": 390,
+"name": "Thembi Shakoane",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 391,
+"name": "Alex John",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2022-12-19",
+"last_order": "2022-12-19"
+},
+{
+"id": 392,
+"name": "Stacey Gomez",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-12-20",
+"last_order": "2022-12-20"
+},
+{
+"id": 393,
+"name": "Thembisile Shakoane",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-12-20",
+"last_order": "2022-12-20"
+},
+{
+"id": 394,
+"name": "MUHAMMAD SOHAIL SALEEM",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 395,
+"name": "Stanislau Pchelnikau",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2022-12-30",
+"last_order": "2022-12-30"
+},
+{
+"id": 396,
+"name": "Alicia Amistad",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-12-30",
+"last_order": "2022-12-30"
+},
+{
+"id": 397,
+"name": "MICHELLE AMODIA",
+"rank": "Newbie",
+"orders": 2,
+"sales": 98.0,
+"commission": 50.0,
+"first_order": "2022-12-31",
+"last_order": "2023-01-02"
+},
+{
+"id": 398,
+"name": "NEVA ANLIE MAE MEGIO",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-01-01",
+"last_order": "2023-01-01"
+},
+{
+"id": 399,
+"name": "emory tate",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 400,
+"name": "salil ibrahim",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-01-01",
+"last_order": "2023-01-01"
+},
+{
+"id": 401,
+"name": "Cathrina Nunez",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-01-02",
+"last_order": "2023-01-02"
+},
+{
+"id": 402,
+"name": "Vinny Cooker",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-01-03",
+"last_order": "2023-01-03"
+},
+{
+"id": 403,
+"name": "Dee Forest",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-01-04",
+"last_order": "2023-01-04"
+},
+{
+"id": 404,
+"name": "neva mabaho",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 405,
+"name": "Sameh Rashed",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2023-01-08",
+"last_order": "2023-01-08"
+},
+{
+"id": 406,
+"name": "Chema Nava",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-01-10",
+"last_order": "2023-01-10"
+},
+{
+"id": 407,
+"name": "Eduard Karnaukh",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-28",
+"last_order": "2022-09-28"
+},
+{
+"id": 408,
+"name": "Eduard Karnaukh",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-28",
+"last_order": "2022-09-28"
+},
+{
+"id": 409,
+"name": "Eduard Karnaukh",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-28",
+"last_order": "2022-09-28"
+},
+{
+"id": 410,
+"name": "James Anthony Adolfo",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2023-01-13",
+"last_order": "2023-01-13"
+},
+{
+"id": 411,
+"name": "Eduard Karnaukh",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2022-09-28",
+"last_order": "2022-09-28"
+},
+{
+"id": 412,
+"name": "Aizhamal Kylychbek",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2023-01-17",
+"last_order": "2023-01-17"
+},
+{
+"id": 413,
+"name": "Najib Ghulam",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 414,
+"name": "Christian Jumar Rodriguez",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2023-01-27",
+"last_order": "2023-01-27"
+},
+{
+"id": 415,
+"name": "Moonlight Tamarra",
+"rank": "Kick Starter",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2023-01-27",
+"last_order": "2023-01-27"
+},
+{
+"id": 418,
+"name": "Mahmoud Ebeid",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-01-29",
+"last_order": "2023-01-29"
+},
+{
+"id": 419,
+"name": "Rhociel Rendon",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2023-01-30",
+"last_order": "2023-01-30"
+},
+{
+"id": 420,
+"name": "andrew tate",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 421,
+"name": "alaouianwar4@gmail.com alaouianwar4@gmail.com",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 422,
+"name": "Collins Ndeda",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-02-01",
+"last_order": "2023-02-01"
+},
+{
+"id": 423,
+"name": "Alrick Biong",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 424,
+"name": "Ivan Chernykh",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 25.0,
+"first_order": "2023-02-09",
+"last_order": "2023-02-09"
+},
+{
+"id": 425,
+"name": "Chris Lee",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 50.0,
+"first_order": "2023-03-09",
+"last_order": "2023-03-09"
+},
+{
+"id": 427,
+"name": "ahmed shidi",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 50.0,
+"first_order": "2023-03-20",
+"last_order": "2023-03-20"
+},
+{
+"id": 431,
+"name": "abdullah asem",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 50.0,
+"first_order": "2023-04-18",
+"last_order": "2023-04-18"
+},
+{
+"id": 432,
+"name": "RENILDA CEDRO",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2023-05-01",
+"last_order": "2023-05-01"
+},
+{
+"id": 433,
+"name": "Mariya Islam Mim",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-05-10",
+"last_order": "2023-05-10"
+},
+{
+"id": 434,
+"name": "David Qufara",
+"rank": "Scalper",
+"orders": 2,
+"sales": 578.2,
+"commission": 290.0,
+"first_order": "2023-05-15",
+"last_order": "2023-06-14"
+},
+{
+"id": 435,
+"name": "Oliver Berhauser",
+"rank": "Kick Starter",
+"orders": 4,
+"sales": 676.2,
+"commission": 340.0,
+"first_order": "2023-05-19",
+"last_order": "2023-06-15"
+},
+{
+"id": 440,
+"name": "MAHMOOD SARKAR",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 0.0,
+"first_order": "2023-05-22",
+"last_order": "2023-05-22"
+},
+{
+"id": 441,
+"name": "David Simon Lizio",
+"rank": "Trader",
+"orders": 2,
+"sales": 98.0,
+"commission": 50.0,
+"first_order": "2023-05-22",
+"last_order": "2023-11-07"
+},
+{
+"id": 442,
+"name": "Alen Tabak",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2023-05-23",
+"last_order": "2023-05-23"
+},
+{
+"id": 443,
+"name": "Ntuthuko Sibanda",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-05-25",
+"last_order": "2023-05-25"
+},
+{
+"id": 444,
+"name": "Christopher Howells",
+"rank": "Kick Starter",
+"orders": 2,
+"sales": 578.2,
+"commission": 290.0,
+"first_order": "2023-05-27",
+"last_order": "2023-06-03"
+},
+{
+"id": 445,
+"name": "Maria Iesa Angela Testa",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 454,
+"name": "Esron Silungwe",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 457,
+"name": "Tevita Savua",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-10-13",
+"last_order": "2023-10-13"
+},
+{
+"id": 464,
+"name": "Derek Baxter",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-07-21",
+"last_order": "2024-07-21"
+},
+{
+"id": 474,
+"name": "SI CHOO KAI",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 0.0,
+"first_order": "2023-06-18",
+"last_order": "2023-06-18"
+},
+{
+"id": 475,
+"name": "Jake McGinney",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-06-19",
+"last_order": "2023-06-19"
+},
+{
+"id": 479,
+"name": "Hussein Bazzi",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-06-21",
+"last_order": "2023-06-21"
+},
+{
+"id": 480,
+"name": "onyedika ofomata",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-06-21",
+"last_order": "2023-06-21"
+},
+{
+"id": 484,
+"name": "Chris Hubers",
+"rank": "Trader",
+"orders": 2,
+"sales": 98.0,
+"commission": 50.0,
+"first_order": "2023-07-01",
+"last_order": "2023-10-07"
+},
+{
+"id": 487,
+"name": "Romario Younis",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-07-06",
+"last_order": "2023-07-06"
+},
+{
+"id": 492,
+"name": "Jermaine Joseph",
+"rank": "Newbie",
+"orders": 2,
+"sales": 99.0,
+"commission": 0.0,
+"first_order": "2023-07-07",
+"last_order": "2023-07-24"
+},
+{
+"id": 493,
+"name": "Hamza Tahri",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 498,
+"name": "Lucas Sibusiso",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2023-07-16",
+"last_order": "2023-07-16"
+},
+{
+"id": 508,
+"name": "Denis Konieczko",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 510,
+"name": "Lungelo Sthole",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 511,
+"name": "Kakhramon Pulatov",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 0.0,
+"first_order": "2023-08-02",
+"last_order": "2023-08-02"
+},
+{
+"id": 512,
+"name": "Glendel Sinel",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-08-07",
+"last_order": "2023-08-07"
+},
+{
+"id": 514,
+"name": "daniel price",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-08-23",
+"last_order": "2023-08-23"
+},
+{
+"id": 516,
+"name": "michael p afoa",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-08-30",
+"last_order": "2023-08-30"
+},
+{
+"id": 518,
+"name": "Zulkhisni Zolkaflil",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-09-08",
+"last_order": "2023-09-08"
+},
+{
+"id": 519,
+"name": "Ryan Yamar",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 521,
+"name": "Shamsul Arefin",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-09-16",
+"last_order": "2023-09-16"
+},
+{
+"id": 522,
+"name": "Manuel Maciel",
+"rank": "Newbie",
+"orders": 2,
+"sales": 578.2,
+"commission": 290.0,
+"first_order": "2023-09-25",
+"last_order": "2023-12-21"
+},
+{
+"id": 523,
+"name": "Yasir Arafat",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-10-03",
+"last_order": "2023-10-03"
+},
+{
+"id": 524,
+"name": "Murshid Al sabhi",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-10-04",
+"last_order": "2023-10-04"
+},
+{
+"id": 525,
+"name": "Lewis Mhlanga",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-10-04",
+"last_order": "2023-10-04"
+},
+{
+"id": 526,
+"name": "Troy Kalscheur",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-10-08",
+"last_order": "2023-10-08"
+},
+{
+"id": 530,
+"name": "Aaron White",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-10-19",
+"last_order": "2023-10-19"
+},
+{
+"id": 533,
+"name": "Jedidiah david Arancon",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-11-02",
+"last_order": "2023-11-02"
+},
+{
+"id": 534,
+"name": "Zonunsanga Khiangte",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-11-05",
+"last_order": "2023-11-05"
+},
+{
+"id": 535,
+"name": "Omar Almazroui",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-11-05",
+"last_order": "2023-11-05"
+},
+{
+"id": 539,
+"name": "Rene McLaren",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 540,
+"name": "Viliame Qalivanua",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-11-09",
+"last_order": "2023-11-09"
+},
+{
+"id": 541,
+"name": "Alton Daniels",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-11-14",
+"last_order": "2023-11-14"
+},
+{
+"id": 542,
+"name": "Adam El derby",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-11-20",
+"last_order": "2023-11-20"
+},
+{
+"id": 543,
+"name": "ahmed al jabri",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2023-11-24",
+"last_order": "2023-11-24"
+},
+{
+"id": 544,
+"name": "herbert dayono",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-12-02",
+"last_order": "2023-12-02"
+},
+{
+"id": 545,
+"name": "Foulah Abdo",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2023-12-04",
+"last_order": "2023-12-04"
+},
+{
+"id": 546,
+"name": "Ahmed Al Kindi",
+"rank": "Consultant",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2023-12-12",
+"last_order": "2023-12-12"
+},
+{
+"id": 550,
+"name": "Abcill Alquisola",
+"rank": "Kick Starter",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2023-12-16",
+"last_order": "2023-12-16"
+},
+{
+"id": 554,
+"name": "Jericho Inojales",
+"rank": "Emerald",
+"orders": 2,
+"sales": 578.2,
+"commission": 290.0,
+"first_order": "2023-12-19",
+"last_order": "2024-02-22"
+},
+{
+"id": 556,
+"name": "Drei Pelaez",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 557,
+"name": "Rose Ann Punsalang",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 569,
+"name": "Ijaz Hussain",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 573,
+"name": "Nabil Rahmoun",
+"rank": "Trader",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2024-01-09",
+"last_order": "2024-01-09"
+},
+{
+"id": 587,
+"name": "nabil rahmoun",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2024-01-15",
+"last_order": "2024-01-15"
+},
+{
+"id": 590,
+"name": "Charlimagne Maribao",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 599,
+"name": "adnan al jahdhami",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 609,
+"name": "Ciaran van Trappen",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 619,
+"name": "chris bumstead",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-01-20",
+"last_order": "2024-01-20"
+},
+{
+"id": 628,
+"name": "Leonid Mordukhayev",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 646,
+"name": "Marlon Francisco",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-01-24",
+"last_order": "2024-01-24"
+},
+{
+"id": 647,
+"name": "Crispin Ogilvie",
+"rank": "Newbie",
+"orders": 2,
+"sales": 98.0,
+"commission": 50.0,
+"first_order": "2024-01-24",
+"last_order": "2024-03-07"
+},
+{
+"id": 671,
+"name": "Anza Maphiri",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-01-29",
+"last_order": "2024-01-29"
+},
+{
+"id": 677,
+"name": "Javonny Cruz",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2024-01-30",
+"last_order": "2024-01-30"
+},
+{
+"id": 682,
+"name": "adnan AlJahdhami",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 691,
+"name": "Mia Caruso",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 692,
+"name": "Jamal Odah",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-02-02",
+"last_order": "2024-02-02"
+},
+{
+"id": 718,
+"name": "Mehikdeep Singh",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 727,
+"name": "Sharleen Kimani",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 739,
+"name": "Joanne Enrico",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-02-12",
+"last_order": "2024-02-12"
+},
+{
+"id": 753,
+"name": "Alex Naqi",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2024-02-14",
+"last_order": "2024-02-14"
+},
+{
+"id": 762,
+"name": "Dean Russell",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 763,
+"name": "Aamir Askew",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-02-16",
+"last_order": "2024-02-16"
+},
+{
+"id": 768,
+"name": "Salma Karim",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-02-17",
+"last_order": "2024-02-17"
+},
+{
+"id": 769,
+"name": "Shane Ray Buarao",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 779,
+"name": "David Brown",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-02-20",
+"last_order": "2024-02-20"
+},
+{
+"id": 780,
+"name": "Mia Caruso",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 788,
+"name": "Christian Balansag",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 790,
+"name": "Chris Navil",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-02-24",
+"last_order": "2024-02-24"
+},
+{
+"id": 800,
+"name": "Chanta Alexie Torillos",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 812,
+"name": "Mohammed juma",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 814,
+"name": "Robin Krekels",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-03-01",
+"last_order": "2024-03-01"
+},
+{
+"id": 829,
+"name": "Abdo tamer Sobhi",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-03-05",
+"last_order": "2024-03-05"
+},
+{
+"id": 859,
+"name": "Paulo Rocha",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-03-20",
+"last_order": "2024-03-20"
+},
+{
+"id": 868,
+"name": "Ahmed MH",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-03-25",
+"last_order": "2024-03-25"
+},
+{
+"id": 870,
+"name": "Philip Garcia",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-03-27",
+"last_order": "2024-03-27"
+},
+{
+"id": 871,
+"name": "GEORGE FRANCIS STUDENSKI",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-03-28",
+"last_order": "2024-03-28"
+},
+{
+"id": 872,
+"name": "Augustina Amedumey",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-03-28",
+"last_order": "2024-03-28"
+},
+{
+"id": 873,
+"name": "Marlon Marlon",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 875,
+"name": "Valentine Vank",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-04-01",
+"last_order": "2024-04-01"
+},
+{
+"id": 876,
+"name": "Gerome Joseph Liwanag",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 885,
+"name": "Hani Abdikadir",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-04-10",
+"last_order": "2024-04-10"
+},
+{
+"id": 889,
+"name": "Mahmood Albadi",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 890,
+"name": "Juhaina Al bahri",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-04-13",
+"last_order": "2024-04-13"
+},
+{
+"id": 891,
+"name": "Alex Alex",
+"rank": "Newbie",
+"orders": 0,
+"sales": 0.0,
+"commission": 0.0,
+"first_order": null,
+"last_order": null
+},
+{
+"id": 906,
+"name": "Joshua Land",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2024-05-13",
+"last_order": "2024-05-13"
+},
+{
+"id": 907,
+"name": "namra alfarey",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-05-31",
+"last_order": "2024-05-31"
+},
+{
+"id": 908,
+"name": "Danny Washum",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2024-07-11",
+"last_order": "2024-07-11"
+},
+{
+"id": 909,
+"name": "ibrahim achour",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-08-03",
+"last_order": "2024-08-03"
+},
+{
+"id": 910,
+"name": "Carlos Jose Pabalan",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-08-05",
+"last_order": "2024-08-05"
+},
+{
+"id": 911,
+"name": "Martin Stanev",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-09-18",
+"last_order": "2024-09-18"
+},
+{
+"id": 912,
+"name": "Elon Vaughan",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-09-25",
+"last_order": "2024-09-25"
+},
+{
+"id": 913,
+"name": "Md Arafat mondol",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-09-28",
+"last_order": "2024-09-28"
+},
+{
+"id": 914,
+"name": "Hezekiah Lemin",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-10-07",
+"last_order": "2024-10-07"
+},
+{
+"id": 915,
+"name": "Raul Roland Marturillas",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-10-07",
+"last_order": "2024-10-07"
+},
+{
+"id": 916,
+"name": "Kurt Neil John Misuari",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-10-08",
+"last_order": "2024-10-08"
+},
+{
+"id": 918,
+"name": "Bryan Natal",
+"rank": "Consultant",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-11-15",
+"last_order": "2024-11-15"
+},
+{
+"id": 925,
+"name": "Joel Tresvalles",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-11-25",
+"last_order": "2024-11-25"
+},
+{
+"id": 927,
+"name": "Asfak Fahim",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2024-12-07",
+"last_order": "2024-12-07"
+},
+{
+"id": 928,
+"name": "Amjad Alhasani",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-05-11",
+"last_order": "2025-05-11"
+},
+{
+"id": 929,
+"name": "Abdulaziz Almarhoon",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-05-11",
+"last_order": "2025-05-11"
+},
+{
+"id": 930,
+"name": "Salim ALSaridi",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-05-12",
+"last_order": "2025-05-12"
+},
+{
+"id": 931,
+"name": "Amor Alhabsi",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-05-13",
+"last_order": "2025-05-13"
+},
+{
+"id": 932,
+"name": "Idris Alabri",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-05-14",
+"last_order": "2025-05-14"
+},
+{
+"id": 933,
+"name": "hamad Alyahyaee",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-05-14",
+"last_order": "2025-05-14"
+},
+{
+"id": 934,
+"name": "MOHAMMED ALAAMRI",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-05-15",
+"last_order": "2025-05-15"
+},
+{
+"id": 935,
+"name": "Mohammed Al maRBOUl",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-05-17",
+"last_order": "2025-05-17"
+},
+{
+"id": 936,
+"name": "Sami Al Hashmi",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-05-25",
+"last_order": "2025-05-25"
+},
+{
+"id": 937,
+"name": "حبيب البلوشي",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-05-25",
+"last_order": "2025-05-25"
+},
+{
+"id": 938,
+"name": "flower rose",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2025-05-30",
+"last_order": "2025-05-30"
+},
+{
+"id": 939,
+"name": "Azriel Toviah",
+"rank": "Kick Starter",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-06-23",
+"last_order": "2025-06-23"
+},
+{
+"id": 940,
+"name": "Ainura Tulekova",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2025-07-12",
+"last_order": "2025-07-12"
+},
+{
+"id": 942,
+"name": "Mikelya Sarieva",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-07-24",
+"last_order": "2025-07-24"
+},
+{
+"id": 944,
+"name": "petimat islamova",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-08-13",
+"last_order": "2025-08-13"
+},
+{
+"id": 945,
+"name": "Ahmed Albadi",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-08-18",
+"last_order": "2025-08-18"
+},
+{
+"id": 946,
+"name": "Khalifa Alharrsi",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-10-04",
+"last_order": "2025-10-04"
+},
+{
+"id": 948,
+"name": "Hasan AL Hasan",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2025-10-12",
+"last_order": "2025-10-12"
+},
+{
+"id": 952,
+"name": "ALI AL HOOTI",
+"rank": "Consultant",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2025-11-06",
+"last_order": "2025-11-06"
+},
+{
+"id": 967,
+"name": "Roza Tairova",
+"rank": "Newbie",
+"orders": 1,
+"sales": 529.2,
+"commission": 265.0,
+"first_order": "2026-01-09",
+"last_order": "2026-01-09"
+},
+{
+"id": 970,
+"name": "Ahmed Said",
+"rank": "Newbie",
+"orders": 1,
+"sales": 49.0,
+"commission": 25.0,
+"first_order": "2026-06-06",
+"last_order": "2026-06-06"
+}
+],
+"orders": [
+{
+"id": 506,
+"referral": "Tebogo Abel Tlhagadikgora",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-13"
+},
+{
+"id": 523,
+"referral": "Fahid Khalid",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-15"
+},
+{
+"id": 543,
+"referral": "Rapsan Diamalod",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-29"
+},
+{
+"id": 549,
+"referral": "Helen Thiel",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-11-03"
+},
+{
+"id": 550,
+"referral": "Tim Beya",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-11-03"
+},
+{
+"id": 552,
+"referral": "Izzatbek Shokirov",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-11-08"
+},
+{
+"id": 557,
+"referral": "David Farrow",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-11-22"
+},
+{
+"id": 561,
+"referral": "Ara Tate",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-12-02"
+},
+{
+"id": 564,
+"referral": "Alex John",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-12-19"
+},
+{
+"id": 567,
+"referral": "Stanislau Pchelnikau",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-12-30"
+},
+{
+"id": 574,
+"referral": "sunny ihemrorochi amaechi",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-02"
+},
+{
+"id": 578,
+"referral": "Sameh Rashed",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-08"
+},
+{
+"id": 581,
+"referral": "James Anthony Adolfo",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-13"
+},
+{
+"id": 582,
+"referral": "Aizhamal Kylychbek",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-17"
+},
+{
+"id": 583,
+"referral": "Moonlight Tamarra",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-27"
+},
+{
+"id": 584,
+"referral": "Christian Jumar Rodriguez",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-27"
+},
+{
+"id": 588,
+"referral": "Rhociel Rendon",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-30"
+},
+{
+"id": 591,
+"referral": "Ivan Chernykh",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-02-09"
+},
+{
+"id": 592,
+"referral": "Chris Lee",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 50.0,
+"date": "2023-03-09"
+},
+{
+"id": 594,
+"referral": "ahmed shidi",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 50.0,
+"date": "2023-03-20"
+},
+{
+"id": 598,
+"referral": "abdullah asem",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 50.0,
+"date": "2023-04-18"
+},
+{
+"id": 599,
+"referral": "RENILDA CEDRO",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2023-05-01"
+},
+{
+"id": 601,
+"referral": "Jamal Aitbassou",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2023-05-13"
+},
+{
+"id": 603,
+"referral": "Oliver Berhauser",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2023-05-19"
+},
+{
+"id": 607,
+"referral": "Ruby Juan",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2023-05-21"
+},
+{
+"id": 608,
+"referral": "MAHMOOD SARKAR",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2023-05-22"
+},
+{
+"id": 610,
+"referral": "Alen Tabak",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2023-05-23"
+},
+{
+"id": 616,
+"referral": "Christopher Howells",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2023-06-03"
+},
+{
+"id": 623,
+"referral": "David Qufara",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2023-06-14"
+},
+{
+"id": 651,
+"referral": "Lucas Sibusiso",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2023-07-16"
+},
+{
+"id": 697,
+"referral": "ahmed al jabri",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2023-11-24"
+},
+{
+"id": 699,
+"referral": "Foulah Abdo",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2023-12-04"
+},
+{
+"id": 700,
+"referral": "Ahmed Al Kindi",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2023-12-12"
+},
+{
+"id": 706,
+"referral": "Jericho Inojales",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2023-12-19"
+},
+{
+"id": 707,
+"referral": "Manuel Maciel",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2023-12-21"
+},
+{
+"id": 718,
+"referral": "Nabil Rahmoun",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2024-01-09"
+},
+{
+"id": 728,
+"referral": "nabil rahmoun",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2024-01-15"
+},
+{
+"id": 796,
+"referral": "Javonny Cruz",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2024-01-30"
+},
+{
+"id": 879,
+"referral": "Alex Naqi",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2024-02-14"
+},
+{
+"id": 1072,
+"referral": "Joshua Land",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2024-05-13"
+},
+{
+"id": 1074,
+"referral": "Danny Washum",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2024-07-11"
+},
+{
+"id": 1078,
+"referral": "Jamal Aitbassou",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2024-09-15"
+},
+{
+"id": 1097,
+"referral": "Amjad Alhasani",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-05-11"
+},
+{
+"id": 1098,
+"referral": "Abdulaziz Almarhoon",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-05-11"
+},
+{
+"id": 1099,
+"referral": "Salim ALSaridi",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-05-12"
+},
+{
+"id": 1100,
+"referral": "Amor Alhabsi",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-05-13"
+},
+{
+"id": 1101,
+"referral": "Idris Alabri",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-05-14"
+},
+{
+"id": 1102,
+"referral": "hamad Alyahyaee",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-05-14"
+},
+{
+"id": 1103,
+"referral": "MOHAMMED ALAAMRI",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-05-15"
+},
+{
+"id": 1104,
+"referral": "Mohammed Al maRBOUl",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-05-17"
+},
+{
+"id": 1105,
+"referral": "Sami Al Hashmi",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-05-25"
+},
+{
+"id": 1106,
+"referral": "حبيب البلوشي",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-05-25"
+},
+{
+"id": 1108,
+"referral": "Azriel Toviah",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-06-23"
+},
+{
+"id": 1111,
+"referral": "Mikelya Sarieva",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-07-24"
+},
+{
+"id": 1113,
+"referral": "petimat islamova",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-08-13"
+},
+{
+"id": 1114,
+"referral": "Ahmed Albadi",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-08-18"
+},
+{
+"id": 1115,
+"referral": "Khalifa Alharrsi",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-10-04"
+},
+{
+"id": 1116,
+"referral": "Hasan AL Hasan",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2025-10-12"
+},
+{
+"id": 1134,
+"referral": "Roza Tairova",
+"total": 529.2,
+"commission_pct": 0.0,
+"commission_fixed": 265.0,
+"date": "2026-01-09"
+},
+{
+"id": 310,
+"referral": "Khalid GK",
+"total": 300.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-21"
+},
+{
+"id": 309,
+"referral": "Khalid GK",
+"total": 200.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-21"
+},
+{
+"id": 661,
+"referral": "Jermaine Joseph",
+"total": 50.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2023-07-24"
+},
+{
+"id": 423,
+"referral": "Oleksandr Novosiadlyi",
+"total": 49.0,
+"commission_pct": 51.0,
+"commission_fixed": 0.0,
+"date": "2022-08-06"
+},
+{
+"id": 428,
+"referral": "Naseem Almarar",
+"total": 49.0,
+"commission_pct": 51.0,
+"commission_fixed": 0.0,
+"date": "2022-08-08"
+},
+{
+"id": 430,
+"referral": "Abdulaziz Alhameli",
+"total": 49.0,
+"commission_pct": 51.0,
+"commission_fixed": 0.0,
+"date": "2022-08-09"
+},
+{
+"id": 431,
+"referral": "Ahmad Nader",
+"total": 49.0,
+"commission_pct": 51.0,
+"commission_fixed": 0.0,
+"date": "2022-08-09"
+},
+{
+"id": 432,
+"referral": "Nicole Hernandez",
+"total": 49.0,
+"commission_pct": 51.0,
+"commission_fixed": 0.0,
+"date": "2022-08-10"
+},
+{
+"id": 436,
+"referral": "dada gsbxbx",
+"total": 49.0,
+"commission_pct": 51.0,
+"commission_fixed": 0.0,
+"date": "2022-08-11"
+},
+{
+"id": 437,
+"referral": "dada gsbxbx",
+"total": 49.0,
+"commission_pct": 51.0,
+"commission_fixed": 0.0,
+"date": "2022-08-11"
+},
+{
+"id": 457,
+"referral": "Benjamin Tangang",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-08-25"
+},
+{
+"id": 460,
+"referral": "Tebogo A Tlhagadikgora",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-01"
+},
+{
+"id": 463,
+"referral": "William Dominic Carandang",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-04"
+},
+{
+"id": 464,
+"referral": "Abegail Pranada",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-04"
+},
+{
+"id": 465,
+"referral": "Kevin Schoeneberg",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-06"
+},
+{
+"id": 467,
+"referral": "EMMANUEL ADEKUNBI",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-09"
+},
+{
+"id": 468,
+"referral": "cristyl mitra",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-10"
+},
+{
+"id": 469,
+"referral": "larbi zeradna",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-10"
+},
+{
+"id": 473,
+"referral": "Chiradee Enriquez",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-14"
+},
+{
+"id": 475,
+"referral": "Gabriel bonilla",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-15"
+},
+{
+"id": 477,
+"referral": "Nasir Mohammed",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-16"
+},
+{
+"id": 479,
+"referral": "mohamed Ahmed",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-18"
+},
+{
+"id": 482,
+"referral": "Juahar Ahmed",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-19"
+},
+{
+"id": 484,
+"referral": "Noura Almansoori",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-27"
+},
+{
+"id": 485,
+"referral": "Cherish Deb Lomocso",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-28"
+},
+{
+"id": 486,
+"referral": "Eduard Karnaukh",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-09-28"
+},
+{
+"id": 487,
+"referral": "Jamal Aitbassou",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-03"
+},
+{
+"id": 489,
+"referral": "Armie dilidili",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-06"
+},
+{
+"id": 490,
+"referral": "jane patindol",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-10"
+},
+{
+"id": 491,
+"referral": "keath john aquino",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-10"
+},
+{
+"id": 494,
+"referral": "HARLENE JACOSALEM",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-11"
+},
+{
+"id": 495,
+"referral": "joyce mondido",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-12"
+},
+{
+"id": 496,
+"referral": "Lourdas Llamos",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-12"
+},
+{
+"id": 497,
+"referral": "Shekinah Sipaco",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-12"
+},
+{
+"id": 498,
+"referral": "Margo Ejercito",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-12"
+},
+{
+"id": 499,
+"referral": "Ferdinand Christian Sabanal",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-12"
+},
+{
+"id": 500,
+"referral": "Ji Jae Ce",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-13"
+},
+{
+"id": 501,
+"referral": "Jillian Zamora",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-13"
+},
+{
+"id": 502,
+"referral": "Melody Abad",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-13"
+},
+{
+"id": 503,
+"referral": "Analyn Endona",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-13"
+},
+{
+"id": 504,
+"referral": "Jhessa Naya",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-13"
+},
+{
+"id": 505,
+"referral": "Arim Aricev",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-13"
+},
+{
+"id": 508,
+"referral": "Alferez Lad",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-13"
+},
+{
+"id": 509,
+"referral": "Gretchen Ablan",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-13"
+},
+{
+"id": 510,
+"referral": "Gretchen Ablan",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-13"
+},
+{
+"id": 511,
+"referral": "Pat Pastrana",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-13"
+},
+{
+"id": 512,
+"referral": "Elay Obama",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-13"
+},
+{
+"id": 513,
+"referral": "Alea Louise Flores",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-14"
+},
+{
+"id": 514,
+"referral": "julie demogena",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-14"
+},
+{
+"id": 515,
+"referral": "Marjorey Gustilo",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-14"
+},
+{
+"id": 516,
+"referral": "Reynalin Gonzales",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-14"
+},
+{
+"id": 517,
+"referral": "heaven polestico",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-14"
+},
+{
+"id": 518,
+"referral": "Noman Bacha",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-14"
+},
+{
+"id": 519,
+"referral": "Raven bridget Beralde",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-15"
+},
+{
+"id": 520,
+"referral": "Erica Magnawa",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-15"
+},
+{
+"id": 522,
+"referral": "Noella Sause",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-15"
+},
+{
+"id": 526,
+"referral": "Christ Justine Yosores",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-16"
+},
+{
+"id": 527,
+"referral": "Nika Tenahi",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-16"
+},
+{
+"id": 528,
+"referral": "Angela Clara",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-16"
+},
+{
+"id": 529,
+"referral": "JAIKA BARNAHA",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-16"
+},
+{
+"id": 530,
+"referral": "JAIKA BARNAHA",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-16"
+},
+{
+"id": 531,
+"referral": "fatima famoso",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-16"
+},
+{
+"id": 532,
+"referral": "Rosemarie Uy",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-17"
+},
+{
+"id": 533,
+"referral": "Zee Jee",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-18"
+},
+{
+"id": 534,
+"referral": "Christine Joy Moreno",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-18"
+},
+{
+"id": 535,
+"referral": "Lawrence Mwenda",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-18"
+},
+{
+"id": 536,
+"referral": "sunny ihemrorochi amaechi",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-22"
+},
+{
+"id": 537,
+"referral": "Mae Studenski",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-22"
+},
+{
+"id": 538,
+"referral": "Seth Fenuku",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-23"
+},
+{
+"id": 539,
+"referral": "Mounir Abbotti",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-23"
+},
+{
+"id": 540,
+"referral": "Tama Amir",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-23"
+},
+{
+"id": 541,
+"referral": "OKEH EBUKA",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-23"
+},
+{
+"id": 542,
+"referral": "Amjad Rafiq",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-24"
+},
+{
+"id": 544,
+"referral": "David Farrow",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-29"
+},
+{
+"id": 545,
+"referral": "Yahaya Abdulqudus",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-29"
+},
+{
+"id": 546,
+"referral": "Vennice Arnibal",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-29"
+},
+{
+"id": 547,
+"referral": "Omran Ali",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-10-29"
+},
+{
+"id": 548,
+"referral": "Michael John Lobaton",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-11-03"
+},
+{
+"id": 551,
+"referral": "Jimmy Apas",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-11-04"
+},
+{
+"id": 555,
+"referral": "David Farrow",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-11-22"
+},
+{
+"id": 556,
+"referral": "David Farrow",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-11-22"
+},
+{
+"id": 558,
+"referral": "Abdulaziz Alhameli",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-11-23"
+},
+{
+"id": 559,
+"referral": "Abdulaziz Alhameli",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-11-23"
+},
+{
+"id": 560,
+"referral": "احمد السيد السيد",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-11-23"
+},
+{
+"id": 565,
+"referral": "Stacey Gomez",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-12-20"
+},
+{
+"id": 566,
+"referral": "Thembisile Shakoane",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-12-20"
+},
+{
+"id": 568,
+"referral": "Alicia Amistad",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-12-30"
+},
+{
+"id": 569,
+"referral": "MICHELLE AMODIA",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2022-12-31"
+},
+{
+"id": 570,
+"referral": "NEVA ANLIE MAE MEGIO",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-01"
+},
+{
+"id": 571,
+"referral": "salil ibrahim",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-01"
+},
+{
+"id": 572,
+"referral": "Cathrina Nunez",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-02"
+},
+{
+"id": 575,
+"referral": "MICHELLE AMODIA",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-02"
+},
+{
+"id": 576,
+"referral": "Vinny Cooker",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-03"
+},
+{
+"id": 577,
+"referral": "Dee Forest",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-04"
+},
+{
+"id": 579,
+"referral": "Chema Nava",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-10"
+},
+{
+"id": 580,
+"referral": "Elvira Ibragimova",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-10"
+},
+{
+"id": 587,
+"referral": "Mahmoud Ebeid",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-01-29"
+},
+{
+"id": 589,
+"referral": "Collins Ndeda",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-02-01"
+},
+{
+"id": 600,
+"referral": "Mariya Islam Mim",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-05-10"
+},
+{
+"id": 602,
+"referral": "David Qufara",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-05-15"
+},
+{
+"id": 609,
+"referral": "David Simon Lizio",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-05-22"
+},
+{
+"id": 611,
+"referral": "Ntuthuko Sibanda",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-05-25"
+},
+{
+"id": 612,
+"referral": "Christopher Howells",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-05-27"
+},
+{
+"id": 613,
+"referral": "Elvira Ibragimova",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-05-28"
+},
+{
+"id": 625,
+"referral": "Oliver Berhauser",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-06-14"
+},
+{
+"id": 626,
+"referral": "Oliver Berhauser",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-06-14"
+},
+{
+"id": 627,
+"referral": "Oliver Berhauser",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-06-15"
+},
+{
+"id": 631,
+"referral": "SI CHOO KAI",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2023-06-18"
+},
+{
+"id": 632,
+"referral": "Jake McGinney",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-06-19"
+},
+{
+"id": 635,
+"referral": "Hussein Bazzi",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-06-21"
+},
+{
+"id": 636,
+"referral": "onyedika ofomata",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-06-21"
+},
+{
+"id": 640,
+"referral": "Chris Hubers",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-07-01"
+},
+{
+"id": 642,
+"referral": "Romario Younis",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-07-06"
+},
+{
+"id": 646,
+"referral": "Jermaine Joseph",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2023-07-07"
+},
+{
+"id": 663,
+"referral": "Kakhramon Pulatov",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2023-08-02"
+},
+{
+"id": 664,
+"referral": "Glendel Sinel",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-08-07"
+},
+{
+"id": 667,
+"referral": "daniel price",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-08-23"
+},
+{
+"id": 669,
+"referral": "michael p afoa",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-08-30"
+},
+{
+"id": 670,
+"referral": "Zulkhisni Zolkaflil",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-09-08"
+},
+{
+"id": 673,
+"referral": "Shamsul Arefin",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-09-16"
+},
+{
+"id": 674,
+"referral": "Manuel Maciel",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-09-25"
+},
+{
+"id": 675,
+"referral": "Yasir Arafat",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-10-03"
+},
+{
+"id": 676,
+"referral": "Murshid Al sabhi",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-10-04"
+},
+{
+"id": 677,
+"referral": "Lewis Mhlanga",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-10-04"
+},
+{
+"id": 678,
+"referral": "Chris Hubers",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-10-07"
+},
+{
+"id": 679,
+"referral": "Troy Kalscheur",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-10-08"
+},
+{
+"id": 680,
+"referral": "Tevita Savua",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-10-13"
+},
+{
+"id": 682,
+"referral": "hamza taiss",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-10-14"
+},
+{
+"id": 684,
+"referral": "Aaron White",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-10-19"
+},
+{
+"id": 686,
+"referral": "Jedidiah david Arancon",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-11-02"
+},
+{
+"id": 687,
+"referral": "Zonunsanga Khiangte",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-11-05"
+},
+{
+"id": 688,
+"referral": "Omar Almazroui",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-11-05"
+},
+{
+"id": 689,
+"referral": "David Simon Lizio",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-11-07"
+},
+{
+"id": 693,
+"referral": "Viliame Qalivanua",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-11-09"
+},
+{
+"id": 694,
+"referral": "Alton Daniels",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-11-14"
+},
+{
+"id": 696,
+"referral": "Adam El derby",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-11-20"
+},
+{
+"id": 698,
+"referral": "herbert dayono",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-12-02"
+},
+{
+"id": 703,
+"referral": "Abcill Alquisola",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2023-12-16"
+},
+{
+"id": 752,
+"referral": "chris bumstead",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-01-20"
+},
+{
+"id": 774,
+"referral": "Crispin Ogilvie",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-01-24"
+},
+{
+"id": 775,
+"referral": "Marlon Francisco",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-01-24"
+},
+{
+"id": 791,
+"referral": "Anza Maphiri",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-01-29"
+},
+{
+"id": 813,
+"referral": "Jamal Odah",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-02-02"
+},
+{
+"id": 860,
+"referral": "Joanne Enrico",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-02-12"
+},
+{
+"id": 896,
+"referral": "Aamir Askew",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-02-16"
+},
+{
+"id": 900,
+"referral": "Salma Karim",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-02-17"
+},
+{
+"id": 915,
+"referral": "David Brown",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-02-20"
+},
+{
+"id": 925,
+"referral": "Jericho Inojales",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-02-22"
+},
+{
+"id": 933,
+"referral": "Chris Navil",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-02-24"
+},
+{
+"id": 953,
+"referral": "Robin Krekels",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-03-01"
+},
+{
+"id": 973,
+"referral": "Abdo tamer Sobhi",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-03-05"
+},
+{
+"id": 984,
+"referral": "Crispin Ogilvie",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-03-07"
+},
+{
+"id": 1014,
+"referral": "Paulo Rocha",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-03-20"
+},
+{
+"id": 1026,
+"referral": "Ahmed MH",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-03-25"
+},
+{
+"id": 1028,
+"referral": "Philip Garcia",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-03-27"
+},
+{
+"id": 1029,
+"referral": "GEORGE FRANCIS STUDENSKI",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-03-28"
+},
+{
+"id": 1030,
+"referral": "Augustina Amedumey",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-03-28"
+},
+{
+"id": 1032,
+"referral": "Valentine Vank",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-04-01"
+},
+{
+"id": 1043,
+"referral": "Hani Abdikadir",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-04-10"
+},
+{
+"id": 1053,
+"referral": "Juhaina Al bahri",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-04-13"
+},
+{
+"id": 1073,
+"referral": "namra alfarey",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-05-31"
+},
+{
+"id": 1075,
+"referral": "Derek Baxter",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-07-21"
+},
+{
+"id": 1076,
+"referral": "ibrahim achour",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-08-03"
+},
+{
+"id": 1077,
+"referral": "Carlos Jose Pabalan",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-08-05"
+},
+{
+"id": 1079,
+"referral": "Martin Stanev",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-09-18"
+},
+{
+"id": 1080,
+"referral": "Elon Vaughan",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-09-25"
+},
+{
+"id": 1081,
+"referral": "Md Arafat mondol",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-09-28"
+},
+{
+"id": 1082,
+"referral": "Hezekiah Lemin",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-10-07"
+},
+{
+"id": 1083,
+"referral": "Raul Roland Marturillas",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-10-07"
+},
+{
+"id": 1084,
+"referral": "Kurt Neil John Misuari",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-10-08"
+},
+{
+"id": 1086,
+"referral": "Bryan Natal",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-11-15"
+},
+{
+"id": 1093,
+"referral": "Joel Tresvalles",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-11-25"
+},
+{
+"id": 1095,
+"referral": "Asfak Fahim",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2024-12-07"
+},
+{
+"id": 1107,
+"referral": "flower rose",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2025-05-30"
+},
+{
+"id": 1109,
+"referral": "Ainura Tulekova",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2025-07-12"
+},
+{
+"id": 1119,
+"referral": "ALI AL HOOTI",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2025-11-06"
+},
+{
+"id": 1136,
+"referral": "Ahmed Said",
+"total": 49.0,
+"commission_pct": 0.0,
+"commission_fixed": 25.0,
+"date": "2026-06-06"
+},
+{
+"id": 48,
+"referral": "Allan Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-02"
+},
+{
+"id": 83,
+"referral": "Allan Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 86,
+"referral": "Rubilyn Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 88,
+"referral": "Allan Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 91,
+"referral": "MYLA FULGENCIO",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 95,
+"referral": "Mylene Eugenio",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 97,
+"referral": "Allan Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 100,
+"referral": "MYLA FULGENCIO",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 104,
+"referral": "Motaz Ahmad",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 106,
+"referral": "Allan Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 109,
+"referral": "MYLA FULGENCIO",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 111,
+"referral": "Allan Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 114,
+"referral": "Rubilyn Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 117,
+"referral": "May Aguila",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 119,
+"referral": "Allan Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 122,
+"referral": "Rubilyn Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 125,
+"referral": "May Aguila",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 136,
+"referral": "Rafael Denis Dominguez",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 137,
+"referral": "Rafael Denis Dominguez",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 138,
+"referral": "Rafael Denis Dominguez",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 139,
+"referral": "Rafael Denis Dominguez",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 140,
+"referral": "Rafael Denis Dominguez",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 142,
+"referral": "Allan Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 145,
+"referral": "Rubilyn Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 150,
+"referral": "Romeo Manguilimotan Jr.",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 152,
+"referral": "Allan Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 155,
+"referral": "Rubilyn Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 160,
+"referral": "Romeo Manguilimotan Jr.",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 165,
+"referral": "Kenn Jenster Morilla",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 166,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 167,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 168,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 169,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 170,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 172,
+"referral": "siham baitto",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 175,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 176,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 177,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 179,
+"referral": "siham baitto",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 182,
+"referral": "Hicham El battah",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 183,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 184,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 185,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 187,
+"referral": "siham baitto",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 190,
+"referral": "Asmae Hilali",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 194,
+"referral": "Anas Bakal",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 195,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 196,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 197,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 199,
+"referral": "siham baitto",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 202,
+"referral": "Asmae Hilali",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 203,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 204,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 205,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 207,
+"referral": "siham baitto",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 210,
+"referral": "Hicham El battah",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 211,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 212,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 213,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 215,
+"referral": "siham baitto",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 216,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 217,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 218,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 220,
+"referral": "Ahad Aziz Halari",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 221,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 222,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 223,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 224,
+"referral": "youssef Bouba",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 225,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 226,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 227,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 228,
+"referral": "youssef Bouba",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 229,
+"referral": "khaled shaath",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-05"
+},
+{
+"id": 230,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 231,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 232,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 234,
+"referral": "Ahad Aziz Halari",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 237,
+"referral": "Aleksandra Sergeeva",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 238,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 239,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 240,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 242,
+"referral": "Ahad Aziz Halari",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 244,
+"referral": "Rabeiah Ben Mokhtar",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 245,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 246,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 247,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 249,
+"referral": "Ahad Aziz Halari",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 251,
+"referral": "Rabeiah Ben Mokhtar",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 254,
+"referral": "Claire Georvanie",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 255,
+"referral": "Claire Georvanie",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-07"
+},
+{
+"id": 256,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-09"
+},
+{
+"id": 257,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-09"
+},
+{
+"id": 259,
+"referral": "Allan Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-09"
+},
+{
+"id": 263,
+"referral": "Rubilyn Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-09"
+},
+{
+"id": 266,
+"referral": "May Aguila",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-09"
+},
+{
+"id": 271,
+"referral": "Christine Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-09"
+},
+{
+"id": 272,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-10"
+},
+{
+"id": 273,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-10"
+},
+{
+"id": 274,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-10"
+},
+{
+"id": 276,
+"referral": "Ahad Aziz Halari",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-10"
+},
+{
+"id": 279,
+"referral": "Nassa Issa",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-10"
+},
+{
+"id": 280,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-10"
+},
+{
+"id": 281,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-10"
+},
+{
+"id": 282,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-10"
+},
+{
+"id": 284,
+"referral": "Ahad Aziz Halari",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-10"
+},
+{
+"id": 287,
+"referral": "Nassa Issa",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-10"
+},
+{
+"id": 307,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-15"
+},
+{
+"id": 319,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-23"
+},
+{
+"id": 321,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-26"
+},
+{
+"id": 323,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-27"
+},
+{
+"id": 324,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-27"
+},
+{
+"id": 325,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-27"
+},
+{
+"id": 327,
+"referral": "Allan Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-27"
+},
+{
+"id": 334,
+"referral": "Rubilyn Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-27"
+},
+{
+"id": 335,
+"referral": "Rubilyn Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-27"
+},
+{
+"id": 340,
+"referral": "Romeo Manguilimotan Jr.",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-06-27"
+},
+{
+"id": 343,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 344,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 346,
+"referral": "Allan Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 353,
+"referral": "Rubilyn Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 354,
+"referral": "Rubilyn Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 357,
+"referral": "May Aguila",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 362,
+"referral": "Christine Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 366,
+"referral": "Erson Jorca",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 367,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 368,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 370,
+"referral": "Allan Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 377,
+"referral": "Rubilyn Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 378,
+"referral": "Rubilyn Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 381,
+"referral": "May Aguila",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 386,
+"referral": "Christine Pahita",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 390,
+"referral": "Erson Jorca",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 392,
+"referral": "Carina Cruz",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 393,
+"referral": "Dave Santos",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 395,
+"referral": "Robert Shindoll",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 396,
+"referral": "Elvira Ibragimova",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 398,
+"referral": "Ahad Aziz Halari",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 400,
+"referral": "Rabeiah Ben Mokhtar",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+},
+{
+"id": 402,
+"referral": "Kamran Roozgard",
+"total": 17.0,
+"commission_pct": 0.0,
+"commission_fixed": 0.0,
+"date": "2022-07-01"
+}
+]
+}

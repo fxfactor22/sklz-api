@@ -166,3 +166,19 @@ def test_engine_pulse_dead_when_stale_or_missing():
                             "last_seen": _iso(now - timedelta(minutes=20)), "stats": {"open_now": 1}}]}
     out = asyncio.run(P.engine_pulse(SB(db)))
     assert out["alive"] is False and out["open_now"] == 1
+
+
+def test_partner_legacy_is_owner_only_and_hides_names_in_summary(monkeypatch):
+    import types as _t
+    monkeypatch.setenv("ADMIN_EMAILS", "owner@example.com")
+    owner = _t.SimpleNamespace(id="u1", email="owner@example.com")
+    other = _t.SimpleNamespace(id="u2", email="someone@example.com")
+    out = asyncio.run(partner.legacy(full=0, user=owner))
+    assert out["available"] is True and out["totals"]["orders"] == 375 and out["totals"]["clients"] == 300
+    assert "clients" not in out and "orders" not in out
+    full = asyncio.run(partner.legacy(full=1, user=owner))
+    assert len(full["clients"]) == 300 and len(full["orders"]) == 375
+    assert full["orders"][0]["date"] >= full["orders"][-1]["date"]
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException):
+        asyncio.run(partner.legacy(full=1, user=other))
