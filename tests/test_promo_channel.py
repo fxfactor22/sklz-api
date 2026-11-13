@@ -249,28 +249,28 @@ def _client(**kw):
 
 def test_h_prop_evaluations_get_the_multi_account_plan():
     name, product, _ = B._c_recommend(_client(f_accounts="prop"))
-    assert (name, product) == ("SKLZ Pro", "copy_pro_monthly")
+    assert (name, product) == ("SKLZ Pro", "sklz_pro_monthly")
 
 
 def test_h_several_own_accounts_get_the_multi_account_plan():
     _, product, _ = B._c_recommend(_client(f_accounts="own_multi"))
-    assert product == "copy_pro_monthly"
+    assert product == "sklz_pro_monthly"
 
 
 def test_h_crypto_gets_the_crypto_plan():
     _, product, _ = B._c_recommend(_client(trades="crypto"))
-    assert product == "copy_crypto_monthly"
+    assert product == "sklz_plus_monthly"
 
 
 def test_h_single_forex_account_gets_the_cheapest_plan():
     _, product, _ = B._c_recommend(_client())
-    assert product == "copy_basic_monthly"
+    assert product == "sklz_core_monthly"
 
 
 def test_h_a_learner_is_not_sold_the_expensive_plan():
     name, product, why = B._c_recommend(
         _client(trades="learning", f_accounts="prop"))
-    assert product == "copy_basic_monthly"
+    assert product == "sklz_core_monthly"
     assert "journal" in why.lower()
 
 
@@ -287,9 +287,11 @@ def test_h_no_client_is_ever_sold_a_provider_package():
 
 # ── I. prices come from the table Stripe is charged from ───────────
 def test_i_price_is_read_from_the_catalog():
+    assert B._plan_price("sklz_core_monthly") == "$119/month"
+    assert B._plan_price("sklz_plus_monthly") == "$149/month"
+    assert B._plan_price("sklz_pro_monthly") == "$179/month"
+    # grandfathered prices are still quotable for the people who hold them
     assert B._plan_price("copy_basic_monthly") == "$29/month"
-    assert B._plan_price("copy_crypto_monthly") == "$49/month"
-    assert B._plan_price("copy_pro_monthly") == "$79/month"
 
 
 def test_i_unknown_product_quotes_nothing_rather_than_guessing():
@@ -298,7 +300,7 @@ def test_i_unknown_product_quotes_nothing_rather_than_guessing():
 
 def test_i_summary_price_matches_the_catalog():
     text, _ = B._c_summary(_client(f_accounts="prop"))
-    _n, cents, _i = billing.CATALOG["copy_pro_monthly"]
+    _n, cents, _i = billing.CATALOG["sklz_pro_monthly"]
     assert f"${cents // 100}/month" in text
 
 

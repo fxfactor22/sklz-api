@@ -514,7 +514,7 @@ def _c_recommend(lead: dict) -> tuple[str, str, str]:
     goal = lead.get("f_problem") or ""
 
     if trades == "learning":
-        return ("SKLZ Core", "copy_basic_monthly",
+        return ("SKLZ Core", "sklz_core_monthly",
                 "You said you are still learning, so start at the bottom "
                 "and do not pay for what you cannot use yet. Core gives "
                 "you the indicators, chart analysis and the journal. "
@@ -522,24 +522,24 @@ def _c_recommend(lead: dict) -> tuple[str, str, str]:
                 "than this \u2014 the journal is the part that will "
                 "tell you what your trading actually does.")
     if accounts in ("own_multi", "prop"):
-        return ("SKLZ Pro", "copy_pro_monthly",
+        return ("SKLZ Pro", "sklz_pro_monthly",
                 "Several accounts, and prop evaluations especially, are "
                 "where the cheaper plans stop: they copy on the partner "
                 "broker only, one account at a time. Pro copies on any "
                 "broker and up to ten accounts at once, which is the "
                 "reason it exists.")
     if trades in ("crypto", "both"):
-        return ("SKLZ Plus", "copy_crypto_monthly",
+        return ("SKLZ Plus", "sklz_plus_monthly",
                 "Crypto is the line between the two lower plans. Plus is "
                 "Core plus crypto trading and crypto copy trading; if "
                 "you were only trading FX you would not need it.")
     if goal == "journal":
-        return ("SKLZ Core", "copy_basic_monthly",
+        return ("SKLZ Core", "sklz_core_monthly",
                 "What you described is a measurement problem, not a "
                 "signal problem. Core includes the journal and the AI "
                 "reviews, and that is the part that answers it. You can "
                 "move up later if you ever need crypto or more accounts.")
-    return ("SKLZ Core", "copy_basic_monthly",
+    return ("SKLZ Core", "sklz_core_monthly",
             "One account on the partner broker, forex and metals \u2014 "
             "Core covers exactly that, with the indicators, chart "
             "analysis, signals and journal included. Nothing here needs "

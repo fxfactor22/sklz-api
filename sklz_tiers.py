@@ -1,10 +1,12 @@
 """SKLZ entitlements — one place that answers "what does this plan get".
 
 Tiers (new signups):
-  SKLZ Core  $29  everything except crypto; MT5 copy on the affiliate
-                  broker only, single account
-  SKLZ Plus  $49  + crypto trading/copy; MT5 copy affiliate broker, single
-  SKLZ Pro   $79  multi-account MT5 copy, any broker, everything on
+  SKLZ Core  $119  everything except crypto; MT5 copy on the affiliate
+                   broker only, single account
+  SKLZ Plus  $149  + crypto trading/copy; MT5 copy affiliate broker, single
+  SKLZ Pro   $179  multi-account MT5 copy, any broker, everything on
+  (13 Nov 2026; the earlier $29/$49/$79 copy_* keys stay valid for the
+  people who bought them — grandfathered forever)
 
 Legacy plans keep their promises — Founder $39 is locked for life and that
 stays true forever. Legacy mapping below is deliberately generous (bundle
@@ -34,6 +36,13 @@ _MATRIX: dict[str, tuple[bool, int, bool]] = {
     "copy_basic_annual":   (False, 1, False),
     "copy_crypto_annual":  (True,  1, False),
     "copy_pro_annual":     (True, 10, True),
+    # 13 Nov 2026 tiers (same promises, new prices; copy_* keys are grandfathered)
+    "sklz_core_monthly":   (False, 1, False),
+    "sklz_plus_monthly":   (True,  1, False),
+    "sklz_pro_monthly":    (True, 10, True),
+    "sklz_core_annual":    (False, 1, False),
+    "sklz_plus_annual":    (True,  1, False),
+    "sklz_pro_annual":     (True, 10, True),
     # legacy — promises kept, generously
     "bundle_monthly":  (True, 1, False),
     "bundle_annual":   (True, 1, False),

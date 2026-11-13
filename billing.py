@@ -72,6 +72,17 @@ CATALOG = {
     "copy_basic_annual":   ("SKLZ Core", 27800, "year"),
     "copy_crypto_annual":  ("SKLZ Plus", 47000, "year"),
     "copy_pro_annual":     ("SKLZ Pro", 75800, "year"),
+    # ---- 13 Nov 2026 repricing: 30% under the $170/mo + $349-$1,699
+    # upfront "trading OS" memberships, with NO upfront fee. New lookup
+    # keys on the same Stripe products: existing subscribers on the
+    # copy_* prices are grandfathered forever (a Stripe price is immutable
+    # and their subscription keeps pointing at it).
+    "sklz_core_monthly":   ("SKLZ Core", 11900, "month"),
+    "sklz_plus_monthly":   ("SKLZ Plus", 14900, "month"),
+    "sklz_pro_monthly":    ("SKLZ Pro", 17900, "month"),
+    "sklz_core_annual":    ("SKLZ Core", 119000, "year"),   # 10 months
+    "sklz_plus_annual":    ("SKLZ Plus", 149000, "year"),
+    "sklz_pro_annual":     ("SKLZ Pro", 179000, "year"),
 
     # ---- Signal Desk commercial model ----
     # Setup and monthly are SEPARATE products because _checkout builds one
@@ -101,6 +112,12 @@ PLAN_NAMES = {
     "copy_basic_annual": "SKLZ Core (Annual)",
     "copy_crypto_annual": "SKLZ Plus (Annual)",
     "copy_pro_annual": "SKLZ Pro (Annual)",
+    "sklz_core_monthly": "SKLZ Core",
+    "sklz_plus_monthly": "SKLZ Plus",
+    "sklz_pro_monthly": "SKLZ Pro",
+    "sklz_core_annual": "SKLZ Core (Annual)",
+    "sklz_plus_annual": "SKLZ Plus (Annual)",
+    "sklz_pro_annual": "SKLZ Pro (Annual)",
 }
 INTRO_COUPON_ID = "sklz-first-month-7"      # $22 off once -> $7 first month
 
@@ -193,6 +210,12 @@ async def config(sb: Client = Depends(get_supabase)) -> dict:
             "copy_basic_annual": {"amount": 278},
             "copy_crypto_annual": {"amount": 470},
             "copy_pro_annual": {"amount": 758},
+            "sklz_core_monthly": {"amount": 119},
+            "sklz_plus_monthly": {"amount": 149},
+            "sklz_pro_monthly": {"amount": 179},
+            "sklz_core_annual": {"amount": 1190},
+            "sklz_plus_annual": {"amount": 1490},
+            "sklz_pro_annual": {"amount": 1790},
         },
         "founder_remaining": max(FOUNDER_CAP - taken, 0),
         "guarantee_days": 7,
@@ -818,7 +841,9 @@ RETAIL_KEYS = {"suite_monthly", "suite_annual", "suite_lifetime",
                "gpt_monthly", "gpt_annual", "bundle_monthly", "bundle_annual",
                "bundle_founder", "copy_basic_monthly", "copy_crypto_monthly",
                "copy_pro_monthly", "copy_basic_annual", "copy_crypto_annual",
-               "copy_pro_annual"}
+               "copy_pro_annual", "sklz_core_monthly", "sklz_plus_monthly",
+               "sklz_pro_monthly", "sklz_core_annual", "sklz_plus_annual",
+               "sklz_pro_annual"}
 
 
 # ── the private 48-hour offer, honoured at checkout ─────────────────
