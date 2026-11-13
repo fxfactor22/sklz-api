@@ -503,9 +503,31 @@ async def create_account(body: AccountIn, user=Depends(get_current_user),
 @router.delete("/accounts/{account_id}")
 async def delete_account(account_id: str, user=Depends(get_current_user),
                          sb: Client = Depends(get_supabase)) -> dict:
-    sb.table("journal_accounts").delete().eq("id", account_id) \
-        .eq("user_id", str(user.id)).execute()
-    return {"ok": True}
+    """Remove one of MY journal accounts and every trade filed under it.
+    Permanent. The account must belong to the caller; nothing else is touched."""
+    uid = str(user.id)
+    own = (sb.table("journal_accounts").select("id,label")
+           .eq("user_id", uid).eq("id", account_id).execute()).data or []
+    if not own:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such account of yours")
+    t = (sb.table("journal_trades").select("id")
+         .eq("user_id", uid).eq("account_id", account_id).execute()).data or []
+    if t:
+        sb.table("journal_trades").delete().eq("user_id", uid).eq("account_id", account_id).execute()
+    sb.table("journal_accounts").delete().eq("user_id", uid).eq("id", account_id).execute()
+    return {"ok": True, "deleted_account": own[0].get("label"), "deleted_trades": len(t)}
+
+
+@router.delete("/trades/orphans")
+async def delete_orphan_trades(user=Depends(get_current_user),
+                               sb: Client = Depends(get_supabase)) -> dict:
+    """Remove MY trades that are not attached to any account (manual logs)."""
+    uid = str(user.id)
+    t = (sb.table("journal_trades").select("id").eq("user_id", uid)
+         .is_("account_id", "null").execute()).data or []
+    if t:
+        sb.table("journal_trades").delete().eq("user_id", uid).is_("account_id", "null").execute()
+    return {"ok": True, "deleted_trades": len(t)}
 
 
 @router.get("/accounts/{account_id}/analytics")
