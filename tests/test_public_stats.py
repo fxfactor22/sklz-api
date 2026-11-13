@@ -168,17 +168,43 @@ def test_engine_pulse_dead_when_stale_or_missing():
     assert out["alive"] is False and out["open_now"] == 1
 
 
-def test_partner_legacy_is_owner_only_and_hides_names_in_summary(monkeypatch):
-    import types as _t
-    monkeypatch.setenv("ADMIN_EMAILS", "owner@example.com")
-    owner = _t.SimpleNamespace(id="u1", email="owner@example.com")
-    other = _t.SimpleNamespace(id="u2", email="someone@example.com")
-    out = asyncio.run(partner.legacy(full=0, user=owner))
-    assert out["available"] is True and out["totals"]["orders"] == 375 and out["totals"]["clients"] == 300
-    assert "clients" not in out and "orders" not in out
-    full = asyncio.run(partner.legacy(full=1, user=owner))
-    assert len(full["clients"]) == 300 and len(full["orders"]) == 375
-    assert full["orders"][0]["date"] >= full["orders"][-1]["date"]
-    from fastapi import HTTPException
-    with pytest.raises(HTTPException):
-        asyncio.run(partner.legacy(full=1, user=other))
+def test_skillsart_import_folds_into_partner_record():
+    """Clients become partner_customers, orders become cleared commissions,
+    the total is also added to paid_out (settled elsewhere), and a rerun adds nothing."""
+    import json, types as _t
+    snap = json.load(open("data/skillsart_import.json", encoding="utf-8"))
+
+    class Q:
+        def __init__(self, db, t): self.db, self.t, self.f, self.l = db, t, [], None; self._upd = None
+        def select(self, *a, **k): return self
+        def eq(self, c, v): self.f.append((c, v)); return self
+        def like(self, c, v): self.l = (c, v.rstrip("%")); return self
+        def limit(self, *a, **k): return self
+        def order(self, *a, **k): return self
+        def insert(self, row): self.db.setdefault(self.t, []).append(dict(row)); self._ins = row; return self
+        def update(self, patch): self._upd = patch; return self
+        def execute(self):
+            rows = self.db.setdefault(self.t, [])
+            if self._upd is not None:
+                for r in rows:
+                    if all(str(r.get(c)) == str(v) for c, v in self.f): r.update(self._upd)
+                return _t.SimpleNamespace(data=[])
+            if getattr(self, "_ins", None) is not None:
+                return _t.SimpleNamespace(data=[self._ins])
+            out = [r for r in rows if all(str(r.get(c)) == str(v) for c, v in self.f)]
+            if self.l: out = [r for r in out if str(r.get(self.l[0], "")).startswith(self.l[1])]
+            return _t.SimpleNamespace(data=[dict(r) for r in out])
+    class SB2:
+        def __init__(self): self.db = {"partners": [{"user_id": "u1", "code": "abc", "paid_out": 40.0}]}
+        def table(self, n): return Q(self.db, n)
+
+    sb = SB2()
+    out = partner.import_legacy(sb, "u1", snap)
+    assert out["customers_added"] == 300 and out["orders_added"] == 375
+    assert abs(out["commission_added"] - 14679.93) < 0.01
+    assert abs(sb.db["partners"][0]["paid_out"] - (40.0 + 14679.93)) < 0.01
+    assert all(c["customer_id"].startswith("skillsart:") for c in sb.db["partner_customers"])
+    assert all(e["status"] == "cleared" for e in sb.db["partner_commissions"])
+    again = partner.import_legacy(sb, "u1", snap)
+    assert again["customers_added"] == 0 and again["orders_added"] == 0
+    assert len(sb.db["partner_customers"]) == 300 and len(sb.db["partner_commissions"]) == 375

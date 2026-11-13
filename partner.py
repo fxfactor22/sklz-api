@@ -121,7 +121,7 @@ async def me(user=Depends(get_current_user),
     try:
         ledger = (sb.table("partner_commissions").select("*")
                   .eq("partner_id", uid).order("created_at", desc=True)
-                  .limit(200).execute()).data or []
+                  .limit(2000).execute()).data or []
     except Exception:
         ledger = []
     earned = sum(e.get("amount", 0) for e in ledger)
@@ -130,6 +130,20 @@ async def me(user=Depends(get_current_user),
     paid_out = p.get("paid_out", 0.0) or 0.0
     available = round(cleared - paid_out, 2)
     lvl = _level(active)
+    by_cust: dict[str, float] = {}
+    for e in ledger:
+        by_cust[e.get("customer_id")] = by_cust.get(e.get("customer_id"), 0.0) + float(e.get("amount") or 0)
+
+    def _label(c: dict) -> str:
+        em = c.get("email") or "customer"
+        return em if "@" not in em else em[:2] + "•••"      # imported rows carry a name, not an email
+
+    def _comm(c: dict) -> float:
+        cid = c.get("customer_id") or ""
+        if cid.startswith("skillsart:"):
+            return round(by_cust.get(cid, 0.0), 2)
+        return _commission_for(c.get("price", 49))
+
     return {
         "code": p["code"],
         "link": f"{os.environ.get('SITE_URL','https://www.sklzlabs.com')}/?ref={p['code']}",
@@ -140,11 +154,12 @@ async def me(user=Depends(get_current_user),
                    "available": max(0.0, available), "paid_out": round(paid_out, 2)},
         "recent_commissions": ledger[:20],
         "customer_list": [{
-            "masked": (c.get("email") or "customer")[:2] + "•••",
+            "masked": _label(c),
             "active": c.get("active"), "since": c.get("created_at"),
             "months": c.get("months_active", 0),
-            "commission": _commission_for(c.get("price", 49)),
-        } for c in custs[:100]],
+            "commission": _comm(c),
+            "source": "skillsart" if (c.get("customer_id") or "").startswith("skillsart:") else "sklz",
+        } for c in custs[:400]],
     }
 
 
@@ -252,41 +267,86 @@ async def request_payout(user=Depends(get_current_user),
             "note": "Payout requested. SKLZ will process it manually and mark it paid."}
 
 
-# ── legacy import: the owner's Skillsart partner history ────────────
-# A read-only snapshot exported from skillsart.com (clients, referral
-# orders, rank, wallet). It is the OWNER's own business history, so it is
-# served to admin accounts only — it carries other people's names.
-# Refresh by replacing data/skillsart_import.json.
+# ── Skillsart import: those clients are SKLZ Labs clients now ────────
+# The owner's referral book from skillsart.com (300 clients, 375 orders)
+# is folded INTO his SKLZ partner record: every client becomes a
+# partner_customers row (customer_id "skillsart:<id>"), every order a
+# partner_commissions row, and the commissions — already settled on
+# Skillsart — are counted as earned AND paid out, so lifetime figures are
+# true and nothing becomes withdrawable twice. Idempotent: rerunning
+# skips anything already imported. Owner only.
 import json as _json
 from pathlib import Path as _Path
 from tv_access import _require_admin as _owner_only
 
-_LEGACY = _Path(__file__).parent / "data" / "skillsart_import.json"
-_LEGACY_CACHE: dict = {"mtime": None, "body": None}
+_IMPORT = _Path(__file__).parent / "data" / "skillsart_import.json"
 
 
-def _legacy_snapshot() -> dict | None:
-    try:
-        m = _LEGACY.stat().st_mtime
-    except FileNotFoundError:
-        return None
-    if _LEGACY_CACHE["mtime"] != m:
-        with _LEGACY.open(encoding="utf-8") as fh:
-            _LEGACY_CACHE.update(mtime=m, body=_json.load(fh))
-    return _LEGACY_CACHE["body"]
+def _legacy_active(c: dict, snapshot: str) -> bool:
+    """Annual pass within 365 days, monthly within 60 days -> active."""
+    last = c.get("last_order")
+    if not last:
+        return False
+    from datetime import date as _d
+    days = (_d.fromisoformat(snapshot) - _d.fromisoformat(last)).days
+    annual = (c.get("sales") or 0) >= 500 and (c.get("orders") or 0) >= 1
+    return days <= (365 if annual else 60)
 
 
-@router.get("/legacy")
-async def legacy(full: int = 0, user=Depends(get_current_user)) -> dict:
-    """Skillsart snapshot. Summary by default; full=1 adds clients and orders."""
+def import_legacy(sb: Client, uid: str, snap: dict) -> dict:
+    """Pure-ish worker so a test can drive it with a fake client."""
+    p = _ensure_partner(sb, uid)
+    existing = (sb.table("partner_customers").select("customer_id")
+                .eq("partner_id", uid).like("customer_id", "skillsart:%").execute()).data or []
+    have = {e["customer_id"] for e in existing}
+    snapshot = snap.get("snapshot_at") or _now()[:10]
+    by_name = {}
+    for o in snap["orders"]:
+        by_name.setdefault(o["referral"], []).append(o)
+    added_c = 0
+    name_to_cid: dict[str, str] = {}
+    for c in snap["clients"]:
+        cid = f"skillsart:{c['id']}"
+        name_to_cid.setdefault(c["name"], cid)
+        if cid in have:
+            continue
+        orders = by_name.get(c["name"], [])
+        sb.table("partner_customers").insert({
+            "partner_id": uid, "customer_id": cid,
+            "email": c["name"],                       # display name; no email was exported
+            "active": _legacy_active(c, snapshot),
+            "price": float(orders[-1]["total"]) if orders else 0.0,
+            "months_active": len(orders),
+            "created_at": (c.get("first_order") or snapshot) + "T00:00:00+00:00",
+        }).execute()
+        added_c += 1
+    done = (sb.table("partner_commissions").select("customer_id")
+            .eq("partner_id", uid).like("customer_id", "skillsart:%").limit(1).execute()).data or []
+    added_o, total = 0, 0.0
+    if not done:
+        for o in snap["orders"]:
+            cid = name_to_cid.get(o["referral"], f"skillsart:name:{o['referral']}")
+            amt = round(float(o["commission_fixed"]) + float(o["total"]) * float(o["commission_pct"]) / 100, 2)
+            sb.table("partner_commissions").insert({
+                "partner_id": uid, "customer_id": cid, "amount": amt, "base": amt, "bonus": 0.0,
+                "month_index": 1, "status": "cleared",
+                "created_at": o["date"] + "T00:00:00+00:00",
+            }).execute()
+            added_o += 1
+            total += amt
+        # settled on Skillsart already: paid out, not withdrawable again
+        paid = float(p.get("paid_out") or 0.0) + round(total, 2)
+        sb.table("partners").update({"paid_out": round(paid, 2)}).eq("user_id", uid).execute()
+    return {"ok": True, "customers_added": added_c, "orders_added": added_o,
+            "commission_added": round(total, 2), "already_imported": bool(done) and not added_c}
+
+
+@router.post("/admin/import-skillsart")
+async def admin_import_skillsart(user=Depends(get_current_user),
+                                 sb: Client = Depends(get_supabase)) -> dict:
     _owner_only(user)
-    snap = _legacy_snapshot()
-    if not snap:
-        return {"available": False}
-    out = {"available": True, "source": snap["source"], "snapshot_at": snap["snapshot_at"],
-           "account": snap["account"], "totals": snap["totals"], "by_rank": snap["by_rank"],
-           "by_product": snap["by_product"], "by_month": snap["by_month"]}
-    if full:
-        out["clients"] = snap["clients"]
-        out["orders"] = sorted(snap["orders"], key=lambda o: o["date"], reverse=True)
-    return out
+    if not _IMPORT.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "data/skillsart_import.json missing")
+    with _IMPORT.open(encoding="utf-8") as fh:
+        snap = _json.load(fh)
+    return import_legacy(sb, str(user.id), snap)
