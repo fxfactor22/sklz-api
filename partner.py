@@ -349,4 +349,7 @@ async def admin_import_skillsart(user=Depends(get_current_user),
         raise HTTPException(status.HTTP_404_NOT_FOUND, "data/skillsart_import.json missing")
     with _IMPORT.open(encoding="utf-8") as fh:
         snap = _json.load(fh)
-    return import_legacy(sb, str(user.id), snap)
+    try:
+        return import_legacy(sb, str(user.id), snap)
+    except Exception as exc:  # noqa: BLE001 — the owner needs the real reason, not a 500
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:600]}
