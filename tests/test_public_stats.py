@@ -135,3 +135,34 @@ def test_commission_is_half_of_cleared_amount(price, expected):
 ])
 def test_current_membership_plans_commission(plan, ok):
     assert billing._commissionable_plan(plan) is ok
+
+
+def test_engine_pulse_is_a_heartbeat_without_money():
+    now = datetime.now(timezone.utc)
+    P._PULSE_CACHE.update({"at": None, "body": None})
+    db = {"bot_sessions": [
+        {"bot": "SKLZ Master", "mode": "live", "last_seen": _iso(now - timedelta(seconds=40)),
+         "equity": 397.99, "balance": 400.0,
+         "stats": {"open_now": 2, "positions_opened": 5, "positions_closed": 3,
+                   "signals": 4, "auto": True,
+                   "open_positions": [{"ticket": 1, "symbol": "XAUUSD.."}]}},
+        {"bot": "other", "mode": "paper", "last_seen": _iso(now - timedelta(days=2)), "stats": {}},
+    ]}
+    out = asyncio.run(P.engine_pulse(SB(db)))
+    assert out["alive"] is True and out["bot"] == "SKLZ Master" and out["mode"] == "live"
+    assert out["open_now"] == 2 and out["opened_today"] == 5 and out["setups_armed"] == 4
+    assert 30 <= out["age_sec"] <= 60
+    txt = str(out)
+    assert "397" not in txt and "balance" not in txt and "ticket" not in txt
+
+
+def test_engine_pulse_dead_when_stale_or_missing():
+    now = datetime.now(timezone.utc)
+    P._PULSE_CACHE.update({"at": None, "body": None})
+    out = asyncio.run(P.engine_pulse(SB({"bot_sessions": []})))
+    assert out["alive"] is False and out["bot"] is None
+    P._PULSE_CACHE.update({"at": None, "body": None})
+    db = {"bot_sessions": [{"bot": "SKLZ Master", "mode": "live",
+                            "last_seen": _iso(now - timedelta(minutes=20)), "stats": {"open_now": 1}}]}
+    out = asyncio.run(P.engine_pulse(SB(db)))
+    assert out["alive"] is False and out["open_now"] == 1

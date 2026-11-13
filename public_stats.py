@@ -280,3 +280,54 @@ async def track_record(sb: Client = Depends(get_supabase)) -> dict:
                        "trades of this one account, including losses. Past "
                        "performance does not guarantee future results."),
     }
+
+
+# ------------------------------------------------------------------ engine pulse
+# A heartbeat, not a P/L. The home page shows that the engine is alive and
+# working (scanning, how many positions open, entries today) without
+# publishing an account's money. Nothing here comes from journal_accounts;
+# it is the same heartbeat the Bot Monitor reads, with equity, balance and
+# the open-position list stripped out.
+_PULSE_CACHE: dict = {"at": None, "body": None}
+
+
+@router.get("/engine-pulse")
+async def engine_pulse(sb: Client = Depends(get_supabase)) -> dict:
+    """Is the SKLZ Master engine alive right now? Public, no auth, cached 15 s."""
+    now = datetime.now(timezone.utc)
+    c = _PULSE_CACHE
+    if c["at"] and (now - c["at"]).total_seconds() < 15 and c["body"]:
+        return c["body"]
+    want = (os.environ.get("SKLZ_PUBLIC_BOT_NAME") or "SKLZ Master").strip().lower()
+    body = {"alive": False, "bot": None, "mode": None, "last_seen": None,
+            "age_sec": None, "open_now": 0, "opened_today": 0, "closed_today": 0,
+            "setups_armed": 0, "auto": None, "updated_at": now.isoformat(),
+            "note": "Heartbeat only. No account figures are published here."}
+    try:
+        rows = (sb.table("bot_sessions")
+                  .select("bot,mode,last_seen,stats")
+                  .order("last_seen", desc=True).limit(20).execute()).data or []
+    except Exception:  # noqa: BLE001 — storefront never 500s on a heartbeat
+        rows = []
+    sess = next((r for r in rows if (r.get("bot") or "").strip().lower() == want), None) \
+        or (rows[0] if rows else None)
+    if sess:
+        st = sess.get("stats") or {}
+        ls = sess.get("last_seen")
+        age = None
+        if ls:
+            try:
+                age = int((now - datetime.fromisoformat(ls.replace("Z", "+00:00"))).total_seconds())
+            except ValueError:
+                age = None
+        body.update({
+            "bot": sess.get("bot"), "mode": sess.get("mode"), "last_seen": ls,
+            "age_sec": age, "alive": age is not None and age < 180,
+            "open_now": int(st.get("open_now") or 0),
+            "opened_today": int(st.get("positions_opened") or 0),
+            "closed_today": int(st.get("positions_closed") or 0),
+            "setups_armed": int(st.get("signals") or 0),
+            "auto": st.get("auto"),
+        })
+    c["at"], c["body"] = now, body
+    return body
